@@ -24,6 +24,8 @@ final class EditorViewModel: ObservableObject {
     @Published var stripMetadata: Bool = true
     @Published var musicHighlightLength: Double = 20
     @Published var musicHighlights: [MusicHighlight] = []
+    @Published var exportedMusicHighlightURL: URL?
+    @Published var isExportingMusicHighlight = false
     @Published var isAnalyzingMusicHighlights = false
     @Published var videoHighlights: [VideoHighlight] = []
     @Published var analyzedClipID: UUID?
@@ -111,6 +113,7 @@ final class EditorViewModel: ObservableObject {
                     musicStartSeconds = 0
             musicHighlightDuration = 0
             musicHighlights = []
+            exportedMusicHighlightURL = nil
                     musicURL = localURL
                 } catch {
                     try? FileManager.default.removeItem(at: localURL)
@@ -305,12 +308,32 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    func exportMusicHighlight() {
+        guard let url = musicURL, musicHighlightDuration > 0,
+              !isExportingMusicHighlight else { return }
+        isExportingMusicHighlight = true
+        exportedMusicHighlightURL = nil
+        let start = musicStartSeconds
+        let duration = musicHighlightDuration
+        Task {
+            defer { isExportingMusicHighlight = false }
+            do {
+                exportedMusicHighlightURL = try await MusicSegmentExporter.export(
+                    inputURL: url, start: start, duration: duration
+                )
+            } catch {
+                errorText = "Không xuất được MP3 highlight: \(error.localizedDescription)"
+            }
+        }
+    }
+
     func useMusicHighlight(_ highlight: MusicHighlight) {
         guard musicURL != nil else { return }
         musicStartSeconds = min(max(0, highlight.start),
                                 max(0, musicDuration - 0.1))
         musicHighlightDuration = min(highlight.duration,
                                      max(0, musicDuration - musicStartSeconds))
+        exportedMusicHighlightURL = nil
     }
 
     // MARK: - Narration from text
