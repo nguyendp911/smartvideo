@@ -1,0 +1,8 @@
+# Generated project / build products
+SmartVideo.xcodeproj/
+build/
+DerivedData/
+*.xcuserstate
+*.xcuserdatad/
+.DS_Store
+.swiftpm/

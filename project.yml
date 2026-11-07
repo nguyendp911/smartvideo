@@ -1,0 +1,39 @@
+name: SmartVideo
+options:
+  bundleIdPrefix: com.nguyendp911
+  deploymentTarget:
+    iOS: "16.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    TARGETED_DEVICE_FAMILY: "1"
+targets:
+  SmartVideo:
+    type: application
+    platform: iOS
+    sources:
+      - path: SmartVideo
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_USER_SCRIPT_SANDBOXING: YES
+    info:
+      path: SmartVideo/Info.plist
+      properties:
+        CFBundleDisplayName: SmartVideo
+        LSRequiresIPhoneOS: true
+        NSPhotoLibraryAddUsageDescription: "SmartVideo cần quyền thêm video đã xuất vào thư viện Ảnh."
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiresFullScreen: true
+schemes:
+  SmartVideo:
+    build:
+      targets:
+        SmartVideo: all
+    run:
+      config: Debug
+    archive:
+      config: Release
