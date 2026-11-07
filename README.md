@@ -2,19 +2,23 @@
 
 Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không gửi clip lên server.
 
-## Tính năng MVP
+## Tính năng (bản dựng UI mới)
 
-- Nhập nhiều **ảnh** và **video** từ PhotosPicker; sao chép vào bộ nhớ riêng của ứng dụng.
-- Timeline có thể sắp xếp lại, xóa, chọn từng clip, chỉnh độ dài ảnh/video, đặt điểm bắt đầu cho video.
-- Xem trước một clip đã chọn.
-- Thêm nhạc nền từ ứng dụng Tệp, điều chỉnh âm lượng; tùy chọn giữ tiếng gốc của các video.
-- Xuất **MP4 H.264**, tỉ lệ **9:16** hoặc **16:9**, **720p** hoặc **1080p**, **30 FPS**.
-- Ghép ảnh thành các đoạn video ngắn rồi nối các clip, giữ nguyên tỉ lệ bằng viền đen khi cần.
-- Lưu video xuất ra Photos hoặc chia sẻ qua Share Sheet.
+- **Giao diện không cuộn cả màn hình:** preview phía trên luôn cố định, timeline cuộn ngang, thanh công cụ 4 thẻ Đoạn / Khung / Phụ đề / Âm thanh, nút xuất MP4 cố định bên dưới.
+- **Tỷ lệ trực tiếp:** chọn video 9:16 hoặc 16:9 để thấy ngay canvas thay đổi trên preview; chế độ Vừa khung/Phủ đầy được áp dụng cả lúc render.
+- **Timeline:** nhập nhiều video/ảnh bằng PhotosPicker, chỉnh điểm bắt đầu và thời lượng, đổi chỗ 1 bước qua nút trái/phải, xóa clip, preview clip đang chọn.
+- **Phụ đề:** nhập TXT UTF-8 hoặc UTF-16 để tự chia từng dòng theo thời lượng video; nhập SRT để giữ timing; sửa từng câu, nắn thời gian ±0.5s; xuất SRT và chèn phụ đề trực tiếp vào video khi render.
+- **Thuyết minh:** ghi âm bằng micro hoặc nhập tệp giọng đọc có sẵn, trộn giọng và tiếng gốc.
+- **Cắt MP3 theo video:** chọn vị trí bắt đầu, dò phần im lặng đầu bài để đề xuất điểm vào, tự lặp khi nhạc ngắn, tự dừng ở cuối video và giảm âm lượng khi có giọng đọc, fade 1.2 giây ở cuối.
+- Xuất **MP4 H.264**, 720p / 1080p, 30 FPS; lưu vào Photos hoặc chia sẻ qua ứng dụng khác.
 
-### Chưa hỗ trợ
+### Phạm vi chức năng chưa có
 
-Crossfade, filter LUT, text overlay, phụ đề, tiến độ render chính xác, render nền khi khóa màn hình, hoàn tác timeline, lưu dự án nhiều phiên và AI sinh video. Tệp xuất có thể lớn, quá trình render cần đủ dung lượng và pin.
+Hiệu ứng crossfade, filter LUT, nhận diện nhịp beat chuyên sâu, tự phát sinh lời phụ đề bằng AI/STT, tổng hợp giọng nói TTS từ văn bản, timeline đa track kéo thả, undo, lưu project, và render nền khi khóa màn hình **chưa được thực hiện**. Tính năng chọn nhạc tự động chỉ phân tích âm lượng để bỏ đoạn im lặng, **không phải AI chọn đoạn nhạc hay**.
+
+### Giới hạn thực tế
+
+Các API AVFoundation trên GitHub Actions biên dịch được nhưng **vẫn cần kiểm thử render thực tế trên iPhone 12 Pro Max**. Dự án có âm thanh/codec không được hỗ trợ có thể xuất thất bại. Phụ đề sử dụng font iOS tiêu chuẩn, chưa tùy chỉnh style. Khi dùng ảnh tĩnh số lượng lớn, thời gian render và dung lượng sẽ tăng. Với clip dài nên chọn 720p hoặc 1080p/30 FPS.
 
 ## Công nghệ
 
