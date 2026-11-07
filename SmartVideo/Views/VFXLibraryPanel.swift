@@ -206,14 +206,16 @@ struct VFXPreviewOverlay: View {
                 }
 
                 if presets.contains(.lightLeak) {
-                    LinearGradient(
+                    RadialGradient(
                         colors: [
-                            Color.orange.opacity(0.44 * strength),
-                            Color.pink.opacity(0.20 * strength),
+                            Color.orange.opacity(0.24 * strength),
+                            Color(red: 1, green: 0.65, blue: 0.30)
+                                .opacity(0.09 * strength),
                             .clear
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        center: UnitPoint(x: 0.18, y: 0.22),
+                        startRadius: 0,
+                        endRadius: max(width, height) * 0.75
                     )
                 }
 
@@ -281,6 +283,65 @@ struct VFXPreviewOverlay: View {
                             .position(
                                 x: width * CGFloat((index * 37 + 9) % 99) / 99,
                                 y: height * CGFloat((index * 23 + 5) % 97) / 97
+                            )
+                    }
+                }
+
+                if presets.contains(.bokeh) {
+                    ForEach(0..<14, id: \.self) { index in
+                        Circle()
+                            .stroke(
+                                Color.orange.opacity(0.22 * strength),
+                                lineWidth: 1
+                            )
+                            .background(
+                                Circle().fill(Color.white.opacity(0.025 * strength))
+                            )
+                            .frame(width: CGFloat(10 + (index * 17) % 28),
+                                   height: CGFloat(10 + (index * 17) % 28))
+                            .position(
+                                x: width * CGFloat((index * 19 + 7) % 97) / 97,
+                                y: height * CGFloat((index * 29 + 11) % 101) / 101
+                            )
+                    }
+                }
+
+                if presets.contains(.lightStreak) {
+                    LinearGradient(
+                        colors: [
+                            .clear,
+                            Color.cyan.opacity(0.14 * strength),
+                            Color.white.opacity(0.22 * strength),
+                            Color.cyan.opacity(0.14 * strength),
+                            .clear
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(height: max(2, height * 0.04))
+                    .offset(y: -height * 0.12)
+                }
+
+                if presets.contains(.scanlines) {
+                    ForEach(0..<60, id: \.self) { index in
+                        Rectangle()
+                            .fill(Color.black.opacity(0.13 * strength))
+                            .frame(height: 1)
+                            .position(
+                                x: width * 0.5,
+                                y: height * CGFloat(index) / 60
+                            )
+                    }
+                }
+
+                if presets.contains(.filmScratch) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.08 * strength))
+                            .frame(width: 1)
+                            .position(
+                                x: width * CGFloat(index + 1) / 4,
+                                y: height * 0.5
                             )
                     }
                 }
