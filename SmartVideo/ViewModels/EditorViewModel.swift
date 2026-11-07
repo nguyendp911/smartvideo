@@ -14,6 +14,7 @@ final class EditorViewModel: ObservableObject {
     @Published var musicVolume: Float = 0.38
     @Published var musicStartSeconds: Double = 0
     @Published var musicDuration: Double = 0
+    @Published var isImportingAudio = false
     @Published var isScanningMusic = false
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
@@ -64,20 +65,37 @@ final class EditorViewModel: ObservableObject {
     }
 
     func importMusic(from sourceURL: URL) {
+        guard !isImportingAudio else { return }
+        isImportingAudio = true
         do {
-            musicURL = try copyScoped(sourceURL, fallbackExtension: "mp3")
-            musicStartSeconds = 0
-            if let musicURL {
-                Task {
-                    do {
-                        musicDuration = try await AVURLAsset(url: musicURL).load(.duration).seconds
-                    } catch {
-                        errorText = "Không đọc được thời lượng nhạc: \(error.localizedDescription)"
+            // Copy the security-scoped URL before the Files picker finishes.
+            let localURL = try copyScoped(sourceURL, fallbackExtension: "mp3")
+            Task {
+                defer { isImportingAudio = false }
+                do {
+                    let asset = AVURLAsset(url: localURL)
+                    let tracks = try await asset.loadTracks(withMediaType: .audio)
+                    guard !tracks.isEmpty else {
+                        throw SmartVideoError.invalidMedia("Tệp vừa chọn không có track âm thanh.")
                     }
+                    let duration = try await asset.load(.duration).seconds
+                    // Never publish an indefinite or NaN duration to a SwiftUI Slider.
+                    guard duration.isFinite && duration > 0 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Không đọc được thời lượng MP3. Hãy thử MP3 hoặc M4A hợp lệ."
+                        )
+                    }
+                    musicDuration = duration
+                    musicStartSeconds = 0
+                    musicURL = localURL
+                } catch {
+                    try? FileManager.default.removeItem(at: localURL)
+                    errorText = "Không nhập được nhạc: \(error.localizedDescription)"
                 }
             }
         } catch {
-            errorText = "Không nhập được nhạc: \(error.localizedDescription)"
+            isImportingAudio = false
+            errorText = "Không mở được MP3: \(error.localizedDescription)"
         }
     }
 
@@ -101,9 +119,30 @@ final class EditorViewModel: ObservableObject {
 
     func importVoiceover(from sourceURL: URL) {
         do {
-            voiceoverURL = try copyScoped(sourceURL, fallbackExtension: "m4a")
+            let localURL = try copyScoped(sourceURL, fallbackExtension: "m4a")
+            Task {
+                do {
+                    let asset = AVURLAsset(url: localURL)
+                    let tracks = try await asset.loadTracks(withMediaType: .audio)
+                    guard !tracks.isEmpty else {
+                        throw SmartVideoError.invalidMedia(
+                            "Tệp thuyết minh không có track âm thanh."
+                        )
+                    }
+                    let duration = try await asset.load(.duration).seconds
+                    guard duration.isFinite && duration > 0 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Tệp thuyết minh không có thời lượng hợp lệ."
+                        )
+                    }
+                    voiceoverURL = localURL
+                } catch {
+                    try? FileManager.default.removeItem(at: localURL)
+                    errorText = "Không nhập được thuyết minh: \(error.localizedDescription)"
+                }
+            }
         } catch {
-            errorText = "Không nhập được thuyết minh: \(error.localizedDescription)"
+            errorText = "Không thể mở tệp giọng đọc: \(error.localizedDescription)"
         }
     }
 
@@ -143,6 +182,9 @@ final class EditorViewModel: ObservableObject {
     }
 
     private func copyScoped(_ url: URL, fallbackExtension: String) throws -> URL {
+        guard url.isFileURL else {
+            throw SmartVideoError.invalidMedia("Nguồn âm thanh không phải tệp cục bộ.")
+        }
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         return try MediaStorage.copyToMedia(url, fallbackExtension: fallbackExtension)

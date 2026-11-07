@@ -27,6 +27,7 @@ struct EditorView: View {
     @State private var selectedClipID: UUID?
     @State private var activeTool: EditorTool = .clip
     @State private var activeFilePicker: EditorDocumentKind?
+    @State private var showDocumentImporter = false
     @State private var subtitleFileForShare: URL?
     @State private var previewPlayer: AVPlayer?
     @State private var localSecond = 0.0
@@ -109,22 +110,24 @@ struct EditorView: View {
                 }
             }
         }
-        .sheet(item: $activeFilePicker) { kind in
-            AudioDocumentPicker(kind: kind) { outcome in
-                // Import while the copy provided by Files is still available.
-                if let outcome {
-                    switch outcome {
-                    case .success(let url):
-                        switch kind {
-                        case .music: model.importMusic(from: url)
-                        case .voice: model.importVoiceover(from: url)
-                        case .subtitles: model.importSubtitles(from: url)
-                        }
-                    case .failure(let error):
-                        model.errorText = error.localizedDescription
-                    }
+        // One native fileImporter, with no nested UIKit sheet dismissal.
+        .fileImporter(
+            isPresented: $showDocumentImporter,
+            allowedContentTypes: activeFilePicker?.allowedTypes ?? [.audio],
+            allowsMultipleSelection: false
+        ) { result in
+            let kind = activeFilePicker
+            activeFilePicker = nil
+            switch result {
+            case .success(let urls):
+                guard let kind, let url = urls.first else { return }
+                switch kind {
+                case .music: model.importMusic(from: url)
+                case .voice: model.importVoiceover(from: url)
+                case .subtitles: model.importSubtitles(from: url)
                 }
-                activeFilePicker = nil
+            case .failure(let error):
+                model.errorText = "Không thể mở tệp: \(error.localizedDescription)"
             }
         }
         .onChange(of: recorder.errorText) { message in
@@ -522,6 +525,7 @@ struct EditorView: View {
             HStack(spacing: 7) {
                 Button {
                     activeFilePicker = .subtitles
+                    showDocumentImporter = true
                 } label: {
                     Label("Nhập TXT/SRT", systemImage: "doc.text")
                 }
@@ -593,6 +597,7 @@ struct EditorView: View {
             HStack(spacing: 8) {
                 Button {
                     activeFilePicker = .music
+                    showDocumentImporter = true
                 } label: {
                     Label("Nhạc MP3", systemImage: "music.note")
                 }
@@ -600,6 +605,7 @@ struct EditorView: View {
 
                 Button {
                     activeFilePicker = .voice
+                    showDocumentImporter = true
                 } label: {
                     Label("Tệp giọng đọc", systemImage: "mic")
                 }
@@ -634,6 +640,13 @@ struct EditorView: View {
             if let voice = model.voiceoverURL {
                 Text("Thuyết minh: \(voice.lastPathComponent)")
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+
+            if model.isImportingAudio {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Đang kiểm tra tệp MP3…").font(.caption)
+                }
             }
 
             if let music = model.musicURL {
