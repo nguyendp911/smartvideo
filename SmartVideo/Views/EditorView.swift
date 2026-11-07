@@ -784,6 +784,23 @@ struct EditorView: View {
                     }
                 }
                 if model.musicHighlightDuration > 0 {
+                    Button {
+                        model.exportMusicHighlight()
+                    } label: {
+                        Label(model.isExportingMusicHighlight ?
+                              "Đang xuất M4A…" :
+                              "Cắt và lưu highlight thành M4A",
+                              systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isExportingMusicHighlight)
+                    if let output = model.exportedMusicHighlightURL {
+                        ShareLink(item: output) {
+                            Label("Chia sẻ highlight M4A đã cắt",
+                                  systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(.bordered)
+                    }
                     Text(String(format: "Đang dùng %.1f giây nhạc từ mốc %.1fs",
                                 model.musicHighlightDuration,
                                 model.musicStartSeconds))
