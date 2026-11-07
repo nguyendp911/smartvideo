@@ -5,7 +5,8 @@ import UIKit
 
 enum SubtitleOverlay {
     static func attach(to composition: AVMutableVideoComposition,
-                       size: CGSize, cues: [SubtitleCue]) {
+                       size: CGSize, cues: [SubtitleCue],
+                       positionX: Double, positionY: Double) {
         guard !cues.isEmpty else { return }
 
         let parent = CALayer()
@@ -15,15 +16,18 @@ enum SubtitleOverlay {
         parent.addSublayer(video)
 
         for cue in cues where cue.end > cue.start && !cue.text.isEmpty {
-            let width = size.width * 0.88
+            let width = size.width * 0.72
             let fontSize = max(22, size.width * 0.047)
             let textHeight = fontSize * (cue.text.count > 45 ? 4.3 : 2.8)
             let background = CALayer()
             background.backgroundColor = UIColor.black.withAlphaComponent(0.68).cgColor
             background.cornerRadius = fontSize * 0.28
+            // Normalized preview placement (0,0 top-left; 1,1 bottom-right).
+            let px = min(1, max(0, positionX))
+            let py = min(1, max(0, positionY))
             background.frame = CGRect(
-                x: (size.width - width) / 2,
-                y: max(20, size.height * 0.085),
+                x: (size.width - width) * px,
+                y: (size.height - textHeight) * (1 - py),
                 width: width,
                 height: textHeight
             )

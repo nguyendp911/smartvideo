@@ -21,6 +21,8 @@ final class VideoRenderer {
         repeatShortMusic: Bool,
         voiceoverURL: URL?,
         subtitles: [SubtitleCue],
+        subtitleX: Double,
+        subtitleY: Double,
         keepOriginalAudio: Bool,
         quality: RenderQuality,
         canvas: CanvasFormat,
@@ -230,7 +232,8 @@ final class VideoRenderer {
             mix = value
         }
 
-        SubtitleOverlay.attach(to: videoComposition, size: size, cues: subtitles)
+        SubtitleOverlay.attach(to: videoComposition, size: size, cues: subtitles,
+                               positionX: subtitleX, positionY: subtitleY)
         let exportURL = MediaStorage.newExportURL()
         do {
             guard let exporter = AVAssetExportSession(

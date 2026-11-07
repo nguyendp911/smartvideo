@@ -7,6 +7,8 @@ import AVFoundation
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
     @Published var subtitles: [SubtitleCue] = []
+    @Published var subtitleX: Double = 0.5
+    @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
     @Published var voiceoverURL: URL?
     @Published var musicVolume: Float = 0.38
@@ -170,6 +172,8 @@ final class EditorViewModel: ObservableObject {
         let workLoop = repeatShortMusic
         let workVoice = voiceoverURL
         let workSubtitles = subtitles
+        let workSubtitleX = subtitleX
+        let workSubtitleY = subtitleY
         let workKeepOriginal = keepOriginalAudio
         let workQuality = quality
         let workCanvas = canvas
@@ -186,6 +190,8 @@ final class EditorViewModel: ObservableObject {
                         repeatShortMusic: workLoop,
                         voiceoverURL: workVoice,
                         subtitles: workSubtitles,
+                        subtitleX: workSubtitleX,
+                        subtitleY: workSubtitleY,
                         keepOriginalAudio: workKeepOriginal,
                         quality: workQuality,
                         canvas: workCanvas,

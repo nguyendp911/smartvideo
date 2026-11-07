@@ -41,22 +41,40 @@ enum RenderQuality: String, CaseIterable, Identifiable {
 enum CanvasFormat: String, CaseIterable, Identifiable {
     case portrait = "Dọc 9:16"
     case landscape = "Ngang 16:9"
+    case square = "Vuông 1:1"
+    case poster = "Dọc 4:5"
 
     var id: String { rawValue }
+
+    var shortLabel: String {
+        switch self {
+        case .portrait: return "9:16"
+        case .landscape: return "16:9"
+        case .square: return "1:1"
+        case .poster: return "4:5"
+        }
+    }
 
     var ratio: CGFloat {
         switch self {
         case .portrait: return 9.0 / 16.0
         case .landscape: return 16.0 / 9.0
+        case .square: return 1.0
+        case .poster: return 4.0 / 5.0
         }
     }
 
     func size(for quality: RenderQuality) -> CGSize {
+        let unit = quality.shortSide
         switch self {
         case .portrait:
-            return CGSize(width: quality.shortSide, height: quality.longSide)
+            return CGSize(width: unit, height: quality.longSide)
         case .landscape:
-            return CGSize(width: quality.longSide, height: quality.shortSide)
+            return CGSize(width: quality.longSide, height: unit)
+        case .square:
+            return CGSize(width: unit, height: unit)
+        case .poster:
+            return CGSize(width: unit, height: unit * 5 / 4)
         }
     }
 }
