@@ -17,9 +17,14 @@ final class VideoRenderer {
         clips: [TimelineClip],
         musicURL: URL?,
         musicVolume: Float,
+        musicStartSeconds: Double,
+        repeatShortMusic: Bool,
+        voiceoverURL: URL?,
+        subtitles: [SubtitleCue],
         keepOriginalAudio: Bool,
         quality: RenderQuality,
-        canvas: CanvasFormat
+        canvas: CanvasFormat,
+        contentMode: CanvasContentMode
     ) async throws -> URL {
         guard !clips.isEmpty else {
             throw SmartVideoError.invalidMedia("Hãy thêm ảnh hoặc video trước khi xuất.")
@@ -44,7 +49,8 @@ final class VideoRenderer {
                     to: temporary,
                     duration: clip.duration,
                     size: size,
-                    bitRate: quality.bitRate
+                    bitRate: quality.bitRate,
+                    contentMode: contentMode
                 )
                 sourceURLs.append(temporary)
             } else {
@@ -107,7 +113,7 @@ final class VideoRenderer {
             let preferred = try await sourceVideo.load(.preferredTransform)
             let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: destinationVideo)
             layer.setTransform(
-                aspectFitTransform(size: naturalSize, preferredTransform: preferred, canvas: size),
+                aspectFitTransform(size: naturalSize, preferredTransform: preferred, canvas: size, contentMode: contentMode),
                 at: cursor
             )
             let instruction = AVMutableVideoCompositionInstruction()
@@ -123,44 +129,108 @@ final class VideoRenderer {
         videoComposition.frameDuration = CMTime(value: 1, timescale: framesPerSecond)
         videoComposition.renderSize = size
 
-        var mix: AVMutableAudioMix?
+        var mixParameters: [AVAudioMixInputParameters] = []
+        var musicParameters: AVMutableAudioMixInputParameters?
+        var musicEnd = CMTime.zero
+        var narrationEnd = CMTime.zero
+
+        // Music: trim at a selected start offset; loop only when requested,
+        // keep its output duration aligned to the video, then fade at the end.
         if let musicURL {
             let musicAsset = AVURLAsset(url: musicURL)
             guard let musicSource = try await musicAsset.loadTracks(withMediaType: .audio).first else {
-                throw SmartVideoError.invalidMedia("Tệp nhạc không chứa track âm thanh.")
+                throw SmartVideoError.invalidMedia("Tệp nhạc không có track âm thanh.")
             }
-            let musicLength = try await musicAsset.load(.duration)
-            guard musicLength.isValid && CMTimeCompare(musicLength, .zero) > 0 else {
-                throw SmartVideoError.invalidMedia("Tệp nhạc có thời lượng không hợp lệ.")
+            let sourceDuration = try await musicAsset.load(.duration)
+            let maxStart = max(0, sourceDuration.seconds - 0.1)
+            let safeStart = min(max(0, musicStartSeconds), maxStart)
+            let start = CMTime(seconds: safeStart, preferredTimescale: 600)
+            let remainingMusic = CMTimeSubtract(sourceDuration, start)
+            guard remainingMusic.isValid && CMTimeCompare(remainingMusic, .zero) > 0 else {
+                throw SmartVideoError.invalidMedia("Không còn nhạc sau điểm cắt.")
             }
-            guard let musicTrack = composition.addMutableTrack(
+            guard let track = composition.addMutableTrack(
                 withMediaType: .audio,
                 preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else {
-                throw SmartVideoError.cannotCreateWriter
-            }
+            ) else { throw SmartVideoError.cannotCreateWriter }
 
-            // Repeat the selected track for the length of the full video.
-            var at = CMTime.zero
-            while CMTimeCompare(at, cursor) < 0 {
+            var outputTime = CMTime.zero
+            while CMTimeCompare(outputTime, cursor) < 0 {
                 try Task.checkCancellation()
-                let remaining = CMTimeSubtract(cursor, at)
-                let length = CMTimeMinimum(remaining, musicLength)
-                try musicTrack.insertTimeRange(
-                    CMTimeRange(start: .zero, duration: length),
+                let availableVideo = CMTimeSubtract(cursor, outputTime)
+                let length = CMTimeMinimum(availableVideo, remainingMusic)
+                try track.insertTimeRange(
+                    CMTimeRange(start: start, duration: length),
                     of: musicSource,
-                    at: at
+                    at: outputTime
                 )
-                at = CMTimeAdd(at, length)
+                outputTime = CMTimeAdd(outputTime, length)
+                if !repeatShortMusic { break }
             }
-
-            let params = AVMutableAudioMixInputParameters(track: musicTrack)
-            params.setVolume(min(1, max(0, musicVolume)), at: .zero)
-            let audioMix = AVMutableAudioMix()
-            audioMix.inputParameters = [params]
-            mix = audioMix
+            musicEnd = outputTime
+            let params = AVMutableAudioMixInputParameters(track: track)
+            let baseVolume = min(1, max(0, musicVolume))
+            let underVoice = voiceoverURL == nil ? baseVolume : baseVolume * 0.25
+            params.setVolume(underVoice, at: .zero)
+            let fadeIn = CMTimeMinimum(
+                outputTime, CMTime(seconds: 0.25, preferredTimescale: 600)
+            )
+            if CMTimeCompare(fadeIn, .zero) > 0 {
+                params.setVolumeRamp(fromStartVolume: 0, toEndVolume: underVoice,
+                    timeRange: CMTimeRange(start: .zero, duration: fadeIn))
+            }
+            musicParameters = params
         }
 
+        if let voiceoverURL {
+            let voiceAsset = AVURLAsset(url: voiceoverURL)
+            guard let narration = try await voiceAsset.loadTracks(withMediaType: .audio).first else {
+                throw SmartVideoError.invalidMedia("Tệp thuyết minh không có âm thanh.")
+            }
+            let narrationDuration = try await voiceAsset.load(.duration)
+            let length = CMTimeMinimum(cursor, narrationDuration)
+            if CMTimeCompare(length, .zero) > 0 {
+                guard let track = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else { throw SmartVideoError.cannotCreateWriter }
+                try track.insertTimeRange(CMTimeRange(start: .zero, duration: length),
+                                          of: narration, at: .zero)
+                narrationEnd = length
+            }
+        }
+
+        if let musicParameters {
+            let fadeLength = CMTimeMinimum(musicEnd, CMTime(seconds: 1.2, preferredTimescale: 600))
+            if CMTimeCompare(fadeLength, .zero) > 0 {
+                let from = CMTimeSubtract(musicEnd, fadeLength)
+                let base = min(1, max(0, musicVolume))
+                let ducked = base * 0.25
+                // Restore music level when narration finishes, if enough
+                // time remains for a smooth transition before fade-out.
+                if CMTimeCompare(narrationEnd, .zero) > 0,
+                   CMTimeCompare(narrationEnd, from) < 0 {
+                    musicParameters.setVolumeRamp(fromStartVolume: ducked, toEndVolume: base,
+                        timeRange: CMTimeRange(start: narrationEnd,
+                                              duration: CMTime(seconds: 0.2, preferredTimescale: 600)))
+                }
+                let effectiveEndVolume = CMTimeCompare(narrationEnd, from) >= 0 ? ducked : base
+                musicParameters.setVolumeRamp(fromStartVolume: effectiveEndVolume, toEndVolume: 0,
+                    timeRange: CMTimeRange(start: from, duration: fadeLength))
+            }
+            mixParameters.append(musicParameters)
+        }
+
+        let mix: AVMutableAudioMix?
+        if mixParameters.isEmpty {
+            mix = nil
+        } else {
+            let value = AVMutableAudioMix()
+            value.inputParameters = mixParameters
+            mix = value
+        }
+
+        SubtitleOverlay.attach(to: videoComposition, size: size, cues: subtitles)
         let exportURL = MediaStorage.newExportURL()
         do {
             guard let exporter = AVAssetExportSession(
@@ -202,14 +272,17 @@ final class VideoRenderer {
     private func aspectFitTransform(
         size: CGSize,
         preferredTransform: CGAffineTransform,
-        canvas: CGSize
+        canvas: CGSize,
+        contentMode: CanvasContentMode
     ) -> CGAffineTransform {
         let transformed = CGRect(origin: .zero, size: size)
             .applying(preferredTransform).standardized
         guard transformed.width > 0 && transformed.height > 0 else {
             return .identity
         }
-        let scale = min(canvas.width / transformed.width, canvas.height / transformed.height)
+        let x = canvas.width / transformed.width
+        let y = canvas.height / transformed.height
+        let scale = contentMode == .fill ? max(x, y) : min(x, y)
         let offsetX = (canvas.width - transformed.width * scale) / 2
         let offsetY = (canvas.height - transformed.height * scale) / 2
 
@@ -227,7 +300,8 @@ final class VideoRenderer {
         to destinationURL: URL,
         duration: Double,
         size: CGSize,
-        bitRate: Int
+        bitRate: Int,
+        contentMode: CanvasContentMode
     ) async throws {
         guard let image = CIImage(contentsOf: imageURL, options: [.applyOrientationProperty: true]) else {
             throw SmartVideoError.invalidMedia("Không mở được ảnh: \(imageURL.lastPathComponent)")
@@ -238,7 +312,9 @@ final class VideoRenderer {
         guard extent.width > 0 && extent.height > 0 else {
             throw SmartVideoError.invalidMedia("Ảnh không có kích thước hợp lệ.")
         }
-        let scale = min(size.width / extent.width, size.height / extent.height)
+        let x = size.width / extent.width
+        let y = size.height / extent.height
+        let scale = contentMode == .fill ? max(x, y) : min(x, y)
         let fitted = image
             .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
