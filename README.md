@@ -129,3 +129,28 @@ TXT         → AVSpeechSynthesizer.write() → PCM CAF → track thuyết minh 
 Ảnh/Video   → Transform/Flip → AVMutableVideoComposition → MP4 + lọc metadata
 ```
 
+
+
+## ViePN Smart Video v2.5.0 – VFX Library
+
+Đã thêm tab **VFX** bên cạnh **Khung** trong thanh công cụ dựng phim. Đây là thư viện **9 hiệu ứng được vẽ bằng Core Animation/Core Graphics**, không yêu cầu server hay tải gói asset ngoài:
+
+| Hiệu ứng | Xuất MP4 | Xem trước trong editor |
+| --- | --- | --- |
+| Hạt phim | Texture nhiễu, nhấp nháy opacity | Mô phỏng tĩnh |
+| Viền tối | Radial vignette | Mô phỏng |
+| Lóa ánh sáng | Gradient ấm trượt ngang | Mô phỏng tĩnh |
+| Tuyết rơi | Các hạt chuyển động | Mô phỏng tĩnh |
+| Mưa | Các vệt mưa rơi | Mô phỏng tĩnh |
+| Tia lửa | Những hạt sáng bay lên | Mô phỏng tĩnh |
+| Bụi ánh sáng | Các hạt bụi trôi nổi | Mô phỏng tĩnh |
+| Nháy sáng | Flash sáng lặp | Mô phỏng tĩnh |
+| Viền điện ảnh | Thanh đen trên/dưới | Mô phỏng |
+
+Tại VFX, chọn/bỏ chọn nhiều hiệu ứng, chỉnh thanh **Cường độ VFX** (10–100%), bấm **Xóa tất cả** để tắt hoặc chọn một trong 2 phối cảnh có sẵn: **Phim điện ảnh** (hạt phim + vignette + thanh đen) và **Mộng mơ** (bụi + lóa sáng).
+
+**Đầu ra:** `VideoRenderer` truyền lựa chọn vào `SubtitleOverlay`; `VFXOverlayLibrary` tạo các `CALayer` để đặt lên ảnh/video và phụ đề được đặt ở phía trên. Toàn bộ VFX được render vào MP4 qua cùng một `AVVideoCompositionCoreAnimationTool` (không phải giao diện trang trí).
+
+**Tối ưu iPhone 12 Pro Max:** hoạt ảnh tạo procedurally, 1 texture grain kích thước nhỏ, khoảng 24–65 layer hạt mỗi hiệu ứng. Nên chọn không quá 3 hiệu ứng nặng cùng lúc khi xuất 1080p; với timeline dài hãy thử 720p trước. Khi hiệu ứng đã bật, bản preview chỉ **minh họa hình thái tĩnh**, không thể hiện chính xác chuyển động của phiên bản đã render. Hiện hiệu ứng áp dụng lên **toàn dự án**, chưa có VFX riêng từng clip hoặc keyframe trên timeline.
+
+**Kiểm thử:** GitHub Actions xác nhận biên dịch và đóng gói IPA chưa ký. Chưa thể xác nhận tốc độ, tính năng animation của AVFoundation hoặc khả năng render VFX dài trên iPhone 12 Pro Max thực tế, cần thử trên thiết bị.
