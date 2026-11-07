@@ -154,3 +154,27 @@ Tại VFX, chọn/bỏ chọn nhiều hiệu ứng, chỉnh thanh **Cường đ�
 **Tối ưu iPhone 12 Pro Max:** hoạt ảnh tạo procedurally, 1 texture grain kích thước nhỏ, khoảng 24–65 layer hạt mỗi hiệu ứng. Nên chọn không quá 3 hiệu ứng nặng cùng lúc khi xuất 1080p; với timeline dài hãy thử 720p trước. Khi hiệu ứng đã bật, bản preview chỉ **minh họa hình thái tĩnh**, không thể hiện chính xác chuyển động của phiên bản đã render. Hiện hiệu ứng áp dụng lên **toàn dự án**, chưa có VFX riêng từng clip hoặc keyframe trên timeline.
 
 **Kiểm thử:** GitHub Actions xác nhận biên dịch và đóng gói IPA chưa ký. Chưa thể xác nhận tốc độ, tính năng animation của AVFoundation hoặc khả năng render VFX dài trên iPhone 12 Pro Max thực tế, cần thử trên thiết bị.
+
+
+## ViePN Smart Video v2.6.0 – Cinematic VFX Rework
+
+Phiên bản này được chỉnh sửa dựa trên video mẫu SmartVideo-CFC7EC97.mp4 do người dùng cung cấp: gameplay ngang nhỏ ở giữa khung dọc, các mảng đỏ/nâu hình chữ nhật của hiệu ứng light leak phủ cả vùng đen.
+
+### Những thay đổi kỹ thuật
+
+- **Light Leak v2**: thay dải màu tuyến tính có biên hình chữ nhật bằng gradient bán kính với alpha trong suốt ở rìa, màu cam dịu; giảm độ che nội dung.
+- **Auto VFX Content Bounds**: ước lượng vùng sáng/thấy được bằng thumbnail kích thước 64×112 px; tự giới hạn VFX lên khu vực khung video (kể cả letterbox được ghi sẵn). Có lựa chọn "Toàn khung" để cố ý phủ lên toàn bộ canvas.
+- **Giảm độ tối và mật độ hiệu ứng**: vignette tối đa khoảng 42% × cường độ; hạt mưa, tuyết và tia lửa giảm độ đậm để giữ nội dung nhìn rõ. Mặc định cường độ 30% thay vì 55%.
+- **Điểm bắt đầu/kết thúc VFX**: trong tab VFX, chỉnh mốc thời gian áp dụng hiệu ứng bằng hai thanh. Hạn chế: cùng một khoảng thời gian cho toàn bộ VFX đã chọn, chưa phải keyframe độc lập trên từng clip.
+- **4 preset mới**: Bokeh mềm, Vệt sáng ngang, Scanlines và Trầy xước phim. Tổng cộng **13 preset VFX**.
+- **Preview tốt hơn**: mô phỏng lóa sáng bằng gradient mềm và có xem trước tĩnh cho bốn preset mới. Các chuyển động thực tế chỉ hiển thị đầy đủ sau khi xuất MP4.
+
+### Quy trình kiểm tra đề xuất trên iPhone 12 Pro Max
+
+1. Nhập một video 16:9 hoặc video dọc có gameplay 16:9 và dải đen như mẫu.
+2. Chọn khung 9:16 → VFX → **Chỉ trong hình** → **Lóa ánh sáng** cường độ 20–30%.
+3. Xuất một video ngắn ở 720p/30FPS và kiểm tra không còn mảng đỏ/hình chữ nhật trên vùng đen.
+4. Thử Bokeh và Vệt sáng với cường độ 20–40%; đối chiếu bản MP4 với preview.
+5. Khi nhiều clip có vùng nội dung khác nhau, bộ phát hiện hiện dựa trên **clip đầu tiên**; vùng VFX chưa thay đổi tự động theo từng clip. Mọi tính năng mới cần kiểm thử trên thiết bị thật.
+
+Chạy trực tiếp bằng Core Animation/AVFoundation. Không có mô hình AI tổng hợp VFX hoặc asset VFX độc quyền bên thứ ba.
