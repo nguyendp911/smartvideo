@@ -12,6 +12,7 @@ final class EditorViewModel: ObservableObject {
     @Published var musicVolume: Float = 0.38
     @Published var musicStartSeconds: Double = 0
     @Published var musicDuration: Double = 0
+    @Published var isScanningMusic = false
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
     @Published var quality: RenderQuality = .fullHD
@@ -75,6 +76,24 @@ final class EditorViewModel: ObservableObject {
             }
         } catch {
             errorText = "Không nhập được nhạc: \(error.localizedDescription)"
+        }
+    }
+
+    func suggestMusicCut() {
+        guard let url = musicURL, !isScanningMusic else { return }
+        isScanningMusic = true
+        Task {
+            do {
+                let suggested = try await Task.detached(priority: .userInitiated) {
+                    try await MusicAnalyzer.firstAudibleSecond(in: url)
+                }.value
+                if musicURL == url {
+                    musicStartSeconds = min(suggested, max(0, musicDuration - 0.1))
+                }
+            } catch {
+                errorText = "Không tự tìm được điểm vào nhạc: \(error.localizedDescription)"
+            }
+            isScanningMusic = false
         }
     }
 

@@ -556,6 +556,16 @@ struct EditorView: View {
                         .monospacedDigit()
                 }.font(.caption)
 
+                Button {
+                    model.suggestMusicCut()
+                } label: {
+                    Label(model.isScanningMusic ? "Đang dò tiếng nhạc…" : "Tự bỏ phần mở đầu im lặng",
+                          systemImage: "wand.and.stars")
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+                .disabled(model.isScanningMusic)
+
                 Slider(value: $model.musicStartSeconds,
                        in: 0...max(0.1, model.musicDuration - 0.1),
                        step: 0.5)
