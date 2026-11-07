@@ -86,3 +86,14 @@ PhotosPicker không yêu cầu quyền xem toàn bộ thư viện. App chỉ xin
 - Sao chép file đã chọn vào vùng riêng của ứng dụng trong lúc file URL còn quyền truy cập.
 - Chỉ hiển thị nút cắt nhạc khi đã xác minh track âm thanh và thời lượng hữu hạn, hợp lệ; tệp lỗi trả thông báo thay vì đưa NaN vào SwiftUI Slider.
 - Biên dịch GitHub Actions chỉ xác nhận build; chưa thay thế kiểm thử thao tác chọn file trên máy thật.
+
+## Nâng cấp dựng phim v2.3.0
+
+- Tab **Hiệu ứng** trên thanh công cụ: chọn **Cắt thẳng** hoặc **Hòa tan (cross-dissolve)** và thời gian chuyển cảnh từ 0,2 đến 0,8 giây. Hai track video chồng hình thực sự, giảm thời lượng timeline theo tổng các lần chồng.
+- **Điều chỉnh tốc độ video** tại từng clip: 0,5× / 1× / 1,5× / 2×; có tác dụng khi xuất MP4 và khi xem trước clip. Tăng/giảm tốc có thể thay đổi cao độ tiếng gốc.
+- **Hiệu ứng Ken Burns cho ảnh tĩnh**: zoom in, zoom out, pan trái và pan phải; sinh frame mới bằng Core Image khi xuất.
+- **Màu cho ảnh**: nguyên bản, điện ảnh, đen trắng, màu ấm và màu lạnh. Bộ màu hiện áp dụng cho ảnh tĩnh, **chưa** áp dụng cho clip video.
+- **Một chạm dựng điện ảnh**: bật chuyển cảnh hòa tan 0,45 giây, phối hợp chuyển động ảnh và bộ màu điện ảnh.
+- Với iPhone 12 Pro Max nên thử dự án ngắn 720p hoặc 1080p/30FPS trước; preview của ảnh tĩnh chưa mô phỏng đầy đủ chuyển động/điều màu, xuất video mới thể hiện hiệu ứng.
+
+**Trạng thái kiểm thử**: workflow GitHub Actions biên dịch Swift; cần kiểm thử video có nhiều đoạn, nguồn xoay dọc/ngang, âm thanh, tốc độ và chuyển cảnh trên máy thật.

@@ -203,6 +203,18 @@ final class EditorViewModel: ObservableObject {
         clips.removeAll { $0.id == id }
     }
 
+    /// One-tap edit template using real motion and dissolve exports.
+    /// This modifies project settings only and never touches original media.
+    func applyCinematicPreset() {
+        transition = .dissolve
+        transitionSeconds = 0.45
+        for index in clips.indices where clips[index].kind == .image {
+            let motions: [ImageMotion] = [.zoomIn, .panRight, .zoomOut, .panLeft]
+            clips[index].imageMotion = motions[index % motions.count]
+            clips[index].imageLook = .cinematic
+        }
+    }
+
     func moveClip(id: UUID, delta: Int) {
         guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
         let to = index + delta

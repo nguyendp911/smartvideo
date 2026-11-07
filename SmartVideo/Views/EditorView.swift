@@ -316,7 +316,7 @@ struct EditorView: View {
                                     }
                                     .frame(width: 76, height: 46)
                                     .clipShape(RoundedRectangle(cornerRadius: 7))
-                                    Text(String(format: "%.1fs", clip.duration))
+                                    Text(String(format: "%.1fs", clip.renderedDuration))
                                         .font(.caption2.monospacedDigit())
                                         .foregroundStyle(.white)
                                 }
@@ -429,6 +429,27 @@ struct EditorView: View {
 
     private var effectsPanel: some View {
         VStack(alignment: .leading, spacing: 11) {
+            Button {
+                model.applyCinematicPreset()
+            } label: {
+                HStack {
+                    Image(systemName: "sparkles.rectangle.stack")
+                    VStack(alignment: .leading) {
+                        Text("Dựng phong cách điện ảnh")
+                            .font(.subheadline.bold())
+                        Text("Tự chọn chuyển cảnh và chuyển động cho ảnh")
+                            .font(.caption2)
+                            .opacity(0.85)
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                }
+                .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+            .disabled(model.clips.isEmpty)
+
             Text("Chuyển cảnh giữa các đoạn")
                 .font(.subheadline.bold())
             HStack(spacing: 8) {
