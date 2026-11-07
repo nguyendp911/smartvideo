@@ -15,6 +15,8 @@ final class VideoRenderer {
 
     func render(
         clips: [TimelineClip],
+        transition: VideoTransition,
+        transitionSeconds: Double,
         musicURL: URL?,
         musicVolume: Float,
         musicStartSeconds: Double,
@@ -52,7 +54,9 @@ final class VideoRenderer {
                     duration: clip.duration,
                     size: size,
                     bitRate: quality.bitRate,
-                    contentMode: contentMode
+                    contentMode: contentMode,
+                    imageMotion: clip.imageMotion,
+                    imageLook: clip.imageLook
                 )
                 sourceURLs.append(temporary)
             } else {
@@ -60,78 +64,21 @@ final class VideoRenderer {
             }
         }
 
-        let composition = AVMutableComposition()
-        guard let destinationVideo = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            throw SmartVideoError.cannotCreateWriter
-        }
+        // Compose into two alternating tracks. Adjacent segments overlap
+        // only when the user chooses the dissolve transition.
+        let timeline = try await TimelineComposer().compose(
+            clips: clips,
+            sourceURLs: sourceURLs,
+            renderSize: size,
+            contentMode: contentMode,
+            transition: transition,
+            transitionSeconds: transitionSeconds
+        )
+        let composition = timeline.composition
+        let videoComposition = timeline.videoComposition
+        let cursor = timeline.duration
 
-        let originalAudio = keepOriginalAudio
-            ? composition.addMutableTrack(withMediaType: .audio,
-                                          preferredTrackID: kCMPersistentTrackID_Invalid)
-            : nil
-
-        var instructions: [AVMutableVideoCompositionInstruction] = []
-        var cursor = CMTime.zero
-
-        for (clip, sourceURL) in zip(clips, sourceURLs) {
-            try Task.checkCancellation()
-            let asset = AVURLAsset(url: sourceURL)
-            guard let sourceVideo = try await asset.loadTracks(withMediaType: .video).first else {
-                throw SmartVideoError.missingVideoTrack(clip.filename)
-            }
-
-            let sourceDuration = try await asset.load(.duration)
-            let from = clip.kind == .video
-                ? CMTime(seconds: clip.startTime, preferredTimescale: 600)
-                : .zero
-            let available = CMTimeSubtract(sourceDuration, from)
-            let desired = CMTime(seconds: clip.duration, preferredTimescale: 600)
-            let actual = CMTimeMinimum(available, desired)
-            guard actual.isValid && CMTimeCompare(actual, .zero) > 0 else {
-                throw SmartVideoError.invalidMedia("Đoạn video có thời lượng không hợp lệ: \(clip.filename)")
-            }
-
-            let sourceRange = CMTimeRange(start: from, duration: actual)
-            try destinationVideo.insertTimeRange(sourceRange, of: sourceVideo, at: cursor)
-
-            if let destinationAudio = originalAudio,
-               let sourceAudio = try await asset.loadTracks(withMediaType: .audio).first {
-                let trackRange = try await sourceAudio.load(.timeRange)
-                let audioAvailable = CMTimeSubtract(trackRange.end, from)
-                if audioAvailable.isValid && CMTimeCompare(audioAvailable, .zero) > 0 {
-                    let audioLength = CMTimeMinimum(actual, audioAvailable)
-                    try destinationAudio.insertTimeRange(
-                        CMTimeRange(start: from, duration: audioLength),
-                        of: sourceAudio,
-                        at: cursor
-                    )
-                }
-            }
-
-            let naturalSize = try await sourceVideo.load(.naturalSize)
-            let preferred = try await sourceVideo.load(.preferredTransform)
-            let layer = AVMutableVideoCompositionLayerInstruction(assetTrack: destinationVideo)
-            layer.setTransform(
-                aspectFitTransform(size: naturalSize, preferredTransform: preferred, canvas: size, contentMode: contentMode),
-                at: cursor
-            )
-            let instruction = AVMutableVideoCompositionInstruction()
-            instruction.timeRange = CMTimeRange(start: cursor, duration: actual)
-            instruction.layerInstructions = [layer]
-            instruction.backgroundColor = UIColor.black.cgColor
-            instructions.append(instruction)
-            cursor = CMTimeAdd(cursor, actual)
-        }
-
-        let videoComposition = AVMutableVideoComposition()
-        videoComposition.instructions = instructions
-        videoComposition.frameDuration = CMTime(value: 1, timescale: framesPerSecond)
-        videoComposition.renderSize = size
-
-        var mixParameters: [AVAudioMixInputParameters] = []
+        var mixParameters: [AVAudioMixInputParameters] = timeline.originalMixParameters
         var musicParameters: AVMutableAudioMixInputParameters?
         var musicEnd = CMTime.zero
         var narrationEnd = CMTime.zero
@@ -270,41 +217,15 @@ final class VideoRenderer {
         }
     }
 
-    /// Rebase rotated source coordinates into a visible rectangle,
-    /// scale with letterboxing, and center in the requested output canvas.
-    private func aspectFitTransform(
-        size: CGSize,
-        preferredTransform: CGAffineTransform,
-        canvas: CGSize,
-        contentMode: CanvasContentMode
-    ) -> CGAffineTransform {
-        let transformed = CGRect(origin: .zero, size: size)
-            .applying(preferredTransform).standardized
-        guard transformed.width > 0 && transformed.height > 0 else {
-            return .identity
-        }
-        let x = canvas.width / transformed.width
-        let y = canvas.height / transformed.height
-        let scale = contentMode == .fill ? max(x, y) : min(x, y)
-        let offsetX = (canvas.width - transformed.width * scale) / 2
-        let offsetY = (canvas.height - transformed.height * scale) / 2
-
-        return preferredTransform
-            .concatenating(CGAffineTransform(
-                translationX: -transformed.minX,
-                y: -transformed.minY
-            ))
-            .concatenating(CGAffineTransform(scaleX: scale, y: scale))
-            .concatenating(CGAffineTransform(translationX: offsetX, y: offsetY))
-    }
-
     private func writeStillImage(
         at imageURL: URL,
         to destinationURL: URL,
         duration: Double,
         size: CGSize,
         bitRate: Int,
-        contentMode: CanvasContentMode
+        contentMode: CanvasContentMode,
+        imageMotion: ImageMotion,
+        imageLook: ImageLook
     ) async throws {
         guard let image = CIImage(contentsOf: imageURL, options: [.applyOrientationProperty: true]) else {
             throw SmartVideoError.invalidMedia("Không mở được ảnh: \(imageURL.lastPathComponent)")
@@ -326,7 +247,8 @@ final class VideoRenderer {
                 y: (size.height - extent.height * scale) / 2
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
-        let frameImage = fitted.composited(over: black)
+        let styled = colorGrade(fitted, preset: imageLook)
+        let staticFrame = styled.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: .mov)
@@ -387,6 +309,35 @@ final class VideoRenderer {
             guard status == kCVReturnSuccess, let pixelBuffer = newPixelBuffer else {
                 throw SmartVideoError.cannotCreateWriter
             }
+            let progress = numberOfFrames <= 1 ? 0 :
+                Double(frameIndex) / Double(numberOfFrames - 1)
+            let zoom: CGFloat
+            let shift: CGFloat
+            switch imageMotion {
+            case .none:
+                zoom = 1; shift = 0
+            case .zoomIn:
+                zoom = CGFloat(1 + 0.12 * progress); shift = 0
+            case .zoomOut:
+                zoom = CGFloat(1.12 - 0.12 * progress); shift = 0
+            case .panLeft:
+                zoom = 1.10; shift = CGFloat((0.5 - progress) * 0.065) * size.width
+            case .panRight:
+                zoom = 1.10; shift = CGFloat((progress - 0.5) * 0.065) * size.width
+            }
+            let frameImage: CIImage
+            if imageMotion == .none {
+                frameImage = staticFrame
+            } else {
+                let scale = CGAffineTransform(
+                    translationX: size.width / 2, y: size.height / 2
+                )
+                .scaledBy(x: zoom, y: zoom)
+                .translatedBy(x: -size.width / 2, y: -size.height / 2)
+                .translatedBy(x: shift / zoom, y: 0)
+                frameImage = styled.transformed(by: scale)
+                    .composited(over: black).cropped(to: canvasRect)
+            }
             imageContext.render(frameImage, to: pixelBuffer, bounds: canvasRect, colorSpace: colorSpace)
             let frameTime = CMTime(value: Int64(frameIndex), timescale: framesPerSecond)
             guard adaptor.append(pixelBuffer, withPresentationTime: frameTime) else {
@@ -408,4 +359,35 @@ final class VideoRenderer {
             )
         }
     }
+    /// Lightweight Core Image photo color looks.
+    private func colorGrade(_ image: CIImage, preset: ImageLook) -> CIImage {
+        switch preset {
+        case .original:
+            return image
+        case .cinematic:
+            return image.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0.82,
+                kCIInputContrastKey: 1.16,
+                kCIInputBrightnessKey: -0.015
+            ])
+        case .mono:
+            return image.applyingFilter("CIColorControls", parameters: [
+                kCIInputSaturationKey: 0,
+                kCIInputContrastKey: 1.1
+            ])
+        case .warm:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1.065, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 1.01, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 0.92, w: 0)
+            ])
+        case .cool:
+            return image.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 0.94, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 1.0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1.07, w: 0)
+            ])
+        }
+    }
+
 }
