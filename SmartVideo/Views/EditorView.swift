@@ -635,6 +635,169 @@ struct EditorView: View {
         }
     }
 
+    private var highlightPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(.cyan)
+                Text("Smart Highlights – xử lý trên iPhone")
+                    .font(.subheadline.bold())
+            }
+            Text("AI Vision nhận diện khuôn mặt, vùng gây chú ý và thay đổi cảnh. Highlight nhạc dựa trên tín hiệu âm lượng, không hiểu lời bài hát.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+
+            Divider()
+            Text("Video nổi bật")
+                .font(.subheadline.bold())
+
+            if let clip = selectedClip, clip.kind == .video {
+                Text("Nguồn: \(clip.filename)")
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                Button {
+                    model.suggestVideoHighlights(for: clip)
+                } label: {
+                    Label(model.isAnalyzingVideoHighlights ?
+                          "Đang tìm cảnh nổi bật…" : "Phân tích video",
+                          systemImage: "eye")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isAnalyzingVideoHighlights)
+
+                if model.isAnalyzingVideoHighlights {
+                    ProgressView("Đang phân tích các khung hình bằng Vision…")
+                        .font(.caption2)
+                }
+
+                if model.analyzedClipID == clip.id && !model.videoHighlights.isEmpty {
+                    ForEach(model.videoHighlights) { sample in
+                        HStack(spacing: 7) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(String(format: "%.1fs – %.1fs",
+                                            sample.start,
+                                            sample.start + sample.duration))
+                                    .font(.caption.monospacedDigit())
+                                Text(sample.reason)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Button("Lấy đoạn") {
+                                if let id = model.applyVideoHighlights(
+                                    clipID: clip.id, selected: [sample]
+                                ) {
+                                    selectedClipID = id
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding(6)
+                        .background(Color.white.opacity(0.05),
+                                    in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    Button {
+                        if let id = model.applyVideoHighlights(
+                            clipID: clip.id,
+                            selected: model.videoHighlights
+                        ) {
+                            selectedClipID = id
+                        }
+                    } label: {
+                        Label("Tạo montage từ các highlight", systemImage: "film.stack")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            } else {
+                Text("Chọn một clip video trên Timeline để AI đề xuất đoạn nổi bật.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            if model.previousTimeline != nil {
+                Button {
+                    model.undoHighlights()
+                    selectedClipID = model.clips.first?.id
+                } label: {
+                    Label("Hoàn tác lần lấy highlight gần nhất",
+                          systemImage: "arrow.uturn.backward")
+                }
+                .buttonStyle(.bordered)
+            }
+
+            Divider()
+            Text("Nhạc MP3 nổi bật")
+                .font(.subheadline.bold())
+            if model.musicURL == nil {
+                Button {
+                    activeFilePicker = .music
+                    showDocumentImporter = true
+                } label: {
+                    Label("Chọn nhạc MP3 hoặc M4A", systemImage: "music.note")
+                }
+                .buttonStyle(.bordered)
+            } else {
+                Text(model.musicURL?.lastPathComponent ?? "Đã chọn nhạc")
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+                Picker("Độ dài", selection: $model.musicHighlightLength) {
+                    Text("15 giây").tag(15.0)
+                    Text("20 giây").tag(20.0)
+                    Text("30 giây").tag(30.0)
+                }
+                .pickerStyle(.segmented)
+
+                Button {
+                    model.suggestMusicHighlights()
+                } label: {
+                    Label(model.isAnalyzingMusicHighlights ?
+                          "Đang phân tích nhạc…" : "Tìm đoạn nhạc cao trào",
+                          systemImage: "waveform.path")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isAnalyzingMusicHighlights || model.isImportingAudio)
+
+                if model.isAnalyzingMusicHighlights {
+                    ProgressView("Đang phân tích mức âm lượng và độ biến thiên…")
+                        .font(.caption2)
+                }
+
+                ForEach(model.musicHighlights) { highlight in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(String(format: "%.1fs – %.1fs",
+                                        highlight.start,
+                                        highlight.start + highlight.duration))
+                                .font(.caption.monospacedDigit())
+                            Text(String(format: "Điểm tín hiệu %.0f%%",
+                                        highlight.score * 100))
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button("Lấy đoạn") {
+                            model.useMusicHighlight(highlight)
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                if model.musicHighlightDuration > 0 {
+                    Text(String(format: "Đang dùng %.1f giây nhạc từ mốc %.1fs",
+                                model.musicHighlightDuration,
+                                model.musicStartSeconds))
+                        .font(.caption)
+                        .foregroundStyle(.cyan)
+                }
+            }
+            Text("Đây là gợi ý tự động, không xóa file nguồn. Các video dài được lấy mẫu giới hạn nên có thể bỏ lỡ cảnh hay.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+    }
+
     private var framePanel: some View {
         VStack(alignment: .leading, spacing: 11) {
             Text("Chọn tỷ lệ khung hình")
