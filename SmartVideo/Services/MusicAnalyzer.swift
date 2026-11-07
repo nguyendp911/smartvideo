@@ -45,9 +45,10 @@ enum MusicAnalyzer {
             let byteLength = CMBlockBufferGetDataLength(data)
             guard byteLength >= 2 else { continue }
             var samples = [Int16](repeating: 0, count: byteLength / 2)
+            let sampleByteCount = samples.count * 2
             let result = samples.withUnsafeMutableBytes { address in
                 CMBlockBufferCopyDataBytes(
-                    data, atOffset: 0, dataLength: samples.count * 2,
+                    data, atOffset: 0, dataLength: sampleByteCount,
                     destination: address.baseAddress!
                 )
             }
