@@ -22,6 +22,15 @@ final class EditorViewModel: ObservableObject {
     @Published var voiceoverOffset: Double = 0
     @Published var voiceoverVolume: Float = 1
     @Published var stripMetadata: Bool = true
+    @Published var musicHighlightLength: Double = 20
+    @Published var musicHighlights: [MusicHighlight] = []
+    @Published var isAnalyzingMusicHighlights = false
+    @Published var videoHighlights: [VideoHighlight] = []
+    @Published var analyzedClipID: UUID?
+    @Published var isAnalyzingVideoHighlights = false
+    @Published var previousTimeline: [TimelineClip]?
+    @Published var narrationText = ""
+    @Published var isGeneratingNarration = false
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
     @Published var quality: RenderQuality = .fullHD
@@ -100,6 +109,8 @@ final class EditorViewModel: ObservableObject {
                     }
                     musicDuration = duration
                     musicStartSeconds = 0
+            musicHighlightDuration = 0
+            musicHighlights = []
                     musicURL = localURL
                 } catch {
                     try? FileManager.default.removeItem(at: localURL)
@@ -201,6 +212,122 @@ final class EditorViewModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         return try MediaStorage.copyToMedia(url, fallbackExtension: fallbackExtension)
+    }
+
+    // MARK: - AI-assisted local video selection
+
+    func suggestVideoHighlights(for clip: TimelineClip) {
+        guard clip.kind == .video, !isAnalyzingVideoHighlights else { return }
+        isAnalyzingVideoHighlights = true
+        analyzedClipID = clip.id
+        videoHighlights = []
+        let sourceURL = clip.fileURL
+        let sourceStart = clip.startTime
+        let sourceDuration = clip.duration
+
+        Task {
+            defer { isAnalyzingVideoHighlights = false }
+            do {
+                let highlights = try await Task.detached(priority: .utility) {
+                    try await VideoHighlightsAnalyzer.find(
+                        in: sourceURL,
+                        sourceStart: sourceStart,
+                        sourceDuration: sourceDuration
+                    )
+                }.value
+                if analyzedClipID == clip.id {
+                    videoHighlights = highlights
+                }
+            } catch {
+                errorText = "Không chọn được video highlight: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    @discardableResult
+    func applyVideoHighlights(clipID: UUID, selected: [VideoHighlight]) -> UUID? {
+        guard let index = clips.firstIndex(where: { $0.id == clipID }),
+              clips[index].kind == .video,
+              !selected.isEmpty else { return nil }
+
+        let source = clips[index]
+        var replacements: [TimelineClip] = []
+        for highlight in selected.sorted(by: { $0.start < $1.start }) {
+            var result = source
+            result.id = UUID()
+            result.startTime = min(
+                source.originalDuration,
+                max(0, source.startTime + highlight.start)
+            )
+            result.duration = min(
+                highlight.duration,
+                max(0, source.originalDuration - result.startTime)
+            )
+            if result.duration >= 0.1 {
+                replacements.append(result)
+            }
+        }
+        guard !replacements.isEmpty else { return nil }
+        previousTimeline = clips
+        clips.replaceSubrange(index...index, with: replacements)
+        analyzedClipID = nil
+        videoHighlights = []
+        return replacements.first?.id
+    }
+
+    func undoHighlights() {
+        guard let previousTimeline else { return }
+        clips = previousTimeline
+        self.previousTimeline = nil
+        analyzedClipID = nil
+        videoHighlights = []
+    }
+
+    // MARK: - Music highlights
+
+    func suggestMusicHighlights() {
+        guard let file = musicURL, !isAnalyzingMusicHighlights else { return }
+        let length = musicHighlightLength
+        musicHighlights = []
+        isAnalyzingMusicHighlights = true
+        Task {
+            defer { isAnalyzingMusicHighlights = false }
+            do {
+                let suggestions = try await Task.detached(priority: .utility) {
+                    try await SmartMusicHighlights.find(in: file, desiredLength: length)
+                }.value
+                if file == musicURL {
+                    musicHighlights = suggestions
+                }
+            } catch {
+                errorText = "Phân tích nhạc thất bại: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func useMusicHighlight(_ highlight: MusicHighlight) {
+        guard musicURL != nil else { return }
+        musicStartSeconds = min(max(0, highlight.start),
+                                max(0, musicDuration - 0.1))
+        musicHighlightDuration = min(highlight.duration,
+                                     max(0, musicDuration - musicStartSeconds))
+    }
+
+    // MARK: - Narration from text
+
+    func generateNarrationFromText() {
+        guard !isGeneratingNarration else { return }
+        isGeneratingNarration = true
+        let text = narrationText
+        Task {
+            defer { isGeneratingNarration = false }
+            do {
+                let url = try await NarrationSpeechWriter().render(text: text)
+                voiceoverURL = url
+            } catch {
+                errorText = "Không tạo được giọng thuyết minh: \(error.localizedDescription)"
+            }
+        }
     }
 
     func removeClip(id: UUID) {
