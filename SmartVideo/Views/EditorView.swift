@@ -9,6 +9,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case captions = "Phụ đề"
     case audio = "Âm thanh"
     case effects = "Hiệu ứng"
+    case ai = "AI"
 
     var id: String { rawValue }
     var symbol: String {
@@ -18,6 +19,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
         case .effects: return "wand.and.stars"
+        case .ai: return "sparkles"
         }
     }
 }
@@ -191,10 +193,14 @@ struct EditorView: View {
                             .resizable()
                             .aspectRatio(contentMode: model.contentMode == .fill ? .fill : .fit)
                             .frame(width: canvasWidth, height: canvasHeight)
+                            .scaleEffect(x: clip.flipHorizontal ? -1 : 1,
+                                         y: clip.flipVertical ? -1 : 1)
                             .clipped()
                     } else if let previewPlayer {
                         VideoPreviewSurface(player: previewPlayer, mode: model.contentMode)
                             .frame(width: canvasWidth, height: canvasHeight)
+                            .scaleEffect(x: clip.flipHorizontal ? -1 : 1,
+                                         y: clip.flipVertical ? -1 : 1)
                             .clipped()
                     }
                 } else if activeTool != .captions {
@@ -370,6 +376,7 @@ struct EditorView: View {
         case .captions: subtitlePanel
         case .audio: audioPanel
         case .effects: effectsPanel
+        case .ai: highlightPanel
         }
     }
 
@@ -390,6 +397,23 @@ struct EditorView: View {
                         model.removeClip(id: clip.id)
                     } label: { Image(systemName: "trash") }
                 }
+
+                HStack(spacing: 8) {
+                    Button {
+                        toggleFlip(clip.id, horizontal: true)
+                    } label: {
+                        Label("Lật ngang", systemImage: "arrow.left.and.right")
+                    }
+                    .tint(clip.flipHorizontal ? .cyan : .gray)
+                    Button {
+                        toggleFlip(clip.id, horizontal: false)
+                    } label: {
+                        Label("Lật dọc", systemImage: "arrow.up.and.down")
+                    }
+                    .tint(clip.flipVertical ? .cyan : .gray)
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
 
                 if clip.kind == .video {
                     HStack {
@@ -602,6 +626,15 @@ struct EditorView: View {
         model.clips[index].imageLook = look
     }
 
+    private func toggleFlip(_ id: UUID, horizontal: Bool) {
+        guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
+        if horizontal {
+            model.clips[index].flipHorizontal.toggle()
+        } else {
+            model.clips[index].flipVertical.toggle()
+        }
+    }
+
     private var framePanel: some View {
         VStack(alignment: .leading, spacing: 11) {
             Text("Chọn tỷ lệ khung hình")
@@ -648,6 +681,12 @@ struct EditorView: View {
                 }
             }
             .pickerStyle(.segmented)
+            Divider()
+            Toggle("Không giữ metadata của video gốc", isOn: $model.stripMetadata)
+                .font(.caption)
+            Text("Lọc GPS, camera, tác giả, tiêu đề và thông tin nguồn khi xuất. Tệp MP4 vẫn có metadata kỹ thuật do iOS tạo.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
             Text("Khung viền xanh trong phần xem trước chính là tỷ lệ sẽ được xuất. Phủ đầy cắt phần ngoài khung; Vừa khung giữ trọn hình.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
@@ -817,8 +856,51 @@ struct EditorView: View {
 
             if let voice = model.voiceoverURL {
                 Text("Thuyết minh: \(voice.lastPathComponent)")
-                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack {
+                    Text("Giọng bắt đầu tại")
+                    Spacer()
+                    Text(String(format: "%.1fs", model.voiceoverOffset))
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                Slider(value: $model.voiceoverOffset,
+                       in: 0...max(0.1, model.totalDuration - 0.1),
+                       step: 0.1)
+                    .tint(.cyan)
+                HStack {
+                    Text("Âm lượng thuyết minh")
+                    Spacer()
+                    Text("\(Int(model.voiceoverVolume * 100))%")
+                }
+                .font(.caption)
+                Slider(value: $model.voiceoverVolume, in: 0...1)
+                    .tint(.cyan)
             }
+            Divider()
+            Text("Tạo thuyết minh từ văn bản")
+                .font(.caption.bold())
+            TextField("Nhập lời thuyết minh tiếng Việt…",
+                      text: $model.narrationText, axis: .vertical)
+                .lineLimit(2...5)
+                .textFieldStyle(.roundedBorder)
+            Button {
+                model.generateNarrationFromText()
+            } label: {
+                Label(model.isGeneratingNarration ? "Đang tạo giọng…" :
+                      "Tạo giọng đọc tiếng Việt", systemImage: "speaker.wave.2.fill")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isGeneratingNarration ||
+                      model.narrationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            if model.isGeneratingNarration {
+                ProgressView().controlSize(.small)
+            }
+            Text("Dùng giọng đọc iOS có sẵn, không gửi văn bản lên máy chủ.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             if model.isImportingAudio {
                 HStack(spacing: 8) {
@@ -869,6 +951,25 @@ struct EditorView: View {
                 }.font(.caption)
                 Slider(value: $model.musicVolume, in: 0...1)
                     .tint(accent)
+                if model.musicHighlightDuration > 0 {
+                    Text(String(format: "Highlight nhạc: %.1fs đến %.1fs",
+                                model.musicStartSeconds,
+                                model.musicStartSeconds + model.musicHighlightDuration))
+                        .font(.caption)
+                        .foregroundStyle(.cyan)
+                    Button("Bỏ giới hạn đoạn nhạc") {
+                        model.musicHighlightDuration = 0
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+                }
+                Button {
+                    activeTool = .ai
+                } label: {
+                    Label("AI tìm highlight MP3", systemImage: "sparkles")
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
                 Text("Tự dừng đúng cuối video, fade-out 1.2 giây và giảm nhạc trong lúc thuyết minh.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
