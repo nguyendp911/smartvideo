@@ -42,7 +42,7 @@ Push lên nhánh main sẽ khởi chạy workflow **iOS Build**. Workflow biên 
 
 ## Kiến trúc
 
-\`\`\`text
+```text
 PhotosPicker / Files
     ↓
 MediaStorage (Documents/Media)
@@ -58,7 +58,7 @@ VideoRenderer
 AVAssetExportSession → Documents/Exports/*.mp4
     ↓
 Photos / ShareLink
-\`\`\`
+```
 
 ## Lưu ý riêng cho iPhone 12 Pro Max
 
