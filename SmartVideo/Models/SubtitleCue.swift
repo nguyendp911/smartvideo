@@ -10,8 +10,7 @@ struct SubtitleCue: Identifiable, Equatable, Codable {
 enum SubtitleFile {
     static func parse(_ data: Data, filename: String, videoDuration: Double) throws -> [SubtitleCue] {
         guard let text = String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: .utf16)
-                ?? String(data: data, encoding: .windowsCP1258) else {
+                ?? String(data: data, encoding: .utf16) else {
             throw SmartVideoError.invalidMedia("Phụ đề phải được lưu dưới dạng văn bản UTF-8 hoặc UTF-16.")
         }
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n")
