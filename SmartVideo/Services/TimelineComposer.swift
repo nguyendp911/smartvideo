@@ -61,8 +61,8 @@ final class TimelineComposer {
             let natural = try await video.load(.naturalSize)
             let preferred = try await video.load(.preferredTransform)
             parts.append(ClipPart(
-                flipHorizontal: clip.flipHorizontal,
-                flipVertical: clip.flipVertical,
+                flipHorizontal: clip.kind == .video && clip.flipHorizontal,
+                flipVertical: clip.kind == .video && clip.flipVertical,
                 sourceURL: url, asset: asset, video: video, sourceAudio: audio,
                 from: from, sourceDuration: length, outputDuration: output,
                 sourceSize: natural, sourceTransform: preferred
