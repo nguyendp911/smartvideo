@@ -8,6 +8,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case frame = "Khung"
     case captions = "Phụ đề"
     case audio = "Âm thanh"
+    case effects = "Hiệu ứng"
 
     var id: String { rawValue }
     var symbol: String {
@@ -16,6 +17,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .frame: return "aspectratio"
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
+        case .effects: return "wand.and.stars"
         }
     }
 }
@@ -257,7 +259,7 @@ struct EditorView: View {
                         } else {
                             let start = (selectedClip?.startTime ?? 0) + localSecond
                             player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
-                            player.play()
+                            player.playImmediately(atRate: Float(selectedClip?.playbackSpeed ?? 1))
                             isPlaying = true
                         }
                     } label: {
@@ -367,6 +369,7 @@ struct EditorView: View {
         case .frame: framePanel
         case .captions: subtitlePanel
         case .audio: audioPanel
+        case .effects: effectsPanel
         }
     }
 
@@ -422,6 +425,160 @@ struct EditorView: View {
             Text("Chọn một đoạn trên timeline để chỉnh sửa.")
                 .font(.subheadline).foregroundStyle(.secondary).padding(12)
         }
+    }
+
+    private var effectsPanel: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text("Chuyển cảnh giữa các đoạn")
+                .font(.subheadline.bold())
+            HStack(spacing: 8) {
+                ForEach(VideoTransition.allCases) { type in
+                    Button {
+                        model.transition = type
+                    } label: {
+                        Label(type.rawValue, systemImage: type.iconName)
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(model.transition == type ? .black : .white)
+                            .background(
+                                model.transition == type ? accent : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 9)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            if model.transition == .dissolve {
+                HStack {
+                    Text("Thời lượng hòa tan")
+                    Spacer()
+                    Text(String(format: "%.2fs", model.transitionSeconds))
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                Slider(value: $model.transitionSeconds, in: 0.2...0.8, step: 0.05)
+                    .tint(accent)
+                Text("Hai đoạn chồng hình và hòa tan thực sự khi xuất video. Thời lượng cuối được tự điều chỉnh.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+
+            Divider()
+
+            if let clip = selectedClip {
+                Text("Hiệu ứng đoạn đang chọn")
+                    .font(.subheadline.bold())
+                Text(clip.filename)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .foregroundStyle(.secondary)
+
+                if clip.kind == .video {
+                    HStack {
+                        Text("Tốc độ")
+                        Spacer()
+                        Text(String(format: "%.1fx · %.1f giây", clip.playbackSpeed,
+                                    clip.renderedDuration))
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    HStack(spacing: 6) {
+                        ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { speed in
+                            Button(String(format: "%.1fx", speed)) {
+                                updateSpeed(clip.id, to: speed)
+                            }
+                            .font(.caption.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .foregroundStyle(abs(clip.playbackSpeed - speed) < 0.01 ?
+                                             .black : .white)
+                            .background(
+                                abs(clip.playbackSpeed - speed) < 0.01 ?
+                                    accent : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Text("Tốc độ không làm méo khung hình; giọng gốc có thể đổi cao độ ở một số codec.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Text("Chuyển động ảnh kiểu Ken Burns")
+                        .font(.caption.bold())
+                    imageMotionGrid(clip: clip)
+
+                    Text("Màu sắc ảnh")
+                        .font(.caption.bold())
+                    imageLookGrid(clip: clip)
+
+                    Text("Hiệu ứng chuyển động và màu được xử lý bằng Core Image khi xuất MP4. Màu áp dụng cho ảnh tĩnh, chưa áp dụng cho clip video.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                Text("Hãy chọn một ảnh hoặc video trên timeline để chỉnh tốc độ, hiệu ứng và màu.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+    }
+
+    private func imageMotionGrid(clip: TimelineClip) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
+                  spacing: 7) {
+            ForEach(ImageMotion.allCases) { motion in
+                Button(motion.rawValue) {
+                    updateImageMotion(clip.id, to: motion)
+                }
+                .font(.caption2.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .foregroundStyle(clip.imageMotion == motion ? .black : .white)
+                .background(
+                    clip.imageMotion == motion ? accent : Color.white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func imageLookGrid(clip: TimelineClip) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 3),
+                  spacing: 7) {
+            ForEach(ImageLook.allCases) { look in
+                Button(look.rawValue) {
+                    updateImageLook(clip.id, to: look)
+                }
+                .font(.caption2.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 9)
+                .foregroundStyle(clip.imageLook == look ? .black : .white)
+                .background(
+                    clip.imageLook == look ? accent : Color.white.opacity(0.08),
+                    in: RoundedRectangle(cornerRadius: 8)
+                )
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func updateSpeed(_ id: UUID, to speed: Double) {
+        guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
+        model.clips[index].playbackSpeed = speed
+        if isPlaying, let player = previewPlayer {
+            player.rate = Float(speed)
+        }
+    }
+
+    private func updateImageMotion(_ id: UUID, to motion: ImageMotion) {
+        guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
+        model.clips[index].imageMotion = motion
+    }
+
+    private func updateImageLook(_ id: UUID, to look: ImageLook) {
+        guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
+        model.clips[index].imageLook = look
     }
 
     private var framePanel: some View {
