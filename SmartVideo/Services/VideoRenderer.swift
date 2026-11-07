@@ -88,6 +88,7 @@ final class VideoRenderer {
         var musicParameters: AVMutableAudioMixInputParameters?
         var musicEnd = CMTime.zero
         var narrationEnd = CMTime.zero
+        var narrationStart: CMTime?
 
         // Music: trim at a selected start offset; loop only when requested,
         // keep its output duration aligned to the video, then fade at the end.
@@ -128,13 +129,14 @@ final class VideoRenderer {
             musicEnd = outputTime
             let params = AVMutableAudioMixInputParameters(track: track)
             let baseVolume = min(1, max(0, musicVolume))
-            let underVoice = voiceoverURL == nil ? baseVolume : baseVolume * 0.25
-            params.setVolume(underVoice, at: .zero)
+            let startsImmediately = voiceoverURL != nil && voiceoverOffset <= 0.05
+            let startingVolume = startsImmediately ? baseVolume * 0.25 : baseVolume
+            params.setVolume(startingVolume, at: .zero)
             let fadeIn = CMTimeMinimum(
                 outputTime, CMTime(seconds: 0.25, preferredTimescale: 600)
             )
             if CMTimeCompare(fadeIn, .zero) > 0 {
-                params.setVolumeRamp(fromStartVolume: 0, toEndVolume: underVoice,
+                params.setVolumeRamp(fromStartVolume: 0, toEndVolume: startingVolume,
                     timeRange: CMTimeRange(start: .zero, duration: fadeIn))
             }
             musicParameters = params
@@ -156,6 +158,7 @@ final class VideoRenderer {
                 ) else { throw SmartVideoError.cannotCreateWriter }
                 try track.insertTimeRange(CMTimeRange(start: .zero, duration: length),
                                           of: narration, at: voiceStart)
+                narrationStart = voiceStart
                 narrationEnd = CMTimeAdd(voiceStart, length)
                 let narrationParams = AVMutableAudioMixInputParameters(track: track)
                 narrationParams.setVolume(min(1, max(0, voiceoverVolume)), at: voiceStart)
@@ -164,22 +167,53 @@ final class VideoRenderer {
         }
 
         if let musicParameters {
-            let fadeLength = CMTimeMinimum(musicEnd, CMTime(seconds: 1.2, preferredTimescale: 600))
-            if CMTimeCompare(fadeLength, .zero) > 0 {
-                let from = CMTimeSubtract(musicEnd, fadeLength)
-                let base = min(1, max(0, musicVolume))
-                let ducked = base * 0.25
-                // Restore music level when narration finishes, if enough
-                // time remains for a smooth transition before fade-out.
-                if CMTimeCompare(narrationEnd, .zero) > 0,
-                   CMTimeCompare(narrationEnd, from) < 0 {
-                    musicParameters.setVolumeRamp(fromStartVolume: ducked, toEndVolume: base,
-                        timeRange: CMTimeRange(start: narrationEnd,
-                                              duration: CMTime(seconds: 0.2, preferredTimescale: 600)))
+            let base = min(1, max(0, musicVolume))
+            let ducked = base * 0.25
+            let fadeLength = CMTimeMinimum(
+                musicEnd, CMTime(seconds: 1.2, preferredTimescale: 600)
+            )
+            let fadeStart = CMTimeSubtract(musicEnd, fadeLength)
+            if let start = narrationStart,
+               CMTimeCompare(narrationEnd, start) > 0,
+               CMTimeCompare(start, fadeStart) < 0 {
+                // Duck only while the narration is audible. Avoid constantly
+                // attenuating background music during a late voiceover.
+                if CMTimeCompare(start,
+                                 CMTime(seconds: 0.25, preferredTimescale: 600)) > 0 {
+                    let transitionLength = CMTimeMinimum(
+                        CMTime(seconds: 0.15, preferredTimescale: 600),
+                        CMTimeSubtract(narrationEnd, start)
+                    )
+                    if CMTimeCompare(transitionLength, .zero) > 0 {
+                        musicParameters.setVolumeRamp(
+                            fromStartVolume: base, toEndVolume: ducked,
+                            timeRange: CMTimeRange(start: start, duration: transitionLength)
+                        )
+                    }
                 }
-                let effectiveEndVolume = CMTimeCompare(narrationEnd, from) >= 0 ? ducked : base
-                musicParameters.setVolumeRamp(fromStartVolume: effectiveEndVolume, toEndVolume: 0,
-                    timeRange: CMTimeRange(start: from, duration: fadeLength))
+                if CMTimeCompare(narrationEnd, fadeStart) < 0 {
+                    let returnLength = CMTimeMinimum(
+                        CMTime(seconds: 0.2, preferredTimescale: 600),
+                        CMTimeSubtract(fadeStart, narrationEnd)
+                    )
+                    if CMTimeCompare(returnLength, .zero) > 0 {
+                        musicParameters.setVolumeRamp(
+                            fromStartVolume: ducked, toEndVolume: base,
+                            timeRange: CMTimeRange(start: narrationEnd, duration: returnLength)
+                        )
+                    }
+                }
+            }
+            if CMTimeCompare(fadeLength, .zero) > 0 {
+                let isNarratingAtFade = narrationStart.map { start in
+                    CMTimeCompare(start, fadeStart) <= 0 &&
+                    CMTimeCompare(narrationEnd, fadeStart) >= 0
+                } ?? false
+                musicParameters.setVolumeRamp(
+                    fromStartVolume: isNarratingAtFade ? ducked : base,
+                    toEndVolume: 0,
+                    timeRange: CMTimeRange(start: fadeStart, duration: fadeLength)
+                )
             }
             mixParameters.append(musicParameters)
         }
