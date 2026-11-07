@@ -24,6 +24,7 @@ targets:
       properties:
         CFBundleDisplayName: SmartVideo
         LSRequiresIPhoneOS: true
+        NSMicrophoneUsageDescription: "SmartVideo cần quyền dùng micro để ghi thuyết minh."
         NSPhotoLibraryAddUsageDescription: "SmartVideo cần quyền thêm video đã xuất vào thư viện Ảnh."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
