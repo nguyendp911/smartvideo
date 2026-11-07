@@ -17,6 +17,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Prepare ViePN app icon
+        run: bash scripts/make-icon.sh
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -55,6 +58,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Prepare ViePN app icon
+        run: bash scripts/make-icon.sh
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -77,12 +83,12 @@ jobs:
           test -f "$APP/SmartVideo"
           mkdir -p Payload
           cp -R "$APP" Payload/
-          zip -qry SmartVideo-unsigned.ipa Payload
-          unzip -t SmartVideo-unsigned.ipa | tail -n 1
+          zip -qry ViePN-Smart-Video-unsigned.ipa Payload
+          unzip -t ViePN-Smart-Video-unsigned.ipa | tail -n 1
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
-          name: SmartVideo-iPhone-Unsigned-IPA
-          path: SmartVideo-unsigned.ipa
+          name: ViePN-Smart-Video-iPhone-Unsigned-IPA
+          path: ViePN-Smart-Video-unsigned.ipa
           retention-days: 14

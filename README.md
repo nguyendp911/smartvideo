@@ -1,4 +1,4 @@
-# SmartVideo – trình dựng video iOS (SwiftUI)
+# ViePN Smart Video – trình dựng video iOS (SwiftUI)
 
 Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không gửi clip lên server.
 
@@ -71,3 +71,11 @@ Nên khởi đầu với 1080p/30 FPS và dự án ngắn. Video 4K đầu vào 
 ## Quyền riêng tư
 
 PhotosPicker không yêu cầu quyền xem toàn bộ thư viện. App chỉ xin quyền **add-only** lúc bạn chọn “Lưu vào thư viện Ảnh”. Tất cả tệp nhập và xuất nằm trong vùng lưu trữ của SmartVideo.
+
+## Bố cục iPhone 12 Pro Max / ViePN Smart Video
+
+- LaunchScreen storyboard cho khung màn hình đầy đủ (khắc phục chế độ letterbox).
+- Preview co giãn theo chiều cao thiết bị; timeline, tab chỉnh sửa và nút xuất video nằm trong safe area.
+- Tên hiển thị: **ViePN Smart Video**, icon đóng gói với Asset Catalog.
+- Trên macOS, chạy `bash scripts/make-icon.sh` trước khi `xcodegen generate` để chuẩn bị ảnh app icon 1024 x 1024.
+- Build IPA mới qua GitHub Actions sẽ tự tạo icon. Cân nhắc sao lưu dữ liệu trước khi xóa app cũ; xóa ứng dụng sẽ mất tệp dự án cục bộ.
