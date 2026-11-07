@@ -76,12 +76,12 @@ struct VFXLibraryPanel: View {
                     .tint(.cyan)
                 Slider(value: Binding(
                     get: {
-                        model.vfxEndTime <= 0 ? model.totalDuration : model.vfxEndTime
+                        model.vfxEndTime <= 0 ?
+                            model.totalDuration :
+                            min(model.totalDuration, model.vfxEndTime)
                     },
                     set: { model.vfxEndTime = max(model.vfxStartTime + 0.1, $0) }
-                ), in: min(model.totalDuration, model.vfxStartTime + 0.1)...
-                     max(model.totalDuration, model.vfxStartTime + 0.1),
-                       step: 0.1)
+                ), in: 0.1...max(0.2, model.totalDuration), step: 0.1)
                     .tint(.cyan)
                 Button("Áp dụng đến hết video") {
                     model.vfxEndTime = 0
