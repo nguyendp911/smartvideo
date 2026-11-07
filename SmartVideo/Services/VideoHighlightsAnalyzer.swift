@@ -122,10 +122,12 @@ enum VideoHighlightsAnalyzer {
             ) else { return }
             ctx.draw(frame, in: CGRect(x: 0, y: 0, width: width, height: height))
         }
-        return stride(from: 0, to: pixels.count, by: 4).map { index in
-            (0.2126 * Double(pixels[index])
-                + 0.7152 * Double(pixels[index + 1])
-                + 0.0722 * Double(pixels[index + 2])) / 255
+        return stride(from: 0, to: pixels.count, by: 4).map { index -> Double in
+            let red = Double(pixels[index])
+            let green = Double(pixels[index + 1])
+            let blue = Double(pixels[index + 2])
+            let weighted = (red * 0.2126) + (green * 0.7152) + (blue * 0.0722)
+            return weighted / 255.0
         }
     }
 }
