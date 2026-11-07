@@ -53,91 +53,110 @@ struct EditorView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 9) {
+        GeometryReader { geometry in
+            VStack(spacing: 6) {
                 topBar
+                    .padding(.top, 3)
+
                 videoPreview
+                    .frame(height: previewHeight(for: geometry.size.height))
+
                 timeline
                 toolPicker
+
                 ScrollView {
                     toolPanel
                         .padding(.horizontal, 2)
                         .padding(.vertical, 8)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.white.opacity(0.035), in: RoundedRectangle(cornerRadius: 15))
-
-                exportBar
+                .background(Color.white.opacity(0.035),
+                            in: RoundedRectangle(cornerRadius: 15))
             }
             .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-            .background(Color(red: 0.055, green: 0.067, blue: 0.09))
-            .navigationBarHidden(true)
-            .onChange(of: pickerItems) { items in
-                guard !items.isEmpty else { return }
-                Task {
-                    await model.importSelections(items)
-                    pickerItems = []
-                }
-            }
-            .onChange(of: model.clips.count) { _ in
-                if !model.clips.contains(where: { $0.id == selectedClipID }) {
-                    selectedClipID = model.clips.first?.id
-                }
-            }
-            .onChange(of: selectedClipID) { _ in
-                updatePreview()
-            }
-            .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
-                guard isPlaying, let player = previewPlayer else { return }
-                if let clip = selectedClip {
-                    localSecond = max(0, player.currentTime().seconds - clip.startTime)
-                    if localSecond >= clip.duration {
-                        player.pause()
-                        isPlaying = false
-                    }
-                }
-            }
-            .fileImporter(isPresented: $showMusicImporter,
-                          allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first { model.importMusic(from: url) }
-                case .failure(let error):
-                    model.errorText = error.localizedDescription
-                }
-            }
-            .fileImporter(isPresented: $showVoiceImporter,
-                          allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first { model.importVoiceover(from: url) }
-                case .failure(let error):
-                    model.errorText = error.localizedDescription
-                }
-            }
-            .fileImporter(isPresented: $showSubtitleImporter,
-                          allowedContentTypes: [.plainText, UTType(filenameExtension: "srt") ?? .plainText],
-                          allowsMultipleSelection: false) { result in
-                switch result {
-                case .success(let urls):
-                    if let url = urls.first { model.importSubtitles(from: url) }
-                case .failure(let error):
-                    model.errorText = error.localizedDescription
-                }
-            }
-            .onChange(of: recorder.errorText) { message in
-                if let message { model.errorText = message }
-            }
-            .alert("SmartVideo", isPresented: Binding(
-                get: { model.errorText != nil },
-                set: { if !$0 { model.errorText = nil } }
-            )) {
-                Button("Đóng", role: .cancel) { model.errorText = nil }
-            } message: {
-                Text(model.errorText ?? "")
+            .frame(width: geometry.size.width, height: geometry.size.height,
+                   alignment: .top)
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            exportBar
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .background(Color(red: 0.055, green: 0.067, blue: 0.09))
+        }
+        .background(Color(red: 0.055, green: 0.067, blue: 0.09)
+            .ignoresSafeArea())
+        .onChange(of: pickerItems) { items in
+            guard !items.isEmpty else { return }
+            Task {
+                await model.importSelections(items)
+                pickerItems = []
             }
         }
+        .onChange(of: model.clips.count) { _ in
+            if !model.clips.contains(where: { $0.id == selectedClipID }) {
+                selectedClipID = model.clips.first?.id
+            }
+        }
+        .onChange(of: selectedClipID) { _ in
+            updatePreview()
+        }
+        .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
+            guard isPlaying, let player = previewPlayer else { return }
+            if let clip = selectedClip {
+                localSecond = max(0, player.currentTime().seconds - clip.startTime)
+                if localSecond >= clip.duration {
+                    player.pause()
+                    isPlaying = false
+                }
+            }
+        }
+        .fileImporter(isPresented: $showMusicImporter,
+                      allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { model.importMusic(from: url) }
+            case .failure(let error):
+                model.errorText = error.localizedDescription
+            }
+        }
+        .fileImporter(isPresented: $showVoiceImporter,
+                      allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { model.importVoiceover(from: url) }
+            case .failure(let error):
+                model.errorText = error.localizedDescription
+            }
+        }
+        .fileImporter(isPresented: $showSubtitleImporter,
+                      allowedContentTypes: [.plainText,
+                          UTType(filenameExtension: "srt") ?? .plainText],
+                      allowsMultipleSelection: false) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first { model.importSubtitles(from: url) }
+            case .failure(let error):
+                model.errorText = error.localizedDescription
+            }
+        }
+        .onChange(of: recorder.errorText) { message in
+            if let message { model.errorText = message }
+        }
+        .alert("ViePN Smart Video", isPresented: Binding(
+            get: { model.errorText != nil },
+            set: { if !$0 { model.errorText = nil } }
+        )) {
+            Button("Đóng", role: .cancel) { model.errorText = nil }
+        } message: {
+            Text(model.errorText ?? "")
+        }
+    }
+
+    private func previewHeight(for availableHeight: CGFloat) -> CGFloat {
+        // Height is computed from the content area after respecting the
+        // system safe area and the pinned export bar.
+        min(300, max(150, availableHeight * 0.36))
     }
 
     private var topBar: some View {
@@ -146,7 +165,7 @@ struct EditorView: View {
                 .font(.title3)
                 .foregroundStyle(accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text("SmartVideo").font(.headline)
+                Text("ViePN Smart Video").font(.headline)
                 Text("Studio · Offline").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
@@ -236,7 +255,6 @@ struct EditorView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(height: 280)
         .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 13))
     }
 
@@ -299,7 +317,7 @@ struct EditorView: View {
                 }
             }
         }
-        .frame(height: 104, alignment: .top)
+        .frame(height: 96, alignment: .top)
     }
 
     private var toolPicker: some View {
