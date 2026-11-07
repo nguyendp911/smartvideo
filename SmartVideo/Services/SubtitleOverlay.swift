@@ -6,14 +6,21 @@ import UIKit
 enum SubtitleOverlay {
     static func attach(to composition: AVMutableVideoComposition,
                        size: CGSize, cues: [SubtitleCue],
-                       positionX: Double, positionY: Double) {
-        guard !cues.isEmpty else { return }
+                       positionX: Double, positionY: Double,
+                       vfxPresets: [VFXPreset], vfxIntensity: Double,
+                       duration: Double) {
+        guard !cues.isEmpty || !vfxPresets.isEmpty else { return }
 
         let parent = CALayer()
         parent.frame = CGRect(origin: .zero, size: size)
         let video = CALayer()
         video.frame = parent.bounds
         parent.addSublayer(video)
+        // VFX and subtitles share one AVVideoCompositionCoreAnimationTool.
+        // Effects render over the footage; captions remain legible above them.
+        VFXOverlayLibrary.attach(presets: vfxPresets, to: parent,
+                                 canvas: size, duration: duration,
+                                 intensity: vfxIntensity)
 
         for cue in cues where cue.end > cue.start && !cue.text.isEmpty {
             let width = size.width * 0.72

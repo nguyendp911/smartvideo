@@ -9,6 +9,8 @@ final class EditorViewModel: ObservableObject {
     @Published var subtitles: [SubtitleCue] = []
     @Published var transition: VideoTransition = .cut
     @Published var transitionSeconds: Double = 0.45
+    @Published var vfxPresets: Set<VFXPreset> = []
+    @Published var vfxIntensity: Double = 0.55
     @Published var subtitleX: Double = 0.5
     @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
@@ -385,6 +387,8 @@ final class EditorViewModel: ObservableObject {
         let workClips = clips
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
+        let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
+        let workVFXIntensity = vfxIntensity
         let workMusic = musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
@@ -409,6 +413,8 @@ final class EditorViewModel: ObservableObject {
                         clips: workClips,
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
+                        vfxPresets: workVFX,
+                        vfxIntensity: workVFXIntensity,
                         musicURL: workMusic,
                         musicVolume: workMusicVolume,
                         musicStartSeconds: workMusicStart,

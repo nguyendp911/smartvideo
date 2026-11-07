@@ -17,6 +17,8 @@ final class VideoRenderer {
         clips: [TimelineClip],
         transition: VideoTransition,
         transitionSeconds: Double,
+        vfxPresets: [VFXPreset],
+        vfxIntensity: Double,
         musicURL: URL?,
         musicVolume: Float,
         musicStartSeconds: Double,
@@ -228,7 +230,9 @@ final class VideoRenderer {
         }
 
         SubtitleOverlay.attach(to: videoComposition, size: size, cues: subtitles,
-                               positionX: subtitleX, positionY: subtitleY)
+                               positionX: subtitleX, positionY: subtitleY,
+                               vfxPresets: vfxPresets, vfxIntensity: vfxIntensity,
+                               duration: cursor.seconds)
         let exportURL = MediaStorage.newExportURL()
         do {
             guard let exporter = AVAssetExportSession(
