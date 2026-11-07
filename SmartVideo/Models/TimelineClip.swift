@@ -21,6 +21,13 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     }
 }
 
+enum CanvasContentMode: String, CaseIterable, Identifiable {
+    case fit = "Vừa khung"
+    case fill = "Phủ đầy"
+
+    var id: String { rawValue }
+}
+
 enum RenderQuality: String, CaseIterable, Identifiable {
     case hd = "720p"
     case fullHD = "1080p"
@@ -36,6 +43,13 @@ enum CanvasFormat: String, CaseIterable, Identifiable {
     case landscape = "Ngang 16:9"
 
     var id: String { rawValue }
+
+    var ratio: CGFloat {
+        switch self {
+        case .portrait: return 9.0 / 16.0
+        case .landscape: return 16.0 / 9.0
+        }
+    }
 
     func size(for quality: RenderQuality) -> CGSize {
         switch self {
