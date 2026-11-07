@@ -17,7 +17,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var filename: String { fileURL.lastPathComponent }
 
     var availableDuration: Double {
-        max(0.1, originalDuration - startTime)
+        kind == .image ? 12.0 : max(0.1, originalDuration - startTime)
     }
 }
 
