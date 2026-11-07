@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 private enum EditorTool: String, CaseIterable, Identifiable {
     case clip = "Đoạn"
     case frame = "Khung"
+    case vfx = "VFX"
     case captions = "Phụ đề"
     case audio = "Âm thanh"
     case effects = "Hiệu ứng"
@@ -16,6 +17,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         switch self {
         case .clip: return "scissors"
         case .frame: return "aspectratio"
+        case .vfx: return "wand.and.stars"
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
         case .effects: return "wand.and.stars"
@@ -211,6 +213,13 @@ struct EditorView: View {
                         .padding(6)
                 }
 
+                if !model.vfxPresets.isEmpty {
+                    VFXPreviewOverlay(presets: model.vfxPresets,
+                                      intensity: model.vfxIntensity)
+                        .frame(width: canvasWidth, height: canvasHeight)
+                        .allowsHitTesting(false)
+                }
+
                 if !previewCaption.isEmpty {
                     Text(previewCaption)
                         .font(.system(size: max(11, min(19, canvasWidth * 0.046)),
@@ -373,6 +382,7 @@ struct EditorView: View {
         switch activeTool {
         case .clip: clipPanel
         case .frame: framePanel
+        case .vfx: VFXLibraryPanel(model: model)
         case .captions: subtitlePanel
         case .audio: audioPanel
         case .effects: effectsPanel
