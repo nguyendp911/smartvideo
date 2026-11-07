@@ -6,11 +6,17 @@ import AVFoundation
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
+    @Published var subtitles: [SubtitleCue] = []
     @Published var musicURL: URL?
-    @Published var musicVolume: Float = 0.35
+    @Published var voiceoverURL: URL?
+    @Published var musicVolume: Float = 0.38
+    @Published var musicStartSeconds: Double = 0
+    @Published var musicDuration: Double = 0
+    @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
     @Published var quality: RenderQuality = .fullHD
     @Published var canvas: CanvasFormat = .portrait
+    @Published var contentMode: CanvasContentMode = .fit
     @Published var isImporting = false
     @Published var isExporting = false
     @Published var exportedURL: URL?
@@ -55,21 +61,81 @@ final class EditorViewModel: ObservableObject {
     }
 
     func importMusic(from sourceURL: URL) {
-        let scoped = sourceURL.startAccessingSecurityScopedResource()
-        defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
         do {
-            musicURL = try MediaStorage.copyToMedia(sourceURL, fallbackExtension: "m4a")
+            musicURL = try copyScoped(sourceURL, fallbackExtension: "mp3")
+            musicStartSeconds = 0
+            if let musicURL {
+                Task {
+                    do {
+                        musicDuration = try await AVURLAsset(url: musicURL).load(.duration).seconds
+                    } catch {
+                        errorText = "Không đọc được thời lượng nhạc: \(error.localizedDescription)"
+                    }
+                }
+            }
         } catch {
-            errorText = "Không nhập được âm thanh: \(error.localizedDescription)"
+            errorText = "Không nhập được nhạc: \(error.localizedDescription)"
         }
     }
 
-    func remove(at offsets: IndexSet) {
-        clips.remove(atOffsets: offsets)
+    func importVoiceover(from sourceURL: URL) {
+        do {
+            voiceoverURL = try copyScoped(sourceURL, fallbackExtension: "m4a")
+        } catch {
+            errorText = "Không nhập được thuyết minh: \(error.localizedDescription)"
+        }
     }
 
-    func move(from source: IndexSet, to destination: Int) {
-        clips.move(fromOffsets: source, toOffset: destination)
+    func importSubtitles(from sourceURL: URL) {
+        do {
+            let scoped = sourceURL.startAccessingSecurityScopedResource()
+            defer { if scoped { sourceURL.stopAccessingSecurityScopedResource() } }
+            let data = try Data(contentsOf: sourceURL)
+            let parsed = try SubtitleFile.parse(
+                data, filename: sourceURL.lastPathComponent, videoDuration: totalDuration
+            )
+            guard !parsed.isEmpty else {
+                throw SmartVideoError.invalidMedia("Tệp TXT/SRT không có nội dung phụ đề.")
+            }
+            subtitles = parsed
+        } catch {
+            errorText = "Không nhập được phụ đề: \(error.localizedDescription)"
+        }
+    }
+
+    func addSubtitle() {
+        let start = min(totalDuration, (subtitles.last?.end ?? 0))
+        let end = min(max(totalDuration, 0.5), start + 3)
+        subtitles.append(SubtitleCue(start: start, end: max(start + 0.1, end), text: "Phụ đề mới"))
+    }
+
+    func exportSRT() -> URL? {
+        do {
+            let target = MediaStorage.exportsDirectory
+                .appendingPathComponent("SmartVideo-PhuDe-\(UUID().uuidString.prefix(6)).srt")
+            try SubtitleFile.makeSRT(subtitles).write(to: target, atomically: true, encoding: .utf8)
+            return target
+        } catch {
+            errorText = "Không tạo được file SRT: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
+    private func copyScoped(_ url: URL, fallbackExtension: String) throws -> URL {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        return try MediaStorage.copyToMedia(url, fallbackExtension: fallbackExtension)
+    }
+
+    func removeClip(id: UUID) {
+        clips.removeAll { $0.id == id }
+    }
+
+    func moveClip(id: UUID, delta: Int) {
+        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
+        let to = index + delta
+        guard clips.indices.contains(to) else { return }
+        clips.swapAt(index, to)
     }
 
     func export() {
@@ -80,10 +146,15 @@ final class EditorViewModel: ObservableObject {
 
         let workClips = clips
         let workMusic = musicURL
+        let workMusicVolume = musicVolume
+        let workMusicStart = musicStartSeconds
+        let workLoop = repeatShortMusic
+        let workVoice = voiceoverURL
+        let workSubtitles = subtitles
+        let workKeepOriginal = keepOriginalAudio
         let workQuality = quality
         let workCanvas = canvas
-        let workVolume = musicVolume
-        let workKeepOriginal = keepOriginalAudio
+        let workMode = contentMode
 
         Task {
             do {
@@ -91,10 +162,15 @@ final class EditorViewModel: ObservableObject {
                     try await VideoRenderer().render(
                         clips: workClips,
                         musicURL: workMusic,
-                        musicVolume: workVolume,
+                        musicVolume: workMusicVolume,
+                        musicStartSeconds: workMusicStart,
+                        repeatShortMusic: workLoop,
+                        voiceoverURL: workVoice,
+                        subtitles: workSubtitles,
                         keepOriginalAudio: workKeepOriginal,
                         quality: workQuality,
-                        canvas: workCanvas
+                        canvas: workCanvas,
+                        contentMode: workMode
                     )
                 }.value
                 exportedURL = url
