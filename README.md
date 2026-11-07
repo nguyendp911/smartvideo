@@ -79,3 +79,10 @@ PhotosPicker không yêu cầu quyền xem toàn bộ thư viện. App chỉ xin
 - Tên hiển thị: **ViePN Smart Video**, icon đóng gói với Asset Catalog.
 - Trên macOS, chạy `bash scripts/make-icon.sh` trước khi `xcodegen generate` để chuẩn bị ảnh app icon 1024 x 1024.
 - Build IPA mới qua GitHub Actions sẽ tự tạo icon. Cân nhắc sao lưu dữ liệu trước khi xóa app cũ; xóa ứng dụng sẽ mất tệp dự án cục bộ.
+
+## Sửa lỗi nhập âm thanh (v2.2.1)
+
+- Dùng một trình nhập tệp hệ thống SwiftUI cho cả MP3, thuyết minh và SRT/TXT. Bỏ lồng UIDocumentPicker vào sheet, tránh việc iOS và SwiftUI cùng đóng sheet khi chọn tệp.
+- Sao chép file đã chọn vào vùng riêng của ứng dụng trong lúc file URL còn quyền truy cập.
+- Chỉ hiển thị nút cắt nhạc khi đã xác minh track âm thanh và thời lượng hữu hạn, hợp lệ; tệp lỗi trả thông báo thay vì đưa NaN vào SwiftUI Slider.
+- Biên dịch GitHub Actions chỉ xác nhận build; chưa thay thế kiểm thử thao tác chọn file trên máy thật.

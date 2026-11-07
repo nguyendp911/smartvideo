@@ -17,6 +17,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
+        MARKETING_VERSION: "2.2.1"
+        CURRENT_PROJECT_VERSION: "7"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -24,6 +26,8 @@ targets:
       path: SmartVideo/Info.plist
       properties:
         CFBundleDisplayName: ViePN Smart Video
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleName: ViePNSmartVideo
         UILaunchStoryboardName: LaunchScreen
         LSRequiresIPhoneOS: true
