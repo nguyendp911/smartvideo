@@ -26,9 +26,7 @@ struct EditorView: View {
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var selectedClipID: UUID?
     @State private var activeTool: EditorTool = .clip
-    @State private var showMusicImporter = false
-    @State private var showVoiceImporter = false
-    @State private var showSubtitleImporter = false
+    @State private var activeFilePicker: EditorDocumentKind?
     @State private var subtitleFileForShare: URL?
     @State private var previewPlayer: AVPlayer?
     @State private var localSecond = 0.0
@@ -111,33 +109,22 @@ struct EditorView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showMusicImporter,
-                      allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { model.importMusic(from: url) }
-            case .failure(let error):
-                model.errorText = error.localizedDescription
-            }
-        }
-        .fileImporter(isPresented: $showVoiceImporter,
-                      allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { model.importVoiceover(from: url) }
-            case .failure(let error):
-                model.errorText = error.localizedDescription
-            }
-        }
-        .fileImporter(isPresented: $showSubtitleImporter,
-                      allowedContentTypes: [.plainText,
-                          UTType(filenameExtension: "srt") ?? .plainText],
-                      allowsMultipleSelection: false) { result in
-            switch result {
-            case .success(let urls):
-                if let url = urls.first { model.importSubtitles(from: url) }
-            case .failure(let error):
-                model.errorText = error.localizedDescription
+        .sheet(item: $activeFilePicker) { kind in
+            AudioDocumentPicker(kind: kind) { outcome in
+                // Import while the copy provided by Files is still available.
+                if let outcome {
+                    switch outcome {
+                    case .success(let url):
+                        switch kind {
+                        case .music: model.importMusic(from: url)
+                        case .voice: model.importVoiceover(from: url)
+                        case .subtitles: model.importSubtitles(from: url)
+                        }
+                    case .failure(let error):
+                        model.errorText = error.localizedDescription
+                    }
+                }
+                activeFilePicker = nil
             }
         }
         .onChange(of: recorder.errorText) { message in
@@ -184,8 +171,11 @@ struct EditorView: View {
     private var videoPreview: some View {
         GeometryReader { geometry in
             let ratio = model.canvas.ratio
-            let canvasWidth = min(geometry.size.width, geometry.size.height * ratio)
+            let canvasWidth = max(1, min(geometry.size.width, geometry.size.height * ratio))
             let canvasHeight = canvasWidth / ratio
+            let previewCaption = activeSubtitle.isEmpty && activeTool == .captions
+                ? "Kéo phụ đề để đổi vị trí"
+                : activeSubtitle
 
             ZStack {
                 Color.black
@@ -202,33 +192,56 @@ struct EditorView: View {
                             .frame(width: canvasWidth, height: canvasHeight)
                             .clipped()
                     }
-                } else {
+                } else if activeTool != .captions {
                     Label("Thêm ảnh hoặc video để bắt đầu", systemImage: "video.badge.plus")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(6)
                 }
 
-                if !activeSubtitle.isEmpty {
-                    Text(activeSubtitle)
-                        .font(.system(size: max(11, min(19, canvasWidth * 0.046)), weight: .semibold))
+                if !previewCaption.isEmpty {
+                    Text(previewCaption)
+                        .font(.system(size: max(11, min(19, canvasWidth * 0.046)),
+                                      weight: .semibold))
                         .multilineTextAlignment(.center)
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 9)
+                        .padding(.horizontal, 5)
                         .padding(.vertical, 5)
-                        .background(.black.opacity(0.72), in: RoundedRectangle(cornerRadius: 6))
-                        .frame(maxWidth: canvasWidth * 0.88)
-                        .frame(maxHeight: .infinity, alignment: .bottom)
-                        .padding(.bottom, max(9, canvasHeight * 0.08))
-                        .allowsHitTesting(false)
+                        .frame(width: canvasWidth * 0.72)
+                        .background(.black.opacity(0.72),
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .position(
+                            x: canvasWidth * (0.36 + 0.28 * model.subtitleX),
+                            y: canvasHeight * (0.08 + 0.84 * model.subtitleY)
+                        )
+                        .gesture(
+                            DragGesture(minimumDistance: 0, coordinateSpace: .named("captionCanvas"))
+                                .onChanged { value in
+                                    guard activeTool == .captions else { return }
+                                    let px = Double(value.location.x / canvasWidth)
+                                    let py = Double(value.location.y / canvasHeight)
+                                    model.subtitleX = min(1, max(0, (px - 0.36) / 0.28))
+                                    model.subtitleY = min(1, max(0, (py - 0.08) / 0.84))
+                                }
+                        )
+                        .allowsHitTesting(activeTool == .captions)
                 }
             }
             .frame(width: canvasWidth, height: canvasHeight)
+            .coordinateSpace(name: "captionCanvas")
             .clipped()
+            .overlay {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(accent.opacity(0.9), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
             .overlay(alignment: .topLeading) {
-                Text("\(model.canvas.rawValue) · \(model.contentMode.rawValue)")
+                Text("\(model.canvas.shortLabel) · \(model.contentMode.rawValue)")
                     .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white)
                     .padding(5)
-                    .background(.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 5))
+                    .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5))
                     .padding(5)
             }
             .overlay(alignment: .bottomTrailing) {
@@ -254,6 +267,7 @@ struct EditorView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: model.canvas)
         }
         .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 13))
     }
@@ -408,30 +422,52 @@ struct EditorView: View {
     }
 
     private var framePanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Khung hình xuất hiện ngay trên màn hình xem trước")
-                .font(.caption).foregroundStyle(.secondary)
-            Picker("Tỷ lệ", selection: $model.canvas) {
-                ForEach(CanvasFormat.allCases) { item in
-                    Text(item.rawValue).tag(item)
+        VStack(alignment: .leading, spacing: 11) {
+            Text("Chọn tỷ lệ khung hình")
+                .font(.subheadline.bold())
+
+            HStack(spacing: 7) {
+                ForEach(CanvasFormat.allCases) { format in
+                    Button {
+                        model.canvas = format
+                    } label: {
+                        Text(format.shortLabel)
+                            .font(.subheadline.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .foregroundStyle(model.canvas == format ? .black : .white)
+                            .background(
+                                model.canvas == format ? accent : Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 9)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-            .pickerStyle(.segmented)
 
-            Picker("Hiển thị", selection: $model.contentMode) {
+            let pixels = model.canvas.size(for: model.quality)
+            Text("Đang chọn: \(model.canvas.rawValue) · \(Int(pixels.width)) × \(Int(pixels.height)) px")
+                .font(.caption)
+                .foregroundStyle(accent)
+
+            Text("Ảnh/video trong khung")
+                .font(.caption.bold())
+            Picker("Chế độ cắt", selection: $model.contentMode) {
                 ForEach(CanvasContentMode.allCases) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
 
+            Text("Độ phân giải xuất")
+                .font(.caption.bold())
             Picker("Chất lượng", selection: $model.quality) {
                 ForEach(RenderQuality.allCases) { item in
                     Text(item.rawValue).tag(item)
                 }
             }
             .pickerStyle(.segmented)
-            Text("Vừa khung: giữ toàn bộ ảnh và có thể có viền đen. Phủ đầy: lấp khung, cắt phần thừa.")
+            Text("Khung viền xanh trong phần xem trước chính là tỷ lệ sẽ được xuất. Phủ đầy cắt phần ngoài khung; Vừa khung giữ trọn hình.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(10)
@@ -439,9 +475,53 @@ struct EditorView: View {
 
     private var subtitlePanel: some View {
         VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Vị trí phụ đề · kéo trực tiếp trên khung xem trước")
+                    .font(.caption.bold())
+                HStack(spacing: 7) {
+                    Button("Phía trên") {
+                        model.subtitleX = 0.5
+                        model.subtitleY = 0.07
+                    }
+                    Button("Chính giữa") {
+                        model.subtitleX = 0.5
+                        model.subtitleY = 0.5
+                    }
+                    Button("Phía dưới") {
+                        model.subtitleX = 0.5
+                        model.subtitleY = 0.90
+                    }
+                }
+                .buttonStyle(.bordered)
+                .font(.caption2)
+
+                HStack {
+                    Text("Ngang")
+                    Spacer()
+                    Text("\(Int(model.subtitleX * 100))%")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                Slider(value: $model.subtitleX, in: 0...1)
+                    .tint(accent)
+
+                HStack {
+                    Text("Dọc")
+                    Spacer()
+                    Text("\(Int(model.subtitleY * 100))%")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                Slider(value: $model.subtitleY, in: 0...1)
+                    .tint(accent)
+            }
+            .padding(7)
+            .background(Color.white.opacity(0.055),
+                        in: RoundedRectangle(cornerRadius: 10))
+
             HStack(spacing: 7) {
                 Button {
-                    showSubtitleImporter = true
+                    activeFilePicker = .subtitles
                 } label: {
                     Label("Nhập TXT/SRT", systemImage: "doc.text")
                 }
@@ -512,14 +592,14 @@ struct EditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Button {
-                    showMusicImporter = true
+                    activeFilePicker = .music
                 } label: {
                     Label("Nhạc MP3", systemImage: "music.note")
                 }
                 .buttonStyle(.bordered)
 
                 Button {
-                    showVoiceImporter = true
+                    activeFilePicker = .voice
                 } label: {
                     Label("Tệp giọng đọc", systemImage: "mic")
                 }
