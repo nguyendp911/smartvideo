@@ -97,3 +97,35 @@ PhotosPicker không yêu cầu quyền xem toàn bộ thư viện. App chỉ xin
 - Với iPhone 12 Pro Max nên thử dự án ngắn 720p hoặc 1080p/30FPS trước; preview của ảnh tĩnh chưa mô phỏng đầy đủ chuyển động/điều màu, xuất video mới thể hiện hiệu ứng.
 
 **Trạng thái kiểm thử**: workflow GitHub Actions biên dịch Swift; cần kiểm thử video có nhiều đoạn, nguồn xoay dọc/ngang, âm thanh, tốc độ và chuyển cảnh trên máy thật.
+
+
+## ViePN Smart Video v2.4.0 – Mirror, Privacy & Smart Highlights
+
+Tất cả kỹ thuật dưới đây xử lý cục bộ trên iPhone, không yêu cầu API hoặc máy chủ.
+
+### Kỹ thuật mới
+
+- **Lật video/ảnh ngang hoặc dọc**: tab **Đoạn**, chọn clip rồi chọn Lật ngang/Lật dọc. Áp dụng trong preview và video xuất.
+- **Lọc metadata nguồn**: tab **Khung**, tùy chọn "Không giữ metadata của video gốc". Bật mặc định. Dùng `AVAssetExportSession.metadata = []` và `AVMetadataItemFilter.forSharing()`. Có thể loại bỏ metadata nguồn như GPS/tên camera/tác giả, **không bảo đảm MP4 hoàn toàn không còn trường metadata kỹ thuật do hệ điều hành tự tạo**.
+- **Thuyết minh**: thu micro, nhập file âm thanh hoặc nhập văn bản tiếng Việt để iOS tự đọc thành file CAF dùng trong video. Chỉnh thời điểm bắt đầu/âm lượng. Nhạc nền được duck khi thuyết minh phát và fade-out khi kết thúc. Giọng TTS sử dụng voice trên thiết bị, không phải mô hình tạo giọng riêng.
+- **Smart MP3 Highlights**: tab **AI**, chọn MP3/M4A rồi chọn độ dài 15/20/30 giây. Phân tích năng lượng âm thanh + biến động dải động để đề xuất tối đa 3 đoạn. Chọn "Lấy đoạn" để áp dụng ngay trên timeline nhạc; có thể cắt & chia sẻ **M4A** (AVFoundation không xuất MP3).
+- **Vision Video Highlights**: chọn clip video trong timeline → tab **AI** → Phân tích video. Vision kiểm tra tối đa 32 khung hình, tìm khuôn mặt, mức chú ý của chủ thể, thay đổi hình và tương phản. Chọn từng highlight hoặc bấm "Tạo montage từ các highlight" để thay đoạn đã chọn bằng các đoạn ngắn; có nút hoàn tác một lần. Video gốc trong `Documents/Media` vẫn giữ nguyên.
+
+### Giới hạn cần biết
+
+- "Smart Highlights" **không phải AI hiểu ý nghĩa cảm xúc, lời bài hát hay toàn bộ câu chuyện**. Music sử dụng chấm điểm âm lượng/bùng nổ, Vision dựa trên nhận diện và mức nổi bật thị giác. Với tác phẩm dài, audio chỉ quét tối đa 240 giây đầu và video phân tích tối đa 32 khung hình. Hãy duyệt kết quả trước khi xuất.
+- Các hiệu ứng được kiểm tra bằng trình biên dịch iOS trên GitHub Actions. **Chưa kiểm thử end-to-end thực tế trên iPhone 12 Pro Max**. Dự án dài hoặc codec lạ có thể gặp lỗi, cần báo lỗi từ thiết bị.
+- "Lật dọc" nghĩa là phản chiếu theo trục ngang (đảo trên/dưới), không phải xoay 90 độ.
+- Chọn xóa/cài lại app có thể mất file cục bộ; nên lưu MP4 và file dự án ra Tệp trước.
+- GitHub Actions xuất **IPA chưa ký** để phục vụ ký với Apple certificate/provisioning hợp lệ. Không phải IPA cài thẳng từ Safari.
+
+### Kiến trúc highlight
+
+```text
+Nhạc MP3/M4A → AVAssetReader/PCM → mức năng lượng 0,5s → xếp hạng đoạn → chọn / xuất M4A
+Video       → AVAssetImageGenerator → Vision (faces + saliency) + scene change
+            → gợi ý đoạn 1–7s → thay clip bằng nhiều clip ngắn → dựng MP4
+TXT         → AVSpeechSynthesizer.write() → PCM CAF → track thuyết minh + duck nền
+Ảnh/Video   → Transform/Flip → AVMutableVideoComposition → MP4 + lọc metadata
+```
+
