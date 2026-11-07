@@ -21,14 +21,18 @@ final class VideoRenderer {
         musicVolume: Float,
         musicStartSeconds: Double,
         repeatShortMusic: Bool,
+        musicHighlightDuration: Double,
         voiceoverURL: URL?,
+        voiceoverOffset: Double,
+        voiceoverVolume: Float,
         subtitles: [SubtitleCue],
         subtitleX: Double,
         subtitleY: Double,
         keepOriginalAudio: Bool,
         quality: RenderQuality,
         canvas: CanvasFormat,
-        contentMode: CanvasContentMode
+        contentMode: CanvasContentMode,
+        stripMetadata: Bool
     ) async throws -> URL {
         guard !clips.isEmpty else {
             throw SmartVideoError.invalidMedia("Hãy thêm ảnh hoặc video trước khi xuất.")
@@ -56,7 +60,9 @@ final class VideoRenderer {
                     bitRate: quality.bitRate,
                     contentMode: contentMode,
                     imageMotion: clip.imageMotion,
-                    imageLook: clip.imageLook
+                    imageLook: clip.imageLook,
+                    flipHorizontal: clip.flipHorizontal,
+                    flipVertical: clip.flipVertical
                 )
                 sourceURLs.append(temporary)
             } else {
@@ -94,7 +100,10 @@ final class VideoRenderer {
             let maxStart = max(0, sourceDuration.seconds - 0.1)
             let safeStart = min(max(0, musicStartSeconds), maxStart)
             let start = CMTime(seconds: safeStart, preferredTimescale: 600)
-            let remainingMusic = CMTimeSubtract(sourceDuration, start)
+            let availableMusic = CMTimeSubtract(sourceDuration, start)
+            let remainingMusic = musicHighlightDuration > 0
+                ? CMTimeMinimum(availableMusic, CMTime(seconds: musicHighlightDuration, preferredTimescale: 600))
+                : availableMusic
             guard remainingMusic.isValid && CMTimeCompare(remainingMusic, .zero) > 0 else {
                 throw SmartVideoError.invalidMedia("Không còn nhạc sau điểm cắt.")
             }
@@ -137,15 +146,20 @@ final class VideoRenderer {
                 throw SmartVideoError.invalidMedia("Tệp thuyết minh không có âm thanh.")
             }
             let narrationDuration = try await voiceAsset.load(.duration)
-            let length = CMTimeMinimum(cursor, narrationDuration)
+            let voiceStart = CMTime(seconds: min(max(0, voiceoverOffset), cursor.seconds),
+                                   preferredTimescale: 600)
+            let length = CMTimeMinimum(CMTimeSubtract(cursor, voiceStart), narrationDuration)
             if CMTimeCompare(length, .zero) > 0 {
                 guard let track = composition.addMutableTrack(
                     withMediaType: .audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 ) else { throw SmartVideoError.cannotCreateWriter }
                 try track.insertTimeRange(CMTimeRange(start: .zero, duration: length),
-                                          of: narration, at: .zero)
-                narrationEnd = length
+                                          of: narration, at: voiceStart)
+                narrationEnd = CMTimeAdd(voiceStart, length)
+                let narrationParams = AVMutableAudioMixInputParameters(track: track)
+                narrationParams.setVolume(min(1, max(0, voiceoverVolume)), at: voiceStart)
+                mixParameters.append(narrationParams)
             }
         }
 
@@ -194,6 +208,12 @@ final class VideoRenderer {
             exporter.outputURL = exportURL
             exporter.outputFileType = .mp4
             exporter.shouldOptimizeForNetworkUse = true
+            if stripMetadata {
+                // Filter inherited source tags (GPS, title, camera info, etc.)
+                // and do not author new descriptive metadata items.
+                exporter.metadata = []
+                exporter.metadataItemFilter = AVMetadataItemFilter.forSharing()
+            }
 
             guard exporter.supportedFileTypes.contains(.mp4) else {
                 throw SmartVideoError.cannotExport("Thiết bị không hỗ trợ xuất MP4 cho dự án này.")
@@ -225,7 +245,9 @@ final class VideoRenderer {
         bitRate: Int,
         contentMode: CanvasContentMode,
         imageMotion: ImageMotion,
-        imageLook: ImageLook
+        imageLook: ImageLook,
+        flipHorizontal: Bool,
+        flipVertical: Bool
     ) async throws {
         guard let image = CIImage(contentsOf: imageURL, options: [.applyOrientationProperty: true]) else {
             throw SmartVideoError.invalidMedia("Không mở được ảnh: \(imageURL.lastPathComponent)")
@@ -338,7 +360,19 @@ final class VideoRenderer {
                 frameImage = styled.transformed(by: scale)
                     .composited(over: black).cropped(to: canvasRect)
             }
-            imageContext.render(frameImage, to: pixelBuffer, bounds: canvasRect, colorSpace: colorSpace)
+            var finalFrame = frameImage
+            if flipHorizontal {
+                finalFrame = finalFrame.transformed(
+                    by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: size.width, ty: 0)
+                )
+            }
+            if flipVertical {
+                finalFrame = finalFrame.transformed(
+                    by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: size.height)
+                )
+            }
+            imageContext.render(finalFrame, to: pixelBuffer,
+                                bounds: canvasRect, colorSpace: colorSpace)
             let frameTime = CMTime(value: Int64(frameIndex), timescale: framesPerSecond)
             guard adaptor.append(pixelBuffer, withPresentationTime: frameTime) else {
                 throw SmartVideoError.cannotExport(

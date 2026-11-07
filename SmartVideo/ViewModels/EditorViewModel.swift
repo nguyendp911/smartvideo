@@ -18,6 +18,10 @@ final class EditorViewModel: ObservableObject {
     @Published var musicDuration: Double = 0
     @Published var isImportingAudio = false
     @Published var isScanningMusic = false
+    @Published var musicHighlightDuration: Double = 0
+    @Published var voiceoverOffset: Double = 0
+    @Published var voiceoverVolume: Float = 1
+    @Published var stripMetadata: Bool = true
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
     @Published var quality: RenderQuality = .fullHD
@@ -235,6 +239,10 @@ final class EditorViewModel: ObservableObject {
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
         let workLoop = repeatShortMusic
+        let workHighlightLength = musicHighlightDuration
+        let workVoiceOffset = voiceoverOffset
+        let workVoiceVolume = voiceoverVolume
+        let workStripMetadata = stripMetadata
         let workVoice = voiceoverURL
         let workSubtitles = subtitles
         let workSubtitleX = subtitleX
@@ -255,14 +263,18 @@ final class EditorViewModel: ObservableObject {
                         musicVolume: workMusicVolume,
                         musicStartSeconds: workMusicStart,
                         repeatShortMusic: workLoop,
+                        musicHighlightDuration: workHighlightLength,
                         voiceoverURL: workVoice,
+                        voiceoverOffset: workVoiceOffset,
+                        voiceoverVolume: workVoiceVolume,
                         subtitles: workSubtitles,
                         subtitleX: workSubtitleX,
                         subtitleY: workSubtitleY,
                         keepOriginalAudio: workKeepOriginal,
                         quality: workQuality,
                         canvas: workCanvas,
-                        contentMode: workMode
+                        contentMode: workMode,
+                        stripMetadata: workStripMetadata
                     )
                 }.value
                 exportedURL = url

@@ -44,6 +44,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var playbackSpeed: Double = 1.0
     var imageMotion: ImageMotion = .none
     var imageLook: ImageLook = .original
+    var flipHorizontal: Bool = false
+    var flipVertical: Bool = false
 
     var renderedDuration: Double {
         kind == .video ? duration / max(0.25, playbackSpeed) : duration

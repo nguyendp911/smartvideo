@@ -13,6 +13,8 @@ struct TimelineBuild {
 /// Supports actual dissolve transitions, source speed and source-audio ramps.
 final class TimelineComposer {
     private struct ClipPart {
+        let flipHorizontal: Bool
+        let flipVertical: Bool
         let sourceURL: URL
         let asset: AVURLAsset
         let video: AVAssetTrack
@@ -59,6 +61,8 @@ final class TimelineComposer {
             let natural = try await video.load(.naturalSize)
             let preferred = try await video.load(.preferredTransform)
             parts.append(ClipPart(
+                flipHorizontal: clip.flipHorizontal,
+                flipVertical: clip.flipVertical,
                 sourceURL: url, asset: asset, video: video, sourceAudio: audio,
                 from: from, sourceDuration: length, outputDuration: output,
                 sourceSize: natural, sourceTransform: preferred
@@ -177,15 +181,25 @@ final class TimelineComposer {
             let layer = AVMutableVideoCompositionLayerInstruction(
                 assetTrack: videoTracks[index % 2]
             )
-            layer.setTransform(
-                aspectTransform(
-                    size: part.sourceSize,
-                    preferredTransform: part.sourceTransform,
-                    canvas: renderSize,
-                    mode: contentMode
-                ),
-                at: time
+            var transform = aspectTransform(
+                size: part.sourceSize,
+                preferredTransform: part.sourceTransform,
+                canvas: renderSize,
+                mode: contentMode
             )
+            if part.flipHorizontal {
+                transform = transform.concatenating(
+                    CGAffineTransform(a: -1, b: 0, c: 0, d: 1,
+                                      tx: renderSize.width, ty: 0)
+                )
+            }
+            if part.flipVertical {
+                transform = transform.concatenating(
+                    CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
+                                      tx: 0, ty: renderSize.height)
+                )
+            }
+            layer.setTransform(transform, at: time)
             return layer
         }
 
