@@ -6,6 +6,34 @@ enum ClipKind: String, Codable {
     case video
 }
 
+enum VideoTransition: String, CaseIterable, Identifiable {
+    case cut = "Cắt thẳng"
+    case dissolve = "Hòa tan"
+
+    var id: String { rawValue }
+    var iconName: String { self == .cut ? "scissors" : "square.stack.3d.up" }
+}
+
+enum ImageMotion: String, CaseIterable, Identifiable, Codable {
+    case none = "Tĩnh"
+    case zoomIn = "Zoom in"
+    case zoomOut = "Zoom out"
+    case panLeft = "Pan trái"
+    case panRight = "Pan phải"
+
+    var id: String { rawValue }
+}
+
+enum ImageLook: String, CaseIterable, Identifiable, Codable {
+    case original = "Nguyên bản"
+    case cinematic = "Điện ảnh"
+    case mono = "Đen trắng"
+    case warm = "Màu ấm"
+    case cool = "Màu lạnh"
+
+    var id: String { rawValue }
+}
+
 struct TimelineClip: Identifiable, Hashable, Codable {
     var id: UUID = UUID()
     var kind: ClipKind
@@ -13,6 +41,13 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var duration: Double
     var startTime: Double = 0
     var originalDuration: Double
+    var playbackSpeed: Double = 1.0
+    var imageMotion: ImageMotion = .none
+    var imageLook: ImageLook = .original
+
+    var renderedDuration: Double {
+        kind == .video ? duration / max(0.25, playbackSpeed) : duration
+    }
 
     var filename: String { fileURL.lastPathComponent }
 

@@ -7,6 +7,8 @@ import AVFoundation
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
     @Published var subtitles: [SubtitleCue] = []
+    @Published var transition: VideoTransition = .cut
+    @Published var transitionSeconds: Double = 0.45
     @Published var subtitleX: Double = 0.5
     @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
@@ -28,7 +30,14 @@ final class EditorViewModel: ObservableObject {
     @Published var didSaveToPhotos = false
 
     var totalDuration: Double {
-        clips.reduce(0) { $0 + $1.duration }
+        let raw = clips.reduce(0) { $0 + $1.renderedDuration }
+        guard transition == .dissolve, clips.count > 1 else { return raw }
+        let overlaps = zip(clips, clips.dropFirst()).reduce(0.0) { total, pair in
+            total + min(transitionSeconds,
+                        pair.0.renderedDuration * 0.24,
+                        pair.1.renderedDuration * 0.24)
+        }
+        return max(0, raw - overlaps)
     }
 
     func importSelections(_ selections: [PhotosPickerItem]) async {
@@ -208,6 +217,8 @@ final class EditorViewModel: ObservableObject {
         didSaveToPhotos = false
 
         let workClips = clips
+        let workTransition = transition
+        let workTransitionSeconds = transitionSeconds
         let workMusic = musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
@@ -226,6 +237,8 @@ final class EditorViewModel: ObservableObject {
                 let url = try await Task.detached(priority: .userInitiated) {
                     try await VideoRenderer().render(
                         clips: workClips,
+                        transition: workTransition,
+                        transitionSeconds: workTransitionSeconds,
                         musicURL: workMusic,
                         musicVolume: workMusicVolume,
                         musicStartSeconds: workMusicStart,
