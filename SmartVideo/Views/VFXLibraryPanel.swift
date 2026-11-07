@@ -44,15 +44,57 @@ struct VFXLibraryPanel: View {
                     .foregroundStyle(.cyan)
             }
 
-            Slider(value: $model.vfxIntensity, in: 0.10...1.0, step: 0.05)
+            Slider(value: $model.vfxIntensity, in: 0.05...0.75, step: 0.05)
                 .tint(.cyan)
                 .disabled(model.vfxPresets.isEmpty)
+
+            Text("Vùng áp dụng")
+                .font(.caption.bold())
+            Picker("Vùng VFX", selection: $model.vfxCoverage) {
+                ForEach(VFXCoverage.allCases) { mode in
+                    Text(mode.rawValue).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            if model.totalDuration > 0.3 {
+                Text("Thời gian xuất hiện VFX")
+                    .font(.caption.bold())
+                HStack(spacing: 7) {
+                    Text("Từ")
+                    Text(String(format: "%.1fs", model.vfxStartTime))
+                        .monospacedDigit()
+                    Spacer()
+                    Text("Đến")
+                    Text(model.vfxEndTime <= 0 ? "Hết video" :
+                         String(format: "%.1fs", model.vfxEndTime))
+                        .monospacedDigit()
+                }
+                .font(.caption2)
+                Slider(value: $model.vfxStartTime,
+                       in: 0...max(0.1, model.totalDuration - 0.1), step: 0.1)
+                    .tint(.cyan)
+                Slider(value: Binding(
+                    get: {
+                        model.vfxEndTime <= 0 ? model.totalDuration : model.vfxEndTime
+                    },
+                    set: { model.vfxEndTime = max(model.vfxStartTime + 0.1, $0) }
+                ), in: min(model.totalDuration, model.vfxStartTime + 0.1)...
+                     max(model.totalDuration, model.vfxStartTime + 0.1),
+                       step: 0.1)
+                    .tint(.cyan)
+                Button("Áp dụng đến hết video") {
+                    model.vfxEndTime = 0
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+            }
 
             HStack(spacing: 7) {
                 presetButton("Phim điện ảnh", effects: [.grain, .vignette, .cinemaBars])
                 presetButton("Mộng mơ", effects: [.dust, .lightLeak])
             }
-            Text("Ưu tiên 1–3 hiệu ứng cùng lúc khi render 1080p trên iPhone 12 Pro Max. Đối với video dài, hạ xuống 720p nếu máy nóng.")
+            Text("Mặc định chỉ phủ vùng video, không phủ dải đen. Chọn 1–3 hiệu ứng nhẹ; xem MP4 đã xuất để đánh giá chuyển động thật.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
             if !model.vfxPresets.isEmpty {
@@ -130,7 +172,7 @@ struct VFXLibraryPanel: View {
     private func presetButton(_ title: String, effects: Set<VFXPreset>) -> some View {
         Button(title) {
             model.vfxPresets = effects
-            model.vfxIntensity = 0.55
+            model.vfxIntensity = 0.30
         }
         .font(.caption)
         .buttonStyle(.bordered)

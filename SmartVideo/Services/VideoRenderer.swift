@@ -19,6 +19,9 @@ final class VideoRenderer {
         transitionSeconds: Double,
         vfxPresets: [VFXPreset],
         vfxIntensity: Double,
+        vfxCoverage: VFXCoverage,
+        vfxStartTime: Double,
+        vfxEndTime: Double,
         musicURL: URL?,
         musicVolume: Float,
         musicStartSeconds: Double,
@@ -229,10 +232,18 @@ final class VideoRenderer {
             mix = value
         }
 
-        SubtitleOverlay.attach(to: videoComposition, size: size, cues: subtitles,
-                               positionX: subtitleX, positionY: subtitleY,
-                               vfxPresets: vfxPresets, vfxIntensity: vfxIntensity,
-                               duration: cursor.seconds)
+        let effectBounds = vfxCoverage == .entireCanvas ?
+            CGRect(origin: .zero, size: size) :
+            await VFXContentBounds.detect(clips: clips, canvas: size,
+                                          mode: contentMode)
+        SubtitleOverlay.attach(
+            to: videoComposition, size: size, cues: subtitles,
+            positionX: subtitleX, positionY: subtitleY,
+            vfxPresets: vfxPresets, vfxIntensity: vfxIntensity,
+            duration: cursor.seconds, effectBounds: effectBounds,
+            vfxStartTime: vfxStartTime,
+            vfxEndTime: vfxEndTime <= 0 ? cursor.seconds : vfxEndTime
+        )
         let exportURL = MediaStorage.newExportURL()
         do {
             guard let exporter = AVAssetExportSession(

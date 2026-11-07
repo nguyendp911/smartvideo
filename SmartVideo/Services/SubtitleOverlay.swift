@@ -8,7 +8,8 @@ enum SubtitleOverlay {
                        size: CGSize, cues: [SubtitleCue],
                        positionX: Double, positionY: Double,
                        vfxPresets: [VFXPreset], vfxIntensity: Double,
-                       duration: Double) {
+                       duration: Double, effectBounds: CGRect,
+                       vfxStartTime: Double, vfxEndTime: Double) {
         guard !cues.isEmpty || !vfxPresets.isEmpty else { return }
 
         let parent = CALayer()
@@ -20,7 +21,10 @@ enum SubtitleOverlay {
         // Effects render over the footage; captions remain legible above them.
         VFXOverlayLibrary.attach(presets: vfxPresets, to: parent,
                                  canvas: size, duration: duration,
-                                 intensity: vfxIntensity)
+                                 intensity: vfxIntensity,
+                                 effectBounds: effectBounds,
+                                 startTime: vfxStartTime,
+                                 endTime: vfxEndTime)
 
         for cue in cues where cue.end > cue.start && !cue.text.isEmpty {
             let width = size.width * 0.72

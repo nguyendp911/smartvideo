@@ -10,7 +10,10 @@ final class EditorViewModel: ObservableObject {
     @Published var transition: VideoTransition = .cut
     @Published var transitionSeconds: Double = 0.45
     @Published var vfxPresets: Set<VFXPreset> = []
-    @Published var vfxIntensity: Double = 0.55
+    @Published var vfxIntensity: Double = 0.30
+    @Published var vfxCoverage: VFXCoverage = .videoOnly
+    @Published var vfxStartTime: Double = 0
+    @Published var vfxEndTime: Double = 0
     @Published var subtitleX: Double = 0.5
     @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
@@ -389,6 +392,9 @@ final class EditorViewModel: ObservableObject {
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
         let workVFXIntensity = vfxIntensity
+        let workVFXCoverage = vfxCoverage
+        let workVFXStartTime = vfxStartTime
+        let workVFXEndTime = vfxEndTime
         let workMusic = musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
@@ -415,6 +421,9 @@ final class EditorViewModel: ObservableObject {
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
                         vfxIntensity: workVFXIntensity,
+                        vfxCoverage: workVFXCoverage,
+                        vfxStartTime: workVFXStartTime,
+                        vfxEndTime: workVFXEndTime,
                         musicURL: workMusic,
                         musicVolume: workMusicVolume,
                         musicStartSeconds: workMusicStart,
