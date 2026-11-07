@@ -44,3 +44,45 @@ jobs:
           name: SmartVideo-Simulator
           path: SmartVideo-Simulator.zip
           retention-days: 7
+
+  device_ipa:
+    name: Build iPhone IPA (unsigned)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Compile for physical iPhone
+        run: |
+          xcodebuild \
+            -project SmartVideo.xcodeproj \
+            -scheme SmartVideo \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DeviceDerived \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP="build/DeviceDerived/Build/Products/Release-iphoneos/SmartVideo.app"
+          test -d "$APP"
+          test -f "$APP/SmartVideo"
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qry SmartVideo-unsigned.ipa Payload
+          unzip -t SmartVideo-unsigned.ipa | tail -n 1
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: SmartVideo-iPhone-Unsigned-IPA
+          path: SmartVideo-unsigned.ipa
+          retention-days: 14
