@@ -391,6 +391,15 @@ struct EditorView: View {
                                 }
                             }
                             .buttonStyle(.plain)
+                            .draggable(clip.id.uuidString)
+                            .dropDestination(for: String.self) { items, _ in
+                                guard let first = items.first,
+                                      let dragged = UUID(uuidString: first) else {
+                                    return false
+                                }
+                                model.reorderClip(draggedID: dragged, before: clip.id)
+                                return true
+                            }
                         }
                     }
                 }
