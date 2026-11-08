@@ -42,6 +42,7 @@ struct EditorView: View {
     @State private var previewPlayer: AVPlayer?
     @State private var localSecond = 0.0
     @State private var isPlaying = false
+    @State private var showProjects = false
 
     private let accent = Color.cyan
 
@@ -53,8 +54,7 @@ struct EditorView: View {
         guard let selectedClipID, let index = model.clips.firstIndex(where: { $0.id == selectedClipID }) else {
             return 0
         }
-        let before = model.clips.prefix(index).reduce(0.0) { $0 + $1.duration }
-        return before + localSecond
+        return model.timelineStart(of: index) + localSecond
     }
 
     private var activeSubtitle: String {
@@ -113,8 +113,12 @@ struct EditorView: View {
         .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
             guard isPlaying, let player = previewPlayer else { return }
             if let clip = selectedClip {
-                localSecond = max(0, player.currentTime().seconds - clip.startTime)
-                if localSecond >= clip.duration {
+                localSecond = max(0, (player.currentTime().seconds - clip.startTime) / max(0.25, clip.playbackSpeed))
+                if let index = model.clips.firstIndex(where: { $0.id == clip.id }) {
+                    model.timelineSecond = min(model.totalDuration,
+                        model.timelineStart(of: index) + localSecond)
+                }
+                if localSecond >= clip.renderedDuration {
                     player.pause()
                     isPlaying = false
                 }
@@ -140,6 +144,13 @@ struct EditorView: View {
                 model.errorText = "Không thể mở tệp: \(error.localizedDescription)"
             }
         }
+        .sheet(isPresented: $showProjects) {
+            ProjectLibrarySheet(model: model) {
+                selectedClipID = model.clips.first?.id
+                model.timelineSecond = 0
+                updatePreview()
+            }
+        }
         .onChange(of: recorder.errorText) { message in
             if let message { model.errorText = message }
         }
@@ -156,19 +167,24 @@ struct EditorView: View {
     private func previewHeight(for availableHeight: CGFloat) -> CGFloat {
         // Height is computed from the content area after respecting the
         // system safe area and the pinned export bar.
-        min(300, max(150, availableHeight * 0.36))
+        min(255, max(135, availableHeight * 0.31))
     }
 
     private var topBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 7) {
             Image(systemName: "film.stack.fill")
                 .font(.title3)
                 .foregroundStyle(accent)
             VStack(alignment: .leading, spacing: 1) {
-                Text("ViePN Smart Video").font(.headline)
+                Text("ViePN Smart Video").font(.subheadline.bold()).lineLimit(1)
                 Text("Studio · Offline").font(.caption2).foregroundStyle(.secondary)
             }
-            Spacer()
+            Spacer(minLength: 0)
+            Button { showProjects = true } label: {
+                Image(systemName: "folder")
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Dự án")
             Menu {
                 ForEach(EditorTool.allCases) { tool in
                     Button {
@@ -312,56 +328,74 @@ struct EditorView: View {
     }
 
     private var timeline: some View {
-        VStack(spacing: 4) {
-            HStack {
+        VStack(spacing: 5) {
+            HStack(spacing: 7) {
                 Label("Timeline", systemImage: "rectangle.3.group")
                     .font(.caption.bold())
-                Text("\(model.clips.count) đoạn")
-                    .font(.caption2).foregroundStyle(.secondary)
+                Text("\(model.clips.count) clip")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
                 Spacer()
-                Text(String(format: "%.1f giây", model.totalDuration))
-                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                Text(timecode(model.timelineSecond) + " / " + timecode(model.totalDuration))
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.cyan)
             }
 
             if model.clips.isEmpty {
                 Text("Bấm Thêm để nhập video hoặc ảnh")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(height: 67)
+                    .frame(height: 58)
             } else {
+                Slider(value: Binding(
+                    get: { min(model.totalDuration, max(0, model.timelineSecond)) },
+                    set: { scrubTimeline(to: $0) }
+                ), in: 0...max(0.1, model.totalDuration), step: 0.04)
+                    .tint(.cyan)
+                    .accessibilityLabel("Tua tới vị trí trên timeline")
+
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(model.clips) { clip in
+                    HStack(spacing: 4) {
+                        ForEach(Array(model.clips.enumerated()), id: \.element.id) { index, clip in
                             Button {
-                                selectedClipID = clip.id
+                                selectClip(clip, at: index)
                                 activeTool = .clip
                             } label: {
                                 VStack(spacing: 3) {
                                     ZStack {
-                                        RoundedRectangle(cornerRadius: 7)
-                                            .fill(Color.white.opacity(0.1))
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(Color.white.opacity(0.09))
                                         if clip.kind == .image,
                                            let image = UIImage(contentsOfFile: clip.fileURL.path) {
-                                            Image(uiImage: image).resizable().scaledToFill()
-                                                .frame(width: 76, height: 46).clipped()
+                                            Image(uiImage: image)
+                                                .resizable()
+                                                .scaledToFill()
+                                                .frame(width: timelineClipWidth(clip), height: 35)
+                                                .clipped()
                                         } else {
-                                            Image(systemName: "film.fill").foregroundStyle(accent)
+                                            Image(systemName: "film.fill")
+                                                .foregroundStyle(.cyan)
                                         }
                                     }
-                                    .frame(width: 76, height: 46)
-                                    .clipShape(RoundedRectangle(cornerRadius: 7))
-                                    Text(String(format: "%.1fs", clip.renderedDuration))
-                                        .font(.caption2.monospacedDigit())
+                                    .frame(width: timelineClipWidth(clip), height: 35)
+                                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                                    Text("\(index + 1) · " +
+                                         String(format: "%.1fs", clip.renderedDuration))
+                                        .font(.system(size: 9, weight: .medium))
                                         .foregroundStyle(.white)
                                 }
-                                .padding(4)
-                                .background(selectedClipID == clip.id
-                                            ? accent.opacity(0.2) : Color.white.opacity(0.04),
-                                            in: RoundedRectangle(cornerRadius: 9))
+                                .padding(3)
+                                .background(
+                                    selectedClipID == clip.id ?
+                                        Color.cyan.opacity(0.22) : Color.white.opacity(0.04),
+                                    in: RoundedRectangle(cornerRadius: 7)
+                                )
                                 .overlay {
-                                    RoundedRectangle(cornerRadius: 9)
-                                        .stroke(selectedClipID == clip.id ? accent : .clear,
-                                                lineWidth: 1.5)
+                                    RoundedRectangle(cornerRadius: 7)
+                                        .stroke(
+                                            selectedClipID == clip.id ? Color.cyan : .clear,
+                                            lineWidth: 1.3
+                                        )
                                 }
                             }
                             .buttonStyle(.plain)
@@ -369,8 +403,78 @@ struct EditorView: View {
                     }
                 }
             }
+            HStack(spacing: 9) {
+                Button {
+                    model.undoEdit()
+                    scrubTimeline(to: model.timelineSecond)
+                } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!model.canUndo)
+
+                Button {
+                    model.redoEdit()
+                    scrubTimeline(to: model.timelineSecond)
+                } label: { Image(systemName: "arrow.uturn.forward") }
+                    .disabled(!model.canRedo)
+
+                Spacer(minLength: 2)
+
+                Text("Zoom")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Slider(value: $model.timelineZoom, in: 0.5...3.0, step: 0.25)
+                    .frame(width: 88)
+                    .tint(.cyan)
+
+                Button {
+                    if let id = model.splitClip(at: model.timelineSecond) {
+                        selectedClipID = id
+                        scrubTimeline(to: model.timelineSecond)
+                    }
+                } label: {
+                    Label("Tách", systemImage: "scissors")
+                }
+                .disabled(model.clips.isEmpty)
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
         }
-        .frame(height: 96, alignment: .top)
+        .frame(height: 154, alignment: .top)
+    }
+
+    private func timecode(_ second: Double) -> String {
+        let centiseconds = Int((max(0, second) * 100).rounded())
+        return String(format: "%02d:%02d.%02d",
+                      centiseconds / 6000, (centiseconds / 100) % 60,
+                      centiseconds % 100)
+    }
+
+    private func timelineClipWidth(_ clip: TimelineClip) -> CGFloat {
+        CGFloat(min(180, max(48, clip.renderedDuration * 14 * model.timelineZoom)))
+    }
+
+    private func selectClip(_ clip: TimelineClip, at index: Int) {
+        model.timelineSecond = model.timelineStart(of: index)
+        selectedClipID = clip.id
+        localSecond = 0
+    }
+
+    private func scrubTimeline(to time: Double) {
+        previewPlayer?.pause()
+        isPlaying = false
+        let seconds = min(model.totalDuration, max(0, time))
+        model.timelineSecond = seconds
+        guard let position = model.clipAtTimeline(seconds) else { return }
+        let clip = model.clips[position.index]
+        if selectedClipID != clip.id {
+            selectedClipID = clip.id
+            updatePreview()
+        }
+        localSecond = position.local
+        if clip.kind == .video {
+            let seek = clip.startTime + position.local * clip.playbackSpeed
+            previewPlayer?.seek(to: CMTime(seconds: seek, preferredTimescale: 600),
+                                toleranceBefore: .zero, toleranceAfter: .zero)
+        }
     }
 
     private var toolPicker: some View {
@@ -434,8 +538,16 @@ struct EditorView: View {
                     Button {
                         model.moveClip(id: clip.id, delta: 1)
                     } label: { Image(systemName: "arrow.right.circle") }
+                    Button {
+                        if let id = model.duplicateClip(id: clip.id) {
+                            selectedClipID = id
+                            activeTool = .clip
+                        }
+                    } label: { Image(systemName: "plus.square.on.square") }
+                    .accessibilityLabel("Nhân bản clip")
                     Button(role: .destructive) {
                         model.removeClip(id: clip.id)
+                        scrubTimeline(to: model.timelineSecond)
                     } label: { Image(systemName: "trash") }
                 }
 
