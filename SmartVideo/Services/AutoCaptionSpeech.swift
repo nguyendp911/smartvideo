@@ -102,7 +102,7 @@ final class AutoCaptionSpeech {
             }
 
         let words = finalResult.bestTranscription.segments.compactMap { segment
-            -> RecognizedWord? in
+            -> SubtitleWord? in
             let text = segment.substring.trimmingCharacters(
                 in: .whitespacesAndNewlines
             )
