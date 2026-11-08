@@ -205,3 +205,38 @@ Chạy trực tiếp bằng Core Animation/AVFoundation. Không có mô hình AI
 
 ### Trạng thái kiểm thử
 GitHub Actions kiểm tra compile Swift và tạo IPA iPhone unsigned. Chưa thực hiện kiểm thử âm thanh/metadata/thời gian TTS end-to-end trên iPhone 12 Pro Max. Nếu MP4 không hiển thị trường metadata trong ứng dụng ngoài, hãy kiểm tra metadata bằng công cụ phân tích container; đây không đồng nghĩa với trường đã được giữ trong mọi định dạng chia sẻ.
+
+
+## ViePN Smart Video v2.8.0 – CapCut-style editing foundations
+
+Phiên bản này nâng cấp **workflow dựng phim**, không sao chép giao diện/biểu tượng/tài sản có bản quyền của CapCut.
+
+### Timeline có thể chỉnh chính xác
+
+- Thanh tua 0,04 giây trong timeline; chọn clip tự chuyển phần xem trước tới đoạn đó.
+- Video có khung hình thumbnail thực tế (lấy bằng AVAssetImageGenerator, cache NSCache); ảnh hiển thị preview ảnh. Tự sinh thumbnail khi cuộn tới đoạn.
+- Zoom timeline từ 0,5× đến 3,0×: tăng/giảm bề ngang clip để dễ nhìn vùng cần cắt.
+- **Tách clip tại con trỏ**: đối với video chia duration nguồn đúng theo playbackSpeed, đối với ảnh chia thời lượng hiển thị, giữ media gốc; không tạo file video mới.
+- **Nhân bản clip**, **kéo thả đổi thứ tự**, di chuyển trái/phải/xóa. Thao tác thay đổi cấu trúc timeline có **Undo/Redo tối đa 40 lần**.
+- Thanh hiển thị thời gian phút:giây.phần trăm giây.
+
+### Dự án offline
+
+- Menu folder **Dự án** ở thanh trên; tạo mới, đặt tên, lưu, mở hoặc xóa dự án JSON trong Documents/Projects.
+- Lưu bố cục clip, tốc độ, thời gian cắt, subtitle, tỷ lệ và độ phân giải, chuyển cảnh, nhạc và giọng đọc, VFX, metadata xuất, các giá trị chỉnh sửa chính.
+- Tệp JSON chỉ lưu edit decision list, tham chiếu tên media đã được nhập vào Documents/Media; **không bao gồm file media**. Không xóa app trước khi sao lưu dữ liệu gốc.
+- Dự án được lưu **thủ công**, không có autosave hay đồng bộ đám mây.
+- Phân tách timeline hỗ trợ chồng hình từ cross-dissolve; ở vùng transition con trỏ ưu tiên clip mới vào, không phát preview hoàn chỉnh của cả hai clip cùng lúc.
+
+### Giới hạn so với CapCut
+
+Đây **chưa phải bản tương đương CapCut**: chưa có layer overlay video độc lập, xử lý toàn bộ multi-track, track text độc lập có keyframe riêng, stabilisation, motion-tracking hay thư viện tài nguyên online. Preview chỉ phát clip đang chọn, không render trực tiếp toàn bộ transition/VFX/âm thanh trộn; cần xuất MP4 để xem kết quả đầy đủ. Hãy kiểm tra kết quả trên iPhone 12 Pro Max thực tế trước khi dựng dự án dài.
+
+### Cách kiểm tra nhanh
+
+1. Thêm 3 video, chọn tab Đoạn, kéo thanh tua tới giữa clip thứ nhất.
+2. Chọn **Tách**; timeline sẽ có 4 clip. **Undo** và **Redo** để kiểm tra có phục hồi chính xác.
+3. Nhấn vào clip đã tách → biểu tượng **Nhân bản**; kéo thả một clip sang vị trí khác.
+4. Bấm biểu tượng folder → nhập tên dự án → **Lưu dự án hiện tại** → **Tạo dự án mới** → mở lại dự án đã lưu.
+5. Xuất MP4 ngắn, kiểm tra timeline sau khi chỉnh. Với video codec đặc biệt, bản nguồn vẫn được giữ để thử lại.
+
