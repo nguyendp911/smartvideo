@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreMedia
+import ImageIO
 
 struct MediaInspection: Identifiable {
     let id = UUID()
@@ -56,6 +57,26 @@ struct MediaInspection: Identifiable {
 
 enum MediaInspector {
     static func inspect(_ url: URL) async throws -> MediaInspection {
+        if ["jpg", "jpeg", "png", "heic", "heif", "webp", "tif", "tiff"]
+            .contains(url.pathExtension.lowercased()) {
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.int64Value
+            let source = CGImageSourceCreateWithURL(url as CFURL, nil)
+            let properties = source.flatMap { CGImageSourceCopyPropertiesAtIndex($0, 0, nil) as? [CFString: Any] }
+            let width = (properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.intValue
+            let height = (properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.intValue
+            guard width != nil || height != nil else {
+                throw SmartVideoError.invalidMedia("Không đọc được thông tin ảnh.")
+            }
+            return MediaInspection(filename: url.lastPathComponent,
+                                   fileSize: size, duration: nil,
+                                   videoCodec: url.pathExtension.uppercased(),
+                                   width: width, height: height,
+                                   nominalFrameRate: nil, minFrameDuration: nil,
+                                   videoBitrate: nil, hasAudio: false,
+                                   audioCodec: nil, audioSampleRate: nil,
+                                   audioChannels: nil, isHDR: nil,
+                                   warnings: [])
+        }
         let asset = AVURLAsset(url: url)
         async let videoTracksTask = asset.loadTracks(withMediaType: .video)
         async let audioTracksTask = asset.loadTracks(withMediaType: .audio)
