@@ -60,6 +60,7 @@ struct EditorView: View {
     @State private var selectedPIPID: UUID?
     @State private var selectedTextID: UUID?
     @State private var selectedSoundID: UUID?
+    @State private var compareOriginalFootage = false
 
     private let accent = Color.cyan
 
@@ -141,7 +142,11 @@ struct EditorView: View {
             }
         }
         .onChange(of: selectedClipID) { _ in
+            compareOriginalFootage = false
             updatePreview()
+        }
+        .onChange(of: compareOriginalFootage) { _ in
+            refreshColorPreview()
         }
         .onChange(of: selectedClip?.imageLook) { _ in
             refreshColorPreview()
@@ -277,7 +282,7 @@ struct EditorView: View {
                         StudioLookPhotoPreview(
                             fileURL: clip.fileURL,
                             look: clip.imageLook,
-                            intensity: clip.lookIntensity,
+                            intensity: compareOriginalFootage ? 0 : clip.lookIntensity,
                             contentMode: model.contentMode
                         )
                             .frame(width: canvasWidth, height: canvasHeight)
@@ -1008,7 +1013,11 @@ struct EditorView: View {
                     }
                 ), in: 0...1, step: 0.05)
                     .tint(.cyan)
-                Text("Màu áp trực tiếp lên từng khung hình của video khi xuất MP4. Giữ tiếng gốc; xử lý footage dài có thể tốn thời gian.")
+                Toggle("So sánh trước / sau · chỉ thay đổi preview",
+                       isOn: $compareOriginalFootage)
+                    .font(.caption)
+                    .tint(.cyan)
+                                Text("Màu áp trực tiếp lên từng khung hình của video khi xuất MP4. Giữ tiếng gốc; xử lý footage dài có thể tốn thời gian.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             } else {
@@ -1767,7 +1776,9 @@ struct EditorView: View {
         let clock = max(0, localSecond)
         previewPlayer?.pause()
         isPlaying = false
-        let item = VideoFrameGrader.makePreviewItem(for: clip)
+        var previewClip = clip
+        if compareOriginalFootage { previewClip.lookIntensity = 0 }
+        let item = VideoFrameGrader.makePreviewItem(for: previewClip)
         let player = AVPlayer(playerItem: item)
         previewPlayer = player
         player.seek(
@@ -1786,8 +1797,10 @@ struct EditorView: View {
             previewPlayer = nil
             return
         }
+        var previewClip = clip
+        if compareOriginalFootage { previewClip.lookIntensity = 0 }
         let player = AVPlayer(playerItem:
-            VideoFrameGrader.makePreviewItem(for: clip))
+            VideoFrameGrader.makePreviewItem(for: previewClip))
         player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))
         previewPlayer = player
     }
