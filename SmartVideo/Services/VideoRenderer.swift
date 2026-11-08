@@ -463,33 +463,7 @@ final class VideoRenderer {
     }
     /// Lightweight Core Image photo color looks.
     private func colorGrade(_ image: CIImage, preset: ImageLook) -> CIImage {
-        switch preset {
-        case .original:
-            return image
-        case .cinematic:
-            return image.applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0.82,
-                kCIInputContrastKey: 1.16,
-                kCIInputBrightnessKey: -0.015
-            ])
-        case .mono:
-            return image.applyingFilter("CIColorControls", parameters: [
-                kCIInputSaturationKey: 0,
-                kCIInputContrastKey: 1.1
-            ])
-        case .warm:
-            return image.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 1.065, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 1.01, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 0.92, w: 0)
-            ])
-        case .cool:
-            return image.applyingFilter("CIColorMatrix", parameters: [
-                "inputRVector": CIVector(x: 0.94, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 1.0, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 1.07, w: 0)
-            ])
-        }
+        StudioColorGrader.apply(image, look: preset)
     }
 
 }
