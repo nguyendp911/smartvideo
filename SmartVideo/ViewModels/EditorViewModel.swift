@@ -509,7 +509,10 @@ final class EditorViewModel: ObservableObject {
             let restoredClips = p.clips.map(ProjectStore.clipInMedia)
             let restoredMusic = ProjectStore.audioInMedia(p.musicFileName)
             let restoredVoice = ProjectStore.audioInMedia(p.voiceFileName)
-            let allFiles = restoredClips.map(\.fileURL) +
+            let overlayFiles = p.imageOverlays.map {
+                MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
+            }
+            let allFiles = restoredClips.map(\.fileURL) + overlayFiles +
                 [restoredMusic, restoredVoice].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
                 throw SmartVideoError.invalidMedia(
