@@ -263,3 +263,20 @@ Phiên bản này nâng cấp **workflow dựng phim**, không sao chép giao di
 - **Lưu/mở dự án**: lưu cả ảnh phủ, video PIP, lớp chữ và tùy chọn chroma. File dự án JSON cũ (v2.8/v2.9) vẫn được đọc: field thiếu mặc định là mảng rỗng, thuộc tính chroma mới mặc định tắt. Không xóa file media trong thư mục ứng dụng nếu cần mở lại.
 - **Giới hạn**: đây mới là nền tảng multi-layer. Chưa có mask/chroma key video, clip speed riêng cho PIP, time-stretch audio PIP, chuyển cảnh giữa các PIP, timeline preview tổng hợp toàn bộ video, hoặc realtime GPU compositor.
 - **Kiểm thử**: GitHub Actions chỉ xác nhận biên dịch iPhone/Simulator và đóng gói unsigned IPA. Cần kiểm tra trên iPhone 12 Pro Max với dự án ngắn, một lớp video PIP và một ảnh xanh trước khi xuất dự án nhiều lớp 1080p.
+
+
+## ViePN Smart Video v3.1.0 – Multi-track Sound Effects
+
+Ứng dụng tiếp tục phát triển trên iOS 16+ với một **studio hiệu ứng âm thanh đa track**. Không dùng hay sao chép âm thanh/giao diện có bản quyền của CapCut.
+
+- **Tab Âm FX**: thêm âm thanh từ Files (MP3, M4A, WAV và các định dạng AVFoundation hỗ trợ) hoặc tạo sáu âm thanh tổng hợp gốc ngay trên máy: **Whoosh, Pop, Impact, Click, Riser, Glitch**.
+- **Tối đa 12 đoạn SFX** trong một dự án, đặt đồng thời ở các mốc khác nhau; mỗi đoạn có file nguồn, thời điểm bắt đầu trên timeline, thời điểm cắt vào nguồn, thời lượng phát, mức âm lượng 0–100%, mute, fade-in, fade-out.
+- **Hiển thị waveform**: phân tích đỉnh âm thanh của tối đa 90 giây đầu thành 64 cột. Với tệp dài hơn, waveform chỉ biểu diễn đầu nguồn.
+- **Trên timeline**: hiển thị hàng FX riêng, chạm vào một hiệu ứng để chọn đoạn và mở tab Âm FX. Các nút **Đặt tại con trỏ**, **Nhân bản**, **Xóa**, **Nghe thử** giúp giảm thao tác vuốt.
+- **Render thật**: mỗi hiệu ứng có track audio riêng trong AVMutableComposition, chèn vào thời gian đã chọn, dùng AVMutableAudioMixInputParameters để điều chỉnh gain và fade. Track SFX có thể phát chồng lên nhạc nền, tiếng video và thuyết minh.
+- **Lưu / mở lại dự án**: âm thanh và thông số SFX được ghi vào JSON trong Documents/Projects. Dự án 3.0 hoặc cũ hơn không có trường soundEffects vẫn có thể mở, mặc định là danh sách SFX rỗng.
+- **Không phá hủy nguồn**: tệp nhạc gốc không bị cắt/ghi đè. Nếu xóa ứng dụng hoặc mất thư mục Media, bản JSON một mình không chứa audio để dựng lại.
+
+**Giới hạn hiện tại**: SoundFX chỉ nghe thử độc lập trong editor, chưa có phát trực tiếp bản phối tổng hợp theo con trỏ (cần preview mixer riêng). Không có waveform toàn bài cho nhạc dài trên 90 giây, không tạo tiếng bằng mô hình AI, chưa có bộ lọc EQ/compressor đa băng hoặc pitch shifting. Các hiệu ứng tự tổng hợp là tín hiệu ngắn cơ bản, không thay thế thư viện âm thanh chuyên nghiệp.
+
+Kiểm thử bằng GitHub Actions xác nhận biên dịch iOS/Simulator và tạo IPA chưa ký; cần thử xuất MP4 với nhiều track SFX chồng lên nhau trên iPhone 12 Pro Max để xác nhận chất lượng/đồng bộ thực tế.
