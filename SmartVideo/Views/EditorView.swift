@@ -458,6 +458,23 @@ struct EditorView: View {
                     .tint(.cyan)
                     .accessibilityLabel("Tua tới vị trí trên timeline")
 
+                if !model.timelineBeatMarkers.isEmpty {
+                    HStack(spacing: 6) {
+                        Image(systemName: "metronome")
+                            .font(.caption2)
+                            .foregroundStyle(.cyan)
+                        BeatTimelineStrip(
+                            beatPositions: model.timelineBeatMarkers,
+                            totalDuration: model.totalDuration
+                        )
+                        .frame(height: 12)
+                        Text(String(format: "~%.0f BPM", model.detectedTempoBPM))
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(.cyan)
+                    }
+                    .frame(height: 16)
+                }
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(Array(model.clips.enumerated()), id: \.element.id) { index, clip in
@@ -593,7 +610,8 @@ struct EditorView: View {
             .font(.caption)
             .buttonStyle(.bordered)
         }
-        .frame(height: model.soundEffects.isEmpty ? 154 : 186,
+        .frame(height: (model.soundEffects.isEmpty ? 154 : 186) +
+               (model.timelineBeatMarkers.isEmpty ? 0 : 17),
                alignment: .top)
     }
 

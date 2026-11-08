@@ -281,10 +281,11 @@ struct SoundEffectsStudioPanel: View {
             AudioWaveformBars(url: item.fileURL)
                 .frame(height: 50)
 
-            HStack(spacing: 8) {
-                Button {
-                    do {
-                        if previewPlayer?.isPlaying == true {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Button {
+                        do {
+                            if previewPlayer?.isPlaying == true {
                             previewPlayer?.stop()
                         }
                         let player = try AVAudioPlayer(
@@ -328,8 +329,9 @@ struct SoundEffectsStudioPanel: View {
                 }
                 .buttonStyle(.bordered)
                 .disabled(model.soundEffects.count >= 12)
+                }
+                .font(.caption)
             }
-            .font(.caption)
 
             HStack {
                 Text("Vị trí phát")
