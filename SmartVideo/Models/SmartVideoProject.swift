@@ -9,6 +9,8 @@ struct SmartVideoProject: Codable {
     var savedAt: Date
     var clips: [TimelineClip]
     var imageOverlays: [ImageOverlayClip]
+    var videoOverlays: [VideoOverlayClip]
+    var textOverlays: [TextOverlayClip]
     var subtitles: [SubtitleCue]
     var transition: String
     var transitionSeconds: Double
@@ -38,7 +40,9 @@ struct SmartVideoProject: Codable {
     var metadata: ExportMetadata
 
     init(id: UUID, name: String, savedAt: Date, clips: [TimelineClip],
-         imageOverlays: [ImageOverlayClip], subtitles: [SubtitleCue],
+         imageOverlays: [ImageOverlayClip],
+         videoOverlays: [VideoOverlayClip], textOverlays: [TextOverlayClip],
+         subtitles: [SubtitleCue],
          transition: String, transitionSeconds: Double, canvas: String,
          contentMode: String, quality: String, musicFileName: String?,
          voiceFileName: String?, musicVolume: Float, musicStartSeconds: Double,
@@ -53,6 +57,8 @@ struct SmartVideoProject: Codable {
         self.savedAt = savedAt
         self.clips = clips
         self.imageOverlays = imageOverlays
+        self.videoOverlays = videoOverlays
+        self.textOverlays = textOverlays
         self.subtitles = subtitles
         self.transition = transition
         self.transitionSeconds = transitionSeconds
@@ -83,7 +89,8 @@ struct SmartVideoProject: Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, savedAt, clips, imageOverlays, subtitles, transition,
+        case id, name, savedAt, clips, imageOverlays, videoOverlays,
+             textOverlays, subtitles, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
              voiceFileName, musicVolume, musicStartSeconds,
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
@@ -101,6 +108,10 @@ struct SmartVideoProject: Codable {
         clips = try values.decode([TimelineClip].self, forKey: .clips)
         imageOverlays = try values.decodeIfPresent([ImageOverlayClip].self,
                                                    forKey: .imageOverlays) ?? []
+        videoOverlays = try values.decodeIfPresent([VideoOverlayClip].self,
+                                                   forKey: .videoOverlays) ?? []
+        textOverlays = try values.decodeIfPresent([TextOverlayClip].self,
+                                                  forKey: .textOverlays) ?? []
         subtitles = try values.decode([SubtitleCue].self, forKey: .subtitles)
         transition = try values.decode(String.self, forKey: .transition)
         transitionSeconds = try values.decode(Double.self, forKey: .transitionSeconds)

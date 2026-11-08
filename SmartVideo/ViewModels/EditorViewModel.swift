@@ -7,6 +7,8 @@ import AVFoundation
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
     @Published var imageOverlays: [ImageOverlayClip] = []
+    @Published var videoOverlays: [VideoOverlayClip] = []
+    @Published var textOverlays: [TextOverlayClip] = []
     @Published var timelineSecond: Double = 0
     @Published var timelineZoom: Double = 1.0
     @Published var projectName: String = "Dự án mới"
@@ -455,6 +457,53 @@ final class EditorViewModel: ObservableObject {
         imageOverlays.removeAll { $0.id == id }
     }
 
+    func importVideoOverlay(_ selection: PhotosPickerItem) async {
+        guard videoOverlays.count < 4 else {
+            errorText = "Tối đa bốn lớp video PIP để tránh quá tải iPhone."
+            return
+        }
+        do {
+            guard let movie = try await selection.loadTransferable(type: PickedMovie.self) else {
+                throw SmartVideoError.invalidMedia("Không tải được video PIP.")
+            }
+            let asset = AVURLAsset(url: movie.url)
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+            guard !videoTracks.isEmpty else {
+                throw SmartVideoError.invalidMedia("Tệp overlay không có hình ảnh video.")
+            }
+            let seconds = try await asset.load(.duration).seconds
+            guard seconds.isFinite && seconds > 0.1 else {
+                throw SmartVideoError.invalidMedia("Thời lượng video PIP không hợp lệ.")
+            }
+            var item = VideoOverlayClip(fileURL: movie.url)
+            item.start = min(timelineSecond, max(0, totalDuration - 0.2))
+            item.duration = min(seconds, max(0.1, totalDuration - item.start))
+            item.sourceDuration = seconds
+            videoOverlays.append(item)
+        } catch {
+            errorText = "Không nhập được video Overlay: \(error.localizedDescription)"
+        }
+    }
+
+    func addTextOverlay() {
+        guard totalDuration > 0 else {
+            errorText = "Hãy thêm clip video/ảnh trước khi tạo lớp chữ."
+            return
+        }
+        var item = TextOverlayClip()
+        item.start = min(timelineSecond, max(0, totalDuration - 0.2))
+        item.duration = min(3, max(0.1, totalDuration - item.start))
+        textOverlays.append(item)
+    }
+
+    func removeVideoOverlay(_ id: UUID) {
+        videoOverlays.removeAll { $0.id == id }
+    }
+
+    func removeTextOverlay(_ id: UUID) {
+        textOverlays.removeAll { $0.id == id }
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {
@@ -471,6 +520,7 @@ final class EditorViewModel: ObservableObject {
             let snapshot = SmartVideoProject(
                 id: projectID, name: name, savedAt: Date(),
                 clips: clips, imageOverlays: imageOverlays,
+                videoOverlays: videoOverlays, textOverlays: textOverlays,
                 subtitles: subtitles,
                 transition: transition.rawValue,
                 transitionSeconds: transitionSeconds,
@@ -509,10 +559,13 @@ final class EditorViewModel: ObservableObject {
             let restoredClips = p.clips.map(ProjectStore.clipInMedia)
             let restoredMusic = ProjectStore.audioInMedia(p.musicFileName)
             let restoredVoice = ProjectStore.audioInMedia(p.voiceFileName)
+            let pipFiles = p.videoOverlays.map {
+                MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
+            }
             let overlayFiles = p.imageOverlays.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
-            let allFiles = restoredClips.map(\.fileURL) + overlayFiles +
+            let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles +
                 [restoredMusic, restoredVoice].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
                 throw SmartVideoError.invalidMedia(
@@ -529,6 +582,13 @@ final class EditorViewModel: ObservableObject {
                     .appendingPathComponent($0.fileURL.lastPathComponent)
                 return overlay
             }
+            videoOverlays = p.videoOverlays.map {
+                var overlay = $0
+                overlay.fileURL = MediaStorage.mediaDirectory
+                    .appendingPathComponent($0.fileURL.lastPathComponent)
+                return overlay
+            }
+            textOverlays = p.textOverlays
             subtitles = p.subtitles
             transition = VideoTransition.allCases.first {
                 $0.rawValue == p.transition
@@ -593,6 +653,8 @@ final class EditorViewModel: ObservableObject {
         projectName = "Dự án mới"
         clips = []
         imageOverlays = []
+        videoOverlays = []
+        textOverlays = []
         subtitles = []
         musicURL = nil
         voiceoverURL = nil
@@ -751,6 +813,8 @@ final class EditorViewModel: ObservableObject {
 
         let workClips = clips
         let workImageOverlays = imageOverlays
+        let workVideoOverlays = videoOverlays
+        let workTextOverlays = textOverlays
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
@@ -784,6 +848,8 @@ final class EditorViewModel: ObservableObject {
                     try await VideoRenderer().render(
                         clips: workClips,
                         imageOverlays: workImageOverlays,
+                        videoOverlays: workVideoOverlays,
+                        textOverlays: workTextOverlays,
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
