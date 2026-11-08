@@ -36,7 +36,7 @@ enum VoiceSilenceEditor {
             AVLinearPCMBitDepthKey: 16,
             AVLinearPCMIsFloatKey: false,
             AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleavedKey: false
+            AVLinearPCMIsNonInterleaved: false
         ])
         guard reader.canAdd(output) else {
             throw SmartVideoError.invalidMedia("Không giải mã được âm thanh.")
@@ -64,12 +64,13 @@ enum VoiceSilenceEditor {
             let start = CMTimeGetSeconds(
                 CMSampleBufferGetPresentationTimeStamp(buffer)
             )
-            let sampleRate = CMSampleBufferGetFormatDescription(buffer)
+            let sampleRate: Double = CMSampleBufferGetFormatDescription(buffer)
                 .flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mSampleRate }
-                ?? 44_100
+                ?? 44_100.0
             guard start.isFinite, sampleRate > 0 else { continue }
             for index in stride(from: 0, to: count, by: 24) {
-                let t = start + Double(index) / sampleRate
+                let sampleOffset: Double = Double(index) / sampleRate
+                let t: Double = start + sampleOffset
                 let bucket = Int(t / windowSeconds)
                 guard energy.indices.contains(bucket) else { continue }
                 let value = Double(pcm[index]) / 32768
