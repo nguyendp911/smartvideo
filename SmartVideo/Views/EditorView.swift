@@ -1344,10 +1344,19 @@ struct EditorView: View {
                             let distance = min(0.5, cue.start)
                             cue.start -= distance
                             cue.end -= distance
+                            for index in cue.words.indices {
+                                cue.words[index].start -= distance
+                                cue.words[index].end -= distance
+                            }
                         }
                         Button("0.5s →") {
-                            cue.start += 0.5
-                            cue.end += 0.5
+                            let distance = min(0.5, max(0, model.totalDuration - cue.end))
+                            cue.start += distance
+                            cue.end += distance
+                            for index in cue.words.indices {
+                                cue.words[index].start += distance
+                                cue.words[index].end += distance
+                            }
                         }
                     }
                     .font(.caption2)

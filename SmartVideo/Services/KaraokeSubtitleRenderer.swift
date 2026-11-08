@@ -13,8 +13,8 @@ enum KaraokeSubtitleRenderer {
     }
 
     static func attach(cue: SubtitleCue, appearance: SubtitleAppearance,
-                       to background: CALayer, fontSize: CGFloat) {
-        guard cue.hasAlignedWords else { return }
+                       to background: CALayer, fontSize: CGFloat) -> Bool {
+        guard cue.hasAlignedWords else { return false }
         let font = UIFont.boldSystemFont(ofSize: fontSize)
         let padding = fontSize * 0.24
         let usable = max(100, background.bounds.width - 2 * padding)
@@ -42,7 +42,7 @@ enum KaraokeSubtitleRenderer {
 
         // Avoid unbounded layer counts for pathological SRT files.
         guard !lines.isEmpty, lines.count <= 5, cue.words.count <= 14 else {
-            return
+            return false
         }
         let lineHeight = font.lineHeight * 1.17
         let totalHeight = lineHeight * CGFloat(lines.count)
@@ -115,6 +115,7 @@ enum KaraokeSubtitleRenderer {
                 x += cell.width + space
             }
         }
+        return true
     }
 
     private static func makeLayer(

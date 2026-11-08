@@ -58,13 +58,13 @@ enum SubtitleOverlay {
             )
             background.opacity = 0
 
-            if appearance.karaokeEnabled && cue.hasAlignedWords &&
-               cue.words.count <= 14 {
+            let isKaraokeRendered = appearance.karaokeEnabled &&
+                cue.hasAlignedWords &&
                 KaraokeSubtitleRenderer.attach(
                     cue: cue, appearance: appearance,
                     to: background, fontSize: fontSize
                 )
-            } else {
+            if !isKaraokeRendered {
                 let textLayer = CATextLayer()
                 textLayer.frame = background.bounds.insetBy(
                     dx: fontSize * 0.25, dy: 4
