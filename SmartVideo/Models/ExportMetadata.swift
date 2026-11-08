@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-struct ExportMetadata {
+struct ExportMetadata: Codable {
     var title: String = ""
     var author: String = ""
     var description: String = ""

@@ -9,6 +9,8 @@ final class EditorViewModel: ObservableObject {
     @Published var timelineSecond: Double = 0
     @Published var timelineZoom: Double = 1.0
     @Published var projectName: String = "Dự án mới"
+    @Published var projectID: UUID = UUID()
+    @Published var availableProjects: [ProjectListItem] = []
     @Published var savedProjectNames: [String] = []
     @Published var lastSaveMessage: String?
     private var undoStack: [[TimelineClip]] = []
@@ -428,6 +430,151 @@ final class EditorViewModel: ObservableObject {
             )
         } catch {
             errorText = "Không tạo được phụ đề: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Local Projects
+
+    func refreshProjects() {
+        availableProjects = ProjectStore.list()
+    }
+
+    func saveProject() {
+        do {
+            let name = projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !name.isEmpty else {
+                errorText = "Nhập tên dự án để lưu."
+                return
+            }
+            let snapshot = SmartVideoProject(
+                id: projectID, name: name, savedAt: Date(),
+                clips: clips, subtitles: subtitles,
+                transition: transition.rawValue,
+                transitionSeconds: transitionSeconds,
+                canvas: canvas.rawValue, contentMode: contentMode.rawValue,
+                quality: quality.rawValue,
+                musicFileName: musicURL?.lastPathComponent,
+                voiceFileName: voiceoverURL?.lastPathComponent,
+                musicVolume: musicVolume,
+                musicStartSeconds: musicStartSeconds,
+                musicHighlightDuration: musicHighlightDuration,
+                musicFadeIn: musicFadeIn, musicFadeOut: musicFadeOut,
+                musicRepeat: repeatShortMusic,
+                keepOriginalAudio: keepOriginalAudio,
+                voiceOffset: voiceoverOffset, voiceVolume: voiceoverVolume,
+                vfxPresets: VFXPreset.allCases.filter { vfxPresets.contains($0) }
+                    .map(\.rawValue),
+                vfxIntensity: vfxIntensity,
+                vfxCoverage: vfxCoverage.rawValue,
+                vfxStart: vfxStartTime, vfxEnd: vfxEndTime,
+                subtitleX: subtitleX, subtitleY: subtitleY,
+                stripMetadata: stripMetadata,
+                addMetadata: addCustomMetadata, metadata: metadata
+            )
+            try ProjectStore.save(snapshot)
+            projectName = name
+            lastSaveMessage = "Đã lưu \(name)"
+            refreshProjects()
+        } catch {
+            errorText = "Không lưu được dự án: \(error.localizedDescription)"
+        }
+    }
+
+    func loadProject(_ id: UUID) {
+        do {
+            let p = try ProjectStore.load(id)
+            let restoredClips = p.clips.map(ProjectStore.clipInMedia)
+            let restoredMusic = ProjectStore.audioInMedia(p.musicFileName)
+            let restoredVoice = ProjectStore.audioInMedia(p.voiceFileName)
+            let allFiles = restoredClips.map(\.fileURL) +
+                [restoredMusic, restoredVoice].compactMap { $0 }
+            guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
+                throw SmartVideoError.invalidMedia(
+                    "Thiếu ảnh, video hoặc âm thanh gốc. Dự án cần các file trong Media của ứng dụng."
+                )
+            }
+            checkpoint()
+            projectID = p.id
+            projectName = p.name
+            clips = restoredClips
+            subtitles = p.subtitles
+            transition = VideoTransition.allCases.first {
+                $0.rawValue == p.transition
+            } ?? .cut
+            transitionSeconds = p.transitionSeconds
+            canvas = CanvasFormat.allCases.first {
+                $0.rawValue == p.canvas
+            } ?? .portrait
+            contentMode = CanvasContentMode.allCases.first {
+                $0.rawValue == p.contentMode
+            } ?? .fit
+            quality = RenderQuality.allCases.first {
+                $0.rawValue == p.quality
+            } ?? .fullHD
+            musicURL = restoredMusic
+            voiceoverURL = restoredVoice
+            musicVolume = p.musicVolume
+            musicStartSeconds = p.musicStartSeconds
+            musicHighlightDuration = p.musicHighlightDuration
+            musicFadeIn = p.musicFadeIn
+            musicFadeOut = p.musicFadeOut
+            repeatShortMusic = p.musicRepeat
+            keepOriginalAudio = p.keepOriginalAudio
+            voiceoverOffset = p.voiceOffset
+            voiceoverVolume = p.voiceVolume
+            vfxPresets = Set(VFXPreset.allCases.filter {
+                p.vfxPresets.contains($0.rawValue)
+            })
+            vfxIntensity = p.vfxIntensity
+            vfxCoverage = VFXCoverage.allCases.first {
+                $0.rawValue == p.vfxCoverage
+            } ?? .videoOnly
+            vfxStartTime = p.vfxStart
+            vfxEndTime = p.vfxEnd
+            subtitleX = p.subtitleX
+            subtitleY = p.subtitleY
+            stripMetadata = p.stripMetadata
+            addCustomMetadata = p.addMetadata
+            metadata = p.metadata
+            timelineSecond = 0
+            // Refresh the MP3 duration asynchronously. Never put an
+            // indefinite AVAsset duration into a Slider.
+            if let restoredMusic {
+                Task {
+                    let seconds = try? await AVURLAsset(url: restoredMusic).load(.duration).seconds
+                    if let seconds, seconds.isFinite, seconds > 0 {
+                        musicDuration = seconds
+                    }
+                }
+            } else {
+                musicDuration = 0
+            }
+            lastSaveMessage = "Đã mở \(p.name)"
+        } catch {
+            errorText = "Không mở được dự án: \(error.localizedDescription)"
+        }
+    }
+
+    func newProject() {
+        checkpoint()
+        projectID = UUID()
+        projectName = "Dự án mới"
+        clips = []
+        subtitles = []
+        musicURL = nil
+        voiceoverURL = nil
+        musicDuration = 0
+        timelineSecond = 0
+        lastSaveMessage = "Đã tạo dự án trống"
+    }
+
+    func deleteProject(_ id: UUID) {
+        do {
+            try ProjectStore.delete(id)
+            refreshProjects()
+            if projectID == id { projectID = UUID() }
+        } catch {
+            errorText = "Không xóa được dự án: \(error.localizedDescription)"
         }
     }
 
