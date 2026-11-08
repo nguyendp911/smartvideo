@@ -434,6 +434,27 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Independent PIP overlay track
+
+    func importImageOverlay(_ selection: PhotosPickerItem) async {
+        do {
+            guard let data = try await selection.loadTransferable(type: Data.self) else {
+                throw SmartVideoError.invalidMedia("Không tải được ảnh phủ.")
+            }
+            let file = try MediaStorage.storeImage(data: data)
+            var overlay = ImageOverlayClip(fileURL: file)
+            overlay.start = min(timelineSecond, max(0, totalDuration - 0.2))
+            overlay.duration = min(3, max(0.2, totalDuration - overlay.start))
+            imageOverlays.append(overlay)
+        } catch {
+            errorText = "Không thêm được overlay: \(error.localizedDescription)"
+        }
+    }
+
+    func removeImageOverlay(_ id: UUID) {
+        imageOverlays.removeAll { $0.id == id }
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {
