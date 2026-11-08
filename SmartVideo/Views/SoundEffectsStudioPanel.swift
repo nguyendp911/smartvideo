@@ -5,9 +5,8 @@ import AVFoundation
 /// stays separate from background music and voiceover.
 struct SoundEffectsStudioPanel: View {
     @ObservedObject var model: EditorViewModel
-    let importAudio: () -> Void
-
     @Binding var selectedID: UUID?
+    let importAudio: () -> Void
     @State private var previewPlayer: AVAudioPlayer?
 
     private var selectedIndex: Int? {
