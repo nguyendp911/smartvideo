@@ -7,6 +7,7 @@ struct OverlayStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedOverlayID: UUID?
     @Binding var pickedOverlay: PhotosPickerItem?
+    let onScrub: (Double) -> Void
 
     private var selected: ImageOverlayClip? {
         model.imageOverlays.first(where: { $0.id == selectedOverlayID })
@@ -24,7 +25,7 @@ struct OverlayStudioPanel: View {
                 .buttonStyle(.borderedProminent)
                 .font(.caption)
             }
-            Text("Đặt ảnh phía trên clip. Kéo trực tiếp trên preview để đổi điểm bắt đầu; điều chỉnh điểm kết thúc để tạo chuyển động.")
+            Text("Lớp ảnh phủ hỗ trợ keyframe nhiều điểm: kéo ảnh trên preview để di chuyển cả đường chuyển động; chọn từng mốc bên dưới để chỉnh riêng zoom, xoay, vị trí và độ mờ.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -91,6 +92,12 @@ struct OverlayStudioPanel: View {
                        in: 0.2...max(0.3, total - item.start), step: 0.1)
                     .tint(.cyan)
 
+                OverlayKeyframeStudio(
+                    model: model, overlayID: item.id,
+                    onScrub: onScrub
+                )
+
+                if item.keyframes.isEmpty {
                 HStack {
                     Text("Kích thước")
                     Spacer()
@@ -157,6 +164,8 @@ struct OverlayStudioPanel: View {
                        in: 0.05...0.95, step: 0.01)
                 Slider(value: $model.imageOverlays[index].endY,
                        in: 0.05...0.95, step: 0.01)
+
+                }
 
                 Divider()
                 Toggle("Chroma Key – Xóa nền màu", isOn:
