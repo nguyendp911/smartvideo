@@ -700,6 +700,16 @@ final class EditorViewModel: ObservableObject {
         clips.swapAt(index, to)
     }
 
+    func reorderClip(draggedID: UUID, before targetID: UUID) {
+        guard let from = clips.firstIndex(where: { $0.id == draggedID }),
+              let target = clips.firstIndex(where: { $0.id == targetID }),
+              from != target else { return }
+        checkpoint()
+        let moved = clips.remove(at: from)
+        let insertion = from < target ? target - 1 : target
+        clips.insert(moved, at: max(0, min(insertion, clips.count)))
+    }
+
     func export() {
         guard !clips.isEmpty, !isExporting else { return }
         isExporting = true
