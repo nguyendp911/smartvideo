@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import PhotosUI
 import UIKit
 
 private enum VideoVaultFilter: String, CaseIterable, Identifiable {
@@ -29,6 +30,7 @@ struct VideoLibraryPanel: View {
     @AppStorage("ViePN.Resolver.BaseURL") private var resolverBaseURL = ""
     @State private var resolverToken = ""
     @State private var linkText = ""
+    @State private var photoSelection: PhotosPickerItem?
     @State private var hasPermission = false
     @State private var showServerOptions = false
     @State private var tokenMessage = ""
@@ -62,6 +64,13 @@ struct VideoLibraryPanel: View {
         .onAppear {
             library.reload()
             resolverToken = SocialDownloadTokenStore.load()
+        }
+        .onChange(of: photoSelection) { next in
+            guard let next else { return }
+            Task {
+                await library.importFromPhotosPicker(next)
+                photoSelection = nil
+            }
         }
         .sheet(item: $previewItem) { item in
             SavedVideoPreviewSheet(video: item)
@@ -180,6 +189,18 @@ struct VideoLibraryPanel: View {
             .disabled(linkText.trimmingCharacters(
                 in: .whitespacesAndNewlines).isEmpty ||
                 !hasPermission || library.isDownloading)
+
+            PhotosPicker(selection: $photoSelection, matching: .videos) {
+                HStack {
+                    Spacer()
+                    Label("Nhập video đã lưu từ Ảnh",
+                          systemImage: "photo.on.rectangle.angled")
+                        .font(.caption.bold())
+                    Spacer()
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(library.isDownloading)
 
             if library.isDownloading {
                 ProgressView("Đang nhận video…")
