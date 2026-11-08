@@ -61,6 +61,7 @@ final class EditorViewModel: ObservableObject {
     @Published var autoCaptionLanguage: AutoCaptionLanguage = .vietnamese
     @Published var allowAppleSpeechService = false
     @Published var replaceExistingAutoCaptions = false
+    @Published var processLongAutoCaptions = true
     @Published var isGeneratingAutoCaptions = false
     @Published var autoCaptionStatus = ""
     private let autoCaptionSpeech = AutoCaptionSpeech()
@@ -291,103 +292,140 @@ final class EditorViewModel: ObservableObject {
 
     func generateAutoCaptions(selectedClipID: UUID?) {
         guard !isGeneratingAutoCaptions, !clips.isEmpty else { return }
-        let source = autoCaptionSource
         let language = autoCaptionLanguage.rawValue
         let allowApple = allowAppleSpeechService
-        let replace = replaceExistingAutoCaptions
+        let replaceExisting = replaceExistingAutoCaptions
 
-        let audioFile: URL
+        let audioURL: URL
+        let sourceStart: Double
+        let sourceLimit: Double
         let timelineOffset: Double
         let speed: Double
-        let maximum: Double
-        let needsExtraction: Bool
 
-        switch source {
+        switch autoCaptionSource {
         case .narration:
             guard let voiceoverURL else {
-                errorText = "Hãy thêm giọng thuyết minh trong tab Âm thanh hoặc Giọng."
+                errorText = "Hãy thêm thuyết minh trước khi tạo Auto Captions."
                 return
             }
-            audioFile = voiceoverURL
+            audioURL = voiceoverURL
+            sourceStart = 0
+            sourceLimit = max(0, totalDuration - voiceoverOffset)
             timelineOffset = voiceoverOffset
             speed = 1
-            maximum = 58
-            needsExtraction = true
         case .selectedVideo:
             guard let index = clips.firstIndex(where: { $0.id == selectedClipID }),
                   clips[index].kind == .video else {
-                errorText = "Chọn một clip VIDEO có lời nói trên timeline trước."
+                errorText = "Chọn một clip VIDEO có tiếng nói trên timeline."
                 return
             }
             let clip = clips[index]
-            audioFile = clip.fileURL
-            timelineOffset = timelineStart(of: index)
+            audioURL = clip.fileURL
+            sourceStart = clip.startTime
             speed = max(0.25, clip.playbackSpeed)
-            maximum = clip.duration
-            needsExtraction = true
+            sourceLimit = clip.duration
+            timelineOffset = timelineStart(of: index)
         }
 
+        let processLong = processLongAutoCaptions
+        let projectIDAtStart = projectID
         isGeneratingAutoCaptions = true
-        autoCaptionStatus = "Đang chuẩn bị audio để nhận diện…"
+        autoCaptionStatus = "Đang kiểm tra nguồn âm thanh…"
 
         Task {
             defer { isGeneratingAutoCaptions = false }
-            var temporaryURL: URL?
-            defer {
-                if let temporaryURL {
-                    try? FileManager.default.removeItem(at: temporaryURL)
-                }
-            }
             do {
-                let fileURL: URL
-                if source == .selectedVideo {
-                    guard let clip = clips.first(where: { $0.id == selectedClipID }) else {
-                        throw SmartVideoError.invalidMedia("Clip đã được thay đổi trước khi phân tích.")
-                    }
-                    let extracted = try await AutoCaptionSpeech.extractAudio(from: clip)
-                    temporaryURL = extracted
-                    fileURL = extracted
-                } else if needsExtraction {
-                    let extracted = try await AutoCaptionSpeech.extractAudio(
-                        from: audioFile, beginningAt: 0,
-                        maximumDuration: maximum
-                    )
-                    temporaryURL = extracted
-                    fileURL = extracted
-                } else {
-                    fileURL = audioFile
+                let asset = AVURLAsset(url: audioURL)
+                let fileLength = try await asset.load(.duration).seconds
+                guard fileLength.isFinite, fileLength > sourceStart else {
+                    throw SmartVideoError.invalidMedia("Nguồn audio có thời lượng không hợp lệ.")
                 }
-
-                autoCaptionStatus = "Nhận diện \(language)…"
-                let cues = try await autoCaptionSpeech.recognize(
-                    fileURL: fileURL,
-                    localeIdentifier: language,
-                    allowAppleService: allowApple
+                // Bound to a maximum of 10 minutes per run. The service
+                // is asked to recognize a small independent chunk each time.
+                let availableSource = min(
+                    max(0, fileLength - sourceStart),
+                    max(0, sourceLimit),
+                    max(0, (totalDuration - timelineOffset) * speed),
+                    processLong ? 600 : 52
                 )
-                // Return time codes are relative to the extracted segment.
-                let translated = cues.compactMap { cue -> SubtitleCue? in
-                    let start = timelineOffset + cue.start / speed
-                    let end = timelineOffset + cue.end / speed
-                    guard start < totalDuration, end > start else { return nil }
-                    return SubtitleCue(
-                        start: max(0, start),
-                        end: min(totalDuration, max(start + 0.10, end)),
-                        text: cue.text
+                guard availableSource >= 0.5 else {
+                    throw SmartVideoError.invalidMedia(
+                        "Không có đủ tiếng nói trong phạm vi timeline."
                     )
+                }
+                let chunkSeconds = 52.0
+                let partCount = Int(ceil(availableSource / chunkSeconds))
+                var translated = [SubtitleCue]()
+                for part in 0..<partCount {
+                    try Task.checkCancellation()
+                    let localOffset = Double(part) * chunkSeconds
+                    let length = min(chunkSeconds, availableSource - localOffset)
+                    guard length >= 0.5 else { continue }
+                    autoCaptionStatus = "Đoạn \(part + 1)/\(partCount): trích âm thanh…"
+                    let temporary = try await AutoCaptionSpeech.extractAudio(
+                        from: audioURL,
+                        beginningAt: sourceStart + localOffset,
+                        maximumDuration: length
+                    )
+                    // Delete the M4A even if recognition fails.
+                    let cues: [SubtitleCue]
+                    do {
+                        autoCaptionStatus = "Đoạn \(part + 1)/\(partCount): " +
+                            "nhận diện \(language)…"
+                        cues = try await autoCaptionSpeech.recognize(
+                            fileURL: temporary,
+                            localeIdentifier: language,
+                            allowAppleService: allowApple
+                        )
+                    } catch {
+                        try? FileManager.default.removeItem(at: temporary)
+                        throw error
+                    }
+                    try? FileManager.default.removeItem(at: temporary)
+                    for cue in cues {
+                        let position = timelineOffset +
+                            (localOffset + cue.start) / speed
+                        let finish = min(
+                            totalDuration,
+                            timelineOffset + (localOffset + cue.end) / speed
+                        )
+                        guard position < totalDuration,
+                              finish > position else { continue }
+                        let words = cue.words.map { word in
+                            SubtitleWord(
+                                start: timelineOffset +
+                                    (localOffset + word.start) / speed,
+                                end: min(
+                                    totalDuration,
+                                    timelineOffset + (localOffset + word.end) / speed
+                                ),
+                                text: word.text
+                            )
+                        }
+                        translated.append(SubtitleCue(
+                            start: position, end: max(position + 0.10, finish),
+                            text: cue.text, words: words
+                        ))
+                    }
+                    autoCaptionStatus = "Đã nhận diện \(part + 1)/\(partCount) " +
+                        "đoạn · \(translated.count) câu."
                 }
                 guard !translated.isEmpty else {
                     throw SmartVideoError.invalidMedia(
-                        "Không nhận diện được lời nói. Thử chọn đoạn có tiếng rõ hơn."
+                        "Không có lời nói được nhận diện trong phần đã quét."
                     )
                 }
-                if replace {
+                // Do not apply speech to an entirely different project.
+                guard projectID == projectIDAtStart else { return }
+                if replaceExisting {
                     subtitles = translated
                 } else {
                     subtitles.append(contentsOf: translated)
                     subtitles.sort { $0.start < $1.start }
                 }
-                autoCaptionStatus = "Đã tạo \(translated.count) câu có thời gian. " +
-                    "Kiểm tra nội dung và vị trí trước khi xuất."
+                autoCaptionStatus = "Đã tạo \(translated.count) câu và " +
+                    "\(translated.reduce(0) { $0 + $1.words.count }) " +
+                    "mốc từ. Hãy kiểm tra và sửa các chỗ nhận diện sai."
             } catch {
                 autoCaptionStatus = ""
                 errorText = "Auto Captions: \(error.localizedDescription)"
