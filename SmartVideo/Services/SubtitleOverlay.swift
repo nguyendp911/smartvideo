@@ -6,11 +6,12 @@ import UIKit
 enum SubtitleOverlay {
     static func attach(to composition: AVMutableVideoComposition,
                        size: CGSize, cues: [SubtitleCue],
+                       imageOverlays: [ImageOverlayClip],
                        positionX: Double, positionY: Double,
                        vfxPresets: [VFXPreset], vfxIntensity: Double,
                        duration: Double, effectBounds: CGRect,
                        vfxStartTime: Double, vfxEndTime: Double) {
-        guard !cues.isEmpty || !vfxPresets.isEmpty else { return }
+        guard !cues.isEmpty || !vfxPresets.isEmpty || !imageOverlays.isEmpty else { return }
 
         let parent = CALayer()
         parent.frame = CGRect(origin: .zero, size: size)
@@ -25,6 +26,10 @@ enum SubtitleOverlay {
                                  effectBounds: effectBounds,
                                  startTime: vfxStartTime,
                                  endTime: vfxEndTime)
+
+        // PIP overlays are positioned above VFX but below subtitles.
+        ImageOverlayRenderer.attach(imageOverlays, to: parent,
+                                    canvas: size, timelineDuration: duration)
 
         for cue in cues where cue.end > cue.start && !cue.text.isEmpty {
             let width = size.width * 0.72

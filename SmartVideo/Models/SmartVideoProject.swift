@@ -8,6 +8,7 @@ struct SmartVideoProject: Codable {
     var name: String
     var savedAt: Date
     var clips: [TimelineClip]
+    var imageOverlays: [ImageOverlayClip]
     var subtitles: [SubtitleCue]
     var transition: String
     var transitionSeconds: Double
@@ -35,6 +36,99 @@ struct SmartVideoProject: Codable {
     var stripMetadata: Bool
     var addMetadata: Bool
     var metadata: ExportMetadata
+
+    init(id: UUID, name: String, savedAt: Date, clips: [TimelineClip],
+         imageOverlays: [ImageOverlayClip], subtitles: [SubtitleCue],
+         transition: String, transitionSeconds: Double, canvas: String,
+         contentMode: String, quality: String, musicFileName: String?,
+         voiceFileName: String?, musicVolume: Float, musicStartSeconds: Double,
+         musicHighlightDuration: Double, musicFadeIn: Double,
+         musicFadeOut: Double, musicRepeat: Bool, keepOriginalAudio: Bool,
+         voiceOffset: Double, voiceVolume: Float, vfxPresets: [String],
+         vfxIntensity: Double, vfxCoverage: String, vfxStart: Double,
+         vfxEnd: Double, subtitleX: Double, subtitleY: Double,
+         stripMetadata: Bool, addMetadata: Bool, metadata: ExportMetadata) {
+        self.id = id
+        self.name = name
+        self.savedAt = savedAt
+        self.clips = clips
+        self.imageOverlays = imageOverlays
+        self.subtitles = subtitles
+        self.transition = transition
+        self.transitionSeconds = transitionSeconds
+        self.canvas = canvas
+        self.contentMode = contentMode
+        self.quality = quality
+        self.musicFileName = musicFileName
+        self.voiceFileName = voiceFileName
+        self.musicVolume = musicVolume
+        self.musicStartSeconds = musicStartSeconds
+        self.musicHighlightDuration = musicHighlightDuration
+        self.musicFadeIn = musicFadeIn
+        self.musicFadeOut = musicFadeOut
+        self.musicRepeat = musicRepeat
+        self.keepOriginalAudio = keepOriginalAudio
+        self.voiceOffset = voiceOffset
+        self.voiceVolume = voiceVolume
+        self.vfxPresets = vfxPresets
+        self.vfxIntensity = vfxIntensity
+        self.vfxCoverage = vfxCoverage
+        self.vfxStart = vfxStart
+        self.vfxEnd = vfxEnd
+        self.subtitleX = subtitleX
+        self.subtitleY = subtitleY
+        self.stripMetadata = stripMetadata
+        self.addMetadata = addMetadata
+        self.metadata = metadata
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, savedAt, clips, imageOverlays, subtitles, transition,
+             transitionSeconds, canvas, contentMode, quality, musicFileName,
+             voiceFileName, musicVolume, musicStartSeconds,
+             musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
+             keepOriginalAudio, voiceOffset, voiceVolume, vfxPresets,
+             vfxIntensity, vfxCoverage, vfxStart, vfxEnd, subtitleX,
+             subtitleY, stripMetadata, addMetadata, metadata
+    }
+
+    // Old v2.8 projects did not contain overlays.
+    init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        id = try values.decode(UUID.self, forKey: .id)
+        name = try values.decode(String.self, forKey: .name)
+        savedAt = try values.decode(Date.self, forKey: .savedAt)
+        clips = try values.decode([TimelineClip].self, forKey: .clips)
+        imageOverlays = try values.decodeIfPresent([ImageOverlayClip].self,
+                                                   forKey: .imageOverlays) ?? []
+        subtitles = try values.decode([SubtitleCue].self, forKey: .subtitles)
+        transition = try values.decode(String.self, forKey: .transition)
+        transitionSeconds = try values.decode(Double.self, forKey: .transitionSeconds)
+        canvas = try values.decode(String.self, forKey: .canvas)
+        contentMode = try values.decode(String.self, forKey: .contentMode)
+        quality = try values.decode(String.self, forKey: .quality)
+        musicFileName = try values.decodeIfPresent(String.self, forKey: .musicFileName)
+        voiceFileName = try values.decodeIfPresent(String.self, forKey: .voiceFileName)
+        musicVolume = try values.decode(Float.self, forKey: .musicVolume)
+        musicStartSeconds = try values.decode(Double.self, forKey: .musicStartSeconds)
+        musicHighlightDuration = try values.decode(Double.self, forKey: .musicHighlightDuration)
+        musicFadeIn = try values.decode(Double.self, forKey: .musicFadeIn)
+        musicFadeOut = try values.decode(Double.self, forKey: .musicFadeOut)
+        musicRepeat = try values.decode(Bool.self, forKey: .musicRepeat)
+        keepOriginalAudio = try values.decode(Bool.self, forKey: .keepOriginalAudio)
+        voiceOffset = try values.decode(Double.self, forKey: .voiceOffset)
+        voiceVolume = try values.decode(Float.self, forKey: .voiceVolume)
+        vfxPresets = try values.decode([String].self, forKey: .vfxPresets)
+        vfxIntensity = try values.decode(Double.self, forKey: .vfxIntensity)
+        vfxCoverage = try values.decode(String.self, forKey: .vfxCoverage)
+        vfxStart = try values.decode(Double.self, forKey: .vfxStart)
+        vfxEnd = try values.decode(Double.self, forKey: .vfxEnd)
+        subtitleX = try values.decode(Double.self, forKey: .subtitleX)
+        subtitleY = try values.decode(Double.self, forKey: .subtitleY)
+        stripMetadata = try values.decode(Bool.self, forKey: .stripMetadata)
+        addMetadata = try values.decode(Bool.self, forKey: .addMetadata)
+        metadata = try values.decode(ExportMetadata.self, forKey: .metadata)
+    }
 }
 
 struct ProjectListItem: Identifiable {

@@ -15,6 +15,7 @@ final class VideoRenderer {
 
     func render(
         clips: [TimelineClip],
+        imageOverlays: [ImageOverlayClip],
         transition: VideoTransition,
         transitionSeconds: Double,
         vfxPresets: [VFXPreset],
@@ -242,6 +243,7 @@ final class VideoRenderer {
                                           mode: contentMode)
         SubtitleOverlay.attach(
             to: videoComposition, size: size, cues: subtitles,
+            imageOverlays: imageOverlays,
             positionX: subtitleX, positionY: subtitleY,
             vfxPresets: vfxPresets, vfxIntensity: vfxIntensity,
             duration: cursor.seconds, effectBounds: effectBounds,

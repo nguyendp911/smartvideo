@@ -6,6 +6,7 @@ import AVFoundation
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
+    @Published var imageOverlays: [ImageOverlayClip] = []
     @Published var timelineSecond: Double = 0
     @Published var timelineZoom: Double = 1.0
     @Published var projectName: String = "Dự án mới"
@@ -448,7 +449,8 @@ final class EditorViewModel: ObservableObject {
             }
             let snapshot = SmartVideoProject(
                 id: projectID, name: name, savedAt: Date(),
-                clips: clips, subtitles: subtitles,
+                clips: clips, imageOverlays: imageOverlays,
+                subtitles: subtitles,
                 transition: transition.rawValue,
                 transitionSeconds: transitionSeconds,
                 canvas: canvas.rawValue, contentMode: contentMode.rawValue,
@@ -497,6 +499,12 @@ final class EditorViewModel: ObservableObject {
             projectID = p.id
             projectName = p.name
             clips = restoredClips
+            imageOverlays = p.imageOverlays.map {
+                var overlay = $0
+                overlay.fileURL = MediaStorage.mediaDirectory
+                    .appendingPathComponent($0.fileURL.lastPathComponent)
+                return overlay
+            }
             subtitles = p.subtitles
             transition = VideoTransition.allCases.first {
                 $0.rawValue == p.transition
@@ -560,6 +568,7 @@ final class EditorViewModel: ObservableObject {
         projectID = UUID()
         projectName = "Dự án mới"
         clips = []
+        imageOverlays = []
         subtitles = []
         musicURL = nil
         voiceoverURL = nil
@@ -717,6 +726,7 @@ final class EditorViewModel: ObservableObject {
         didSaveToPhotos = false
 
         let workClips = clips
+        let workImageOverlays = imageOverlays
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
@@ -749,6 +759,7 @@ final class EditorViewModel: ObservableObject {
                 let url = try await Task.detached(priority: .userInitiated) {
                     try await VideoRenderer().render(
                         clips: workClips,
+                        imageOverlays: workImageOverlays,
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
