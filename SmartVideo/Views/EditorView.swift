@@ -370,15 +370,22 @@ struct EditorView: View {
 
                 if !previewCaption.isEmpty {
                     Text(previewCaption)
-                        .font(.system(size: max(11, min(19, canvasWidth * 0.046)),
+                        .font(.system(size: max(10, min(28,
+                            canvasWidth * 0.046 * CGFloat(model.subtitleAppearance.fontScale))),
                                       weight: .semibold))
                         .multilineTextAlignment(.center)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(Color(uiColor: TextOverlayRenderer.uiColor(
+                            hex: model.subtitleAppearance.foregroundHex
+                        )))
+                        .shadow(color: model.subtitleAppearance.shadowEnabled ?
+                                .black.opacity(0.85) : .clear,
+                                radius: 2, x: 1, y: 1)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 5)
                         .frame(width: canvasWidth * 0.72)
-                        .background(.black.opacity(0.72),
-                                    in: RoundedRectangle(cornerRadius: 6))
+                        .background(.black.opacity(
+                            model.subtitleAppearance.backgroundOpacity),
+                            in: RoundedRectangle(cornerRadius: 6))
                         .position(
                             x: canvasWidth * (0.36 + 0.28 * model.subtitleX),
                             y: canvasHeight * (0.08 + 0.84 * model.subtitleY)
@@ -1224,6 +1231,9 @@ struct EditorView: View {
 
     private var subtitlePanel: some View {
         VStack(alignment: .leading, spacing: 9) {
+            AutoCaptionStudioPanel(model: model, selectedClipID: selectedClipID)
+            SubtitleStylePanel(model: model)
+            Divider()
             VStack(alignment: .leading, spacing: 8) {
                 Text("Vị trí phụ đề · kéo trực tiếp trên khung xem trước")
                     .font(.caption.bold())
