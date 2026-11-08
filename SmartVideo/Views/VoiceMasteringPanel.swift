@@ -53,6 +53,18 @@ struct VoiceMasteringPanel: View {
             }
             .font(.caption)
 
+            Button {
+                beforePlayer?.stop()
+                afterPlayer?.stop()
+                model.normalizeNarration()
+            } label: {
+                Label("Chuẩn hóa giọng · RMS −20 dBFS",
+                      systemImage: "speaker.wave.2.circle")
+            }
+            .buttonStyle(.bordered)
+            .font(.caption)
+            .disabled(model.voiceoverURL == nil || model.isMasteringVoice)
+
             if model.isMasteringVoice {
                 ProgressView("Đang xử lý âm thanh…")
                     .font(.caption)

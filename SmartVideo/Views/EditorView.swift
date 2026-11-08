@@ -51,6 +51,7 @@ struct EditorView: View {
     @State private var localSecond = 0.0
     @State private var isPlaying = false
     @State private var showProjects = false
+    @State private var showRenderedPreview = false
     @State private var pickedOverlay: PhotosPickerItem?
     @State private var selectedOverlayID: UUID?
     @State private var pickedPIP: PhotosPickerItem?
@@ -174,6 +175,14 @@ struct EditorView: View {
                 }
             case .failure(let error):
                 model.errorText = "Không thể mở tệp: \(error.localizedDescription)"
+            }
+        }
+        .onChange(of: model.renderedPreviewURL) { url in
+            if url != nil { showRenderedPreview = true }
+        }
+        .sheet(isPresented: $showRenderedPreview) {
+            if let file = model.renderedPreviewURL {
+                RenderedPreviewSheet(url: file)
             }
         }
         .sheet(isPresented: $showProjects) {
@@ -1517,6 +1526,8 @@ struct EditorView: View {
 
                 Text("Tùy chỉnh fade-in / fade-out khi xuất và tự giảm nhạc trong lúc có giọng đọc.")
                     .font(.caption2).foregroundStyle(.secondary)
+
+                MusicMasteringPanel(model: model)
             }
 
             Toggle("Giữ tiếng gốc của các clip", isOn: $model.keepOriginalAudio)
@@ -1539,6 +1550,13 @@ struct EditorView: View {
                     Text("Đang render — giữ ứng dụng mở").font(.caption)
                 }
             }
+            if model.isRenderingPreview {
+                HStack {
+                    ProgressView()
+                    Text("Đang dựng bản nháp 720p đầy đủ hình và tiếng…")
+                        .font(.caption)
+                }
+            }
             if let result = model.exportedURL {
                 HStack {
                     Button {
@@ -1558,6 +1576,23 @@ struct EditorView: View {
             Button {
                 previewPlayer?.pause()
                 isPlaying = false
+                model.renderSynchronizedPreview()
+            } label: {
+                HStack {
+                    Spacer()
+                    Label("Xem thử toàn bộ · 720p",
+                          systemImage: "play.rectangle.fill")
+                        .font(.subheadline.bold())
+                    Spacer()
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.clips.isEmpty || model.isImporting ||
+                      model.isExporting || model.isRenderingPreview)
+
+            Button {
+                previewPlayer?.pause()
+                isPlaying = false
                 model.export()
             } label: {
                 HStack {
@@ -1570,7 +1605,8 @@ struct EditorView: View {
             }
             .buttonStyle(.borderedProminent)
             .tint(accent)
-            .disabled(model.clips.isEmpty || model.isImporting || model.isExporting)
+            .disabled(model.clips.isEmpty || model.isImporting ||
+                      model.isExporting || model.isRenderingPreview)
         }
     }
 

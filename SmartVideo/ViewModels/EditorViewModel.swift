@@ -201,6 +201,7 @@ final class EditorViewModel: ObservableObject {
                     musicURL = localURL
                     originalMusicURL = nil
                     musicProcessingMessage = ""
+                    musicMasteringSettings = MusicTonePreset.original.settings
                 } catch {
                     try? FileManager.default.removeItem(at: localURL)
                     errorText = "Không nhập được nhạc: \(error.localizedDescription)"
