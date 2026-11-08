@@ -37,7 +37,10 @@ final class VideoRenderer {
         quality: RenderQuality,
         canvas: CanvasFormat,
         contentMode: CanvasContentMode,
-        stripMetadata: Bool
+        stripMetadata: Bool,
+        exportMetadata: ExportMetadata,
+        musicFadeIn: Double,
+        musicFadeOut: Double
     ) async throws -> URL {
         guard !clips.isEmpty else {
             throw SmartVideoError.invalidMedia("Hãy thêm ảnh hoặc video trước khi xuất.")
@@ -138,7 +141,7 @@ final class VideoRenderer {
             let startingVolume = startsImmediately ? baseVolume * 0.25 : baseVolume
             params.setVolume(startingVolume, at: .zero)
             let fadeIn = CMTimeMinimum(
-                outputTime, CMTime(seconds: 0.25, preferredTimescale: 600)
+                outputTime, CMTime(seconds: max(0, min(5, musicFadeIn)), preferredTimescale: 600)
             )
             if CMTimeCompare(fadeIn, .zero) > 0 {
                 params.setVolumeRamp(fromStartVolume: 0, toEndVolume: startingVolume,
@@ -175,7 +178,7 @@ final class VideoRenderer {
             let base = min(1, max(0, musicVolume))
             let ducked = base * 0.25
             let fadeLength = CMTimeMinimum(
-                musicEnd, CMTime(seconds: 1.2, preferredTimescale: 600)
+                musicEnd, CMTime(seconds: max(0, min(8, musicFadeOut)), preferredTimescale: 600)
             )
             let fadeStart = CMTimeSubtract(musicEnd, fadeLength)
             if let start = narrationStart,
@@ -257,12 +260,12 @@ final class VideoRenderer {
             exporter.outputURL = exportURL
             exporter.outputFileType = .mp4
             exporter.shouldOptimizeForNetworkUse = true
+            // Source metadata filtering is independent of user-authored tags.
+            // When enabled, exclude private inherited source tags first.
             if stripMetadata {
-                // Filter inherited source tags (GPS, title, camera info, etc.)
-                // and do not author new descriptive metadata items.
-                exporter.metadata = []
                 exporter.metadataItemFilter = AVMetadataItemFilter.forSharing()
             }
+            exporter.metadata = exportMetadata.items()
 
             guard exporter.supportedFileTypes.contains(.mp4) else {
                 throw SmartVideoError.cannotExport("Thiết bị không hỗ trợ xuất MP4 cho dự án này.")

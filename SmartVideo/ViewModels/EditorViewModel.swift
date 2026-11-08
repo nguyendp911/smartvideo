@@ -37,6 +37,18 @@ final class EditorViewModel: ObservableObject {
     @Published var isAnalyzingVideoHighlights = false
     @Published var previousTimeline: [TimelineClip]?
     @Published var narrationText = ""
+    @Published var narratorVoiceID: String = ""
+    @Published var narratorTone: NarrationTone = .natural
+    @Published var narratorRate: Float = 1.0
+    @Published var narratorPitch: Float = 1.0
+    @Published var silenceThreshold: Double = -39
+    @Published var silenceGap: Double = 0.45
+    @Published var isRemovingSilence = false
+    @Published var lastSilenceRemoved: Double?
+    @Published var metadata = ExportMetadata()
+    @Published var addCustomMetadata = false
+    @Published var musicFadeIn: Double = 0.3
+    @Published var musicFadeOut: Double = 1.2
     @Published var isGeneratingNarration = false
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
@@ -350,11 +362,62 @@ final class EditorViewModel: ObservableObject {
         Task {
             defer { isGeneratingNarration = false }
             do {
-                let url = try await NarrationSpeechWriter().render(text: text)
+                let url = try await NarrationSpeechWriter().render(
+                    text: text,
+                    voiceIdentifier: narratorVoiceID.isEmpty ? nil : narratorVoiceID,
+                    tone: narratorTone,
+                    rateAdjustment: narratorRate,
+                    pitchAdjustment: narratorPitch
+                )
                 voiceoverURL = url
             } catch {
                 errorText = "Không tạo được giọng thuyết minh: \(error.localizedDescription)"
             }
+        }
+    }
+
+    func removeSilenceFromNarration() {
+        guard let source = voiceoverURL, !isRemovingSilence else { return }
+        isRemovingSilence = true
+        let threshold = silenceThreshold
+        let gap = silenceGap
+        Task {
+            defer { isRemovingSilence = false }
+            do {
+                let cleaned = try await Task.detached(priority: .userInitiated) {
+                    try await VoiceSilenceEditor.removeSilence(
+                        from: source, thresholdDecibels: threshold,
+                        minimumGap: gap, padding: 0.12
+                    )
+                }.value
+                // Don't replace audio if a different take was selected.
+                if voiceoverURL == source {
+                    voiceoverURL = cleaned.url
+                    lastSilenceRemoved = cleaned.removedDuration
+                }
+            } catch {
+                errorText = "Không xóa được khoảng lặng: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func createSubtitlesFromNarrationText() {
+        let text = narrationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, totalDuration > 0 else {
+            errorText = "Cần nhập lời thuyết minh và thêm ảnh/video vào timeline."
+            return
+        }
+        let formatted = text.replacingOccurrences(
+            of: #"(?<=[.!?。！？])\s+"#, with: "\n",
+            options: .regularExpression
+        )
+        guard let data = formatted.data(using: .utf8) else { return }
+        do {
+            subtitles = try SubtitleFile.parse(
+                data, filename: "narration.txt", videoDuration: totalDuration
+            )
+        } catch {
+            errorText = "Không tạo được phụ đề: \(error.localizedDescription)"
         }
     }
 
@@ -403,6 +466,9 @@ final class EditorViewModel: ObservableObject {
         let workVoiceOffset = voiceoverOffset
         let workVoiceVolume = voiceoverVolume
         let workStripMetadata = stripMetadata
+        let workMetadata = addCustomMetadata ? metadata : ExportMetadata()
+        let workFadeIn = musicFadeIn
+        let workFadeOut = musicFadeOut
         let workVoice = voiceoverURL
         let workSubtitles = subtitles
         let workSubtitleX = subtitleX
@@ -439,7 +505,10 @@ final class EditorViewModel: ObservableObject {
                         quality: workQuality,
                         canvas: workCanvas,
                         contentMode: workMode,
-                        stripMetadata: workStripMetadata
+                        stripMetadata: workStripMetadata,
+                        exportMetadata: workMetadata,
+                        musicFadeIn: workFadeIn,
+                        musicFadeOut: workFadeOut
                     )
                 }.value
                 exportedURL = url
