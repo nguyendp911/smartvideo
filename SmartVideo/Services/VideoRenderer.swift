@@ -59,8 +59,9 @@ final class VideoRenderer {
             }
         }
 
+        var workingClips = clips
         var sourceURLs: [URL] = []
-        for clip in clips {
+        for (index, clip) in clips.enumerated() {
             try Task.checkCancellation()
             if clip.kind == .image {
                 let temporary = MediaStorage.newTemporaryVideoURL()
@@ -74,10 +75,21 @@ final class VideoRenderer {
                     contentMode: contentMode,
                     imageMotion: clip.imageMotion,
                     imageLook: clip.imageLook,
+                    lookIntensity: clip.lookIntensity,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical
                 )
                 sourceURLs.append(temporary)
+            } else if clip.imageLook != .original && clip.lookIntensity > 0.001 {
+                let temporary = MediaStorage.newTemporaryVideoURL()
+                generatedImageVideos.append(temporary)
+                try await VideoFrameGrader.renderTrimmed(
+                    clip: clip, outputURL: temporary
+                )
+                sourceURLs.append(temporary)
+                // The intermediate MOV starts at 0 because only the selected
+                // section was transcoded. Keep clip speed and timeline length.
+                workingClips[index].startTime = 0
             } else {
                 sourceURLs.append(clip.fileURL)
             }
@@ -86,7 +98,7 @@ final class VideoRenderer {
         // Compose into two alternating tracks. Adjacent segments overlap
         // only when the user chooses the dissolve transition.
         let timeline = try await TimelineComposer().compose(
-            clips: clips,
+            clips: workingClips,
             sourceURLs: sourceURLs,
             videoOverlays: videoOverlays,
             renderSize: size,
@@ -314,6 +326,7 @@ final class VideoRenderer {
         contentMode: CanvasContentMode,
         imageMotion: ImageMotion,
         imageLook: ImageLook,
+        lookIntensity: Double,
         flipHorizontal: Bool,
         flipVertical: Bool
     ) async throws {
@@ -337,7 +350,9 @@ final class VideoRenderer {
                 y: (size.height - extent.height * scale) / 2
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
-        let styled = StudioColorGrader.apply(fitted, look: imageLook)
+        let styled = StudioColorGrader.apply(
+            fitted, look: imageLook, intensity: lookIntensity
+        )
         let staticFrame = styled.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
