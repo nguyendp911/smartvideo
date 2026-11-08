@@ -65,10 +65,10 @@ struct VideoLibraryPanel: View {
             library.reload()
             resolverToken = SocialDownloadTokenStore.load()
         }
-        .onChange(of: photoSelection) { next in
-            guard let next else { return }
+        .onChange(of: photoSelection?.itemIdentifier) { _ in
+            guard let selection = photoSelection else { return }
             Task {
-                await library.importFromPhotosPicker(next)
+                await library.importFromPhotosPicker(selection)
                 photoSelection = nil
             }
         }

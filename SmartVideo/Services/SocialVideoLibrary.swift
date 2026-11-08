@@ -2,6 +2,7 @@ import Foundation
 import AVFoundation
 import Photos
 import PhotosUI
+import SwiftUI
 import Security
 
 /// One independent on-device video vault. Records are kept in the user's
