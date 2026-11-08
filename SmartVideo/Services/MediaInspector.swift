@@ -102,8 +102,8 @@ enum MediaInspector {
                 width = Int(CMVideoFormatDescriptionGetDimensions(description).width)
                 height = Int(CMVideoFormatDescriptionGetDimensions(description).height)
                 let extensions = CMFormatDescriptionGetExtensions(description) as NSDictionary?
-                let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? String
-                let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String
+                let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? CFString
+                let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? CFString
                 let hdrTransfers = [kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
                                     kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG]
                 hdr = transfer.map { hdrTransfers.contains($0) }
