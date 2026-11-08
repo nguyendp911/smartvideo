@@ -218,6 +218,78 @@ final class SocialVideoLibrary: ObservableObject {
         }
     }
 
+    /// Import a user-selected video from the Files app into the same vault.
+    /// The security-scoped file is copied while access is held. The original
+    /// remains untouched, including files downloaded via Safari.
+    func importFromFiles(_ url: URL) async {
+        guard !isDownloading else { return }
+        isDownloading = true
+        downloadStatus = "Đang nhập tệp video từ Files…"
+        defer { isDownloading = false }
+
+        var destination: URL?
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if scoped { url.stopAccessingSecurityScopedResource() }
+        }
+
+        do {
+            let ext = url.pathExtension.lowercased()
+            guard ["mp4", "mov", "m4v"].contains(ext) else {
+                throw SmartVideoError.invalidMedia(
+                    "Chỉ nhập tệp video MP4, MOV hoặc M4V."
+                )
+            }
+            let attrs = try FileManager.default.attributesOfItem(
+                atPath: url.path
+            )
+            let bytes = (attrs[.size] as? NSNumber)?.int64Value ?? 0
+            guard bytes > 0 && bytes <= 300 * 1024 * 1024 else {
+                throw SmartVideoError.invalidMedia(
+                    "Tệp rỗng hoặc vượt giới hạn 300 MB."
+                )
+            }
+            let file = MediaStorage.downloadsDirectory
+                .appendingPathComponent(
+                    "ViePN-FromFiles-\(UUID().uuidString).\(ext)"
+                )
+            destination = file
+            try FileManager.default.copyItem(at: url, to: file)
+
+            let asset = AVURLAsset(url: file)
+            let videoTracks = try await asset.loadTracks(
+                withMediaType: .video
+            )
+            let duration = try await asset.load(.duration).seconds
+            guard !videoTracks.isEmpty, duration.isFinite,
+                  duration > 0 else {
+                throw SmartVideoError.invalidMedia(
+                    "Tệp không có video hoặc không đọc được thời lượng."
+                )
+            }
+            let item = SavedSocialVideo(
+                title: url.deletingPathExtension().lastPathComponent,
+                source: .direct,
+                sourceLink: "", filename: file.lastPathComponent,
+                duration: duration, fileSize: bytes
+            )
+            entries.insert(item, at: 0)
+            do { try saveIndex() }
+            catch {
+                entries.removeAll { $0.id == item.id }
+                throw error
+            }
+            destination = nil
+            downloadStatus = "Đã nhập \(item.title) vào Kho video."
+        } catch {
+            if let destination {
+                try? FileManager.default.removeItem(at: destination)
+            }
+            errorText = "Không nhập được tệp video: \(error.localizedDescription)"
+            downloadStatus = ""
+        }
+    }
+
     /// Import the file that PhotosPicker has already copied into Media.
     /// It is moved into the independent vault rather than duplicated.
     func importFromPhotosPicker(_ selection: PhotosPickerItem) async {
