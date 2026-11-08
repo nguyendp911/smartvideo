@@ -1352,6 +1352,10 @@ struct EditorView: View {
                     }
                     .font(.caption2)
                     .buttonStyle(.bordered)
+
+                    if !cue.words.isEmpty {
+                        KaraokeWordEditor(cue: $cue)
+                    }
                 }
                 .padding(6)
                 .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 8))
