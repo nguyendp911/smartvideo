@@ -428,3 +428,29 @@ Thêm **bộ keyframe nhiều điểm dành cho lớp ảnh/logo/sticker Overlay
 5. Lưu dự án, mở lại, kiểm tra các mốc vẫn có thể sửa và preset không làm hỏng file gốc.
 
 **Giới hạn:** Bộ keyframe nhiều điểm trong v3.7 **chỉ áp dụng cho Overlay ảnh**; Video PIP và chữ độc lập vẫn dùng chuyển động hai điểm. Nội suy preview có thể khác nhẹ với Core Animation của file xuất. GitHub Actions chỉ xác nhận mã biên dịch và tạo IPA; chưa đo hiệu suất render nhiều lớp trên iPhone 12 Pro Max.
+
+
+## ViePN Smart Video v3.8.0 – Multi-Keyframe Video PIP, Text & Curved Motion
+
+### Lớp phủ video và chữ có keyframe nhiều điểm
+- Bổ sung tối đa **16 keyframe** cho mỗi track **Video PIP** và **Chữ/Title**, điều khiển vị trí X/Y, tỷ lệ phóng to, góc xoay (tối đa ±360°) và độ mờ theo thời gian.
+- **Dự án cũ** tiếp tục dùng vị trí đầu/cuối của phiên bản 3.7 và trước đó: mảng keyframes vắng mặt sẽ mặc định rỗng. Nút **Về hai điểm** cho phép trở lại điều khiển kiểu cũ.
+- Bộ điều khiển **Multi-Keyframe Pro** trong tab **Video PIP** hoặc **Chữ** cho thêm mốc tại con trỏ, chọn/xóa/chỉnh mốc giữa, đổi tốc độ nội suy, và áp dụng 5 preset: Zoom điện ảnh, Trượt từ dưới, Nhịp phóng, Xoay 360°, Xuất hiện/Tan biến.
+- Có hai loại đường đi: **Đường thẳng** và **Đường cong**. Đường cong dùng Catmull-Rom qua các mốc đã đặt; có thể cần kiểm tra không vượt mép canvas khi góc xoay hoặc scale lớn.
+- Timeline hiển thị dải hình thoi cho Video PIP / Chữ và cho phép chạm để tua đến mốc. Preview nội suy theo đúng các mốc và khoảng thời gian; kéo lớp phủ sẽ dịch toàn bộ đường đi mà giữ tương quan các keyframe.
+- **Kết xuất MP4**: Video PIP dùng AVFoundation transform/opacity ramps được chia thành nhiều đoạn ngắn để gần với đường cong và easing của preview; lớp chữ dùng Core Animation keyframe cho vị trí, scale, rotation và opacity. Đây là chuyển động thật trong file xuất, không chỉ mô phỏng trên UI.
+- Mở rộng **Đường cong** cho cả **Overlay ảnh**: ảnh vẫn được xuất qua Core Animation và nội suy Catmull-Rom với các mẫu phụ nhỏ, nhằm giữ cảm giác chuyển động tương đương preview.
+- Video PIP vẫn hiển thị **thumbnail tĩnh khi chỉnh sửa** để giữ thao tác nhẹ; khi bấm **Xem thử toàn bộ · 720p**, ứng dụng dựng và phát video thật có hiệu ứng của track PIP. Tiếng của video PIP hiện chưa được trộn theo track riêng.
+
+### Cách kiểm thử nhanh
+1. Thêm video nền; vào **Video PIP**, thêm video phụ.
+2. Chọn **Zoom điện ảnh** hoặc **Trượt từ dưới**, thêm mốc mới tại con trỏ, chỉnh X/Y, phóng to, xoay và opacity.
+3. Chuyển đường đi sang **Đường cong** và kéo timeline qua các mốc. Dải hình thoi cho phép chọn thời điểm chính xác.
+4. Vào **Chữ**, thêm một tiêu đề, chọn **Xoay 360°**, giảm opacity đầu/cuối và điều chỉnh đường cong.
+5. Thêm logo PNG trong **Overlay ảnh** và thử Đường cong. Bấm **Xem thử toàn bộ · 720p** để xác nhận, sau đó xuất MP4 1080p.
+6. Lưu dự án rồi mở lại để kiểm tra các keyframe vẫn có đủ và dự án cũ không bị ảnh hưởng.
+
+### Giới hạn và lưu ý
+- Cả preview và bản xuất sử dụng cùng thuật toán lấy mẫu, nhưng **AVFoundation vẫn nội suy các ma trận biến đổi tuyến tính giữa từng mẫu** nên xoay góc lớn có thể khác nhẹ với preview, nhất là khi nhiều lớp PIP hoạt động đồng thời.
+- Chưa có điều khiển đường cong bằng tay nắm Bézier, motion tracking tự động, xử lý alpha/chroma theo từng frame cho video hoặc bộ trộn âm riêng của video PIP.
+- Mã iPhone/Simulator được kiểm tra bằng GitHub Actions; **chưa kiểm thử hiệu suất hoặc độ chính xác render trên iPhone 12 Pro Max thật**. IPA do CI tạo là file chưa ký.
