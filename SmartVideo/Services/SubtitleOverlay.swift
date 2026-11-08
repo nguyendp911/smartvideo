@@ -6,6 +6,7 @@ import UIKit
 enum SubtitleOverlay {
     static func attach(to composition: AVMutableVideoComposition,
                        size: CGSize, cues: [SubtitleCue],
+                       appearance: SubtitleAppearance,
                        imageOverlays: [ImageOverlayClip],
                        textOverlays: [TextOverlayClip],
                        positionX: Double, positionY: Double,
@@ -38,10 +39,13 @@ enum SubtitleOverlay {
 
         for cue in cues where cue.end > cue.start && !cue.text.isEmpty {
             let width = size.width * 0.72
-            let fontSize = max(22, size.width * 0.047)
+            let fontSize = max(16, size.width * 0.047 *
+                               CGFloat(min(1.6, max(0.65, appearance.fontScale))))
             let textHeight = fontSize * (cue.text.count > 45 ? 4.3 : 2.8)
             let background = CALayer()
-            background.backgroundColor = UIColor.black.withAlphaComponent(0.68).cgColor
+            background.backgroundColor = UIColor.black.withAlphaComponent(
+                CGFloat(min(0.95, max(0, appearance.backgroundOpacity)))
+            ).cgColor
             background.cornerRadius = fontSize * 0.28
             // Normalized preview placement (0,0 top-left; 1,1 bottom-right).
             let px = min(1, max(0, positionX))
@@ -60,7 +64,15 @@ enum SubtitleOverlay {
             textLayer.font = UIFont.boldSystemFont(ofSize: fontSize)
             textLayer.fontSize = fontSize
             textLayer.alignmentMode = .center
-            textLayer.foregroundColor = UIColor.white.cgColor
+            textLayer.foregroundColor = TextOverlayRenderer.uiColor(
+                hex: appearance.foregroundHex
+            ).cgColor
+            if appearance.shadowEnabled {
+                textLayer.shadowColor = UIColor.black.cgColor
+                textLayer.shadowOpacity = 0.9
+                textLayer.shadowRadius = 2.5
+                textLayer.shadowOffset = CGSize(width: 1, height: -1)
+            }
             textLayer.isWrapped = true
             textLayer.contentsScale = 2
             background.addSublayer(textLayer)

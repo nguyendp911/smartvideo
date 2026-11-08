@@ -15,6 +15,7 @@ struct SmartVideoProject: Codable {
     var beatSourceTimes: [Double]
     var detectedTempoBPM: Double
     var subtitles: [SubtitleCue]
+    var subtitleAppearance: SubtitleAppearance
     var transition: String
     var transitionSeconds: Double
     var canvas: String
@@ -51,7 +52,7 @@ struct SmartVideoProject: Codable {
          videoOverlays: [VideoOverlayClip], textOverlays: [TextOverlayClip],
          soundEffects: [SoundEffectClip],
          beatSourceTimes: [Double], detectedTempoBPM: Double,
-         subtitles: [SubtitleCue],
+         subtitles: [SubtitleCue], subtitleAppearance: SubtitleAppearance,
          transition: String, transitionSeconds: Double, canvas: String,
          contentMode: String, quality: String, musicFileName: String?,
          voiceFileName: String?,
@@ -77,6 +78,7 @@ struct SmartVideoProject: Codable {
         self.beatSourceTimes = beatSourceTimes
         self.detectedTempoBPM = detectedTempoBPM
         self.subtitles = subtitles
+        self.subtitleAppearance = subtitleAppearance
         self.transition = transition
         self.transitionSeconds = transitionSeconds
         self.canvas = canvas
@@ -112,7 +114,7 @@ struct SmartVideoProject: Codable {
     enum CodingKeys: String, CodingKey {
         case id, name, savedAt, clips, imageOverlays, videoOverlays,
              textOverlays, soundEffects, beatSourceTimes,
-             detectedTempoBPM, subtitles, transition,
+             detectedTempoBPM, subtitles, subtitleAppearance, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
              voiceFileName, originalVoiceFileName,
              originalMusicFileName, musicMasteringSettings,
@@ -143,6 +145,9 @@ struct SmartVideoProject: Codable {
         detectedTempoBPM = try values.decodeIfPresent(Double.self,
                                                      forKey: .detectedTempoBPM) ?? 0
         subtitles = try values.decode([SubtitleCue].self, forKey: .subtitles)
+        subtitleAppearance = try values.decodeIfPresent(
+            SubtitleAppearance.self, forKey: .subtitleAppearance
+        ) ?? SubtitleAppearance()
         transition = try values.decode(String.self, forKey: .transition)
         transitionSeconds = try values.decode(Double.self, forKey: .transitionSeconds)
         canvas = try values.decode(String.self, forKey: .canvas)

@@ -35,6 +35,7 @@ final class VideoRenderer {
         voiceoverOffset: Double,
         voiceoverVolume: Float,
         subtitles: [SubtitleCue],
+        subtitleAppearance: SubtitleAppearance,
         subtitleX: Double,
         subtitleY: Double,
         keepOriginalAudio: Bool,
@@ -253,6 +254,7 @@ final class VideoRenderer {
                                           mode: contentMode)
         SubtitleOverlay.attach(
             to: videoComposition, size: size, cues: subtitles,
+            appearance: subtitleAppearance,
             imageOverlays: imageOverlays,
             textOverlays: textOverlays,
             positionX: subtitleX, positionY: subtitleY,

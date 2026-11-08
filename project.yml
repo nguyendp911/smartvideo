@@ -17,8 +17,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
-        MARKETING_VERSION: "3.4.0"
-        CURRENT_PROJECT_VERSION: "19"
+        MARKETING_VERSION: "3.5.0"
+        CURRENT_PROJECT_VERSION: "20"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -32,6 +32,7 @@ targets:
         UILaunchStoryboardName: LaunchScreen
         LSRequiresIPhoneOS: true
         NSMicrophoneUsageDescription: "SmartVideo cần quyền dùng micro để ghi thuyết minh."
+        NSSpeechRecognitionUsageDescription: "ViePN Smart Video sử dụng nhận diện giọng nói để tạo phụ đề từ tệp âm thanh và video mà bạn chọn. Mặc định xử lý trên iPhone; chỉ dùng dịch vụ Apple khi bạn chủ động cho phép."
         NSPhotoLibraryAddUsageDescription: "SmartVideo cần quyền thêm video đã xuất vào thư viện Ảnh."
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
