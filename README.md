@@ -347,3 +347,33 @@ Bản v3.3.0 bổ sung xử lý giọng thuyết minh offline, tương tự nhó
 5. Chỉnh sửa lại, xuất 1080p và đối chiếu với preview. Lưu dự án → mở lại và kiểm tra file âm thanh gốc, file đã xử lý, preset và thông số.
 
 **Trạng thái**: GitHub Actions xác minh khả năng biên dịch iOS và tạo unsigned IPA. Hiệu ứng âm thanh chưa được thử nghiệm end-to-end trên iPhone 12 Pro Max; cần nghe và kiểm tra nhiều định dạng audio cụ thể trên thiết bị thật.
+
+
+## ViePN Smart Video v3.5.0 – Auto Captions & Subtitle Designer
+
+### Speech-to-subtitles with real time codes
+- Mở **Công cụ → Phụ đề → Auto Captions**, chọn nguồn **Thuyết minh** hoặc **Clip video đang chọn**, ngôn ngữ **Tiếng Việt**, English, 中文, 日本語 hoặc 한국어. Cấp quyền nhận diện giọng nói khi iOS yêu cầu.
+- App dùng **Apple Speech / SFSpeechURLRecognitionRequest** với các khoảng thời gian `SFTranscriptionSegment.timestamp` và `duration` thực từ đoạn âm thanh; không tự gán thời gian giả đều theo độ dài video.
+- Với **Clip video**, tách phần audio của clip trong một file M4A tạm, rồi chuyển mốc thời gian về timeline chính theo điểm bắt đầu, thời gian cắt và tốc độ `playbackSpeed`. File tạm được xóa khi xong.
+- Với **Thuyết minh**, nhận diện từ tệp giọng đang dùng, đưa các câu vào vị trí `voiceoverOffset`.
+- Hiện giới hạn **58 giây đầu mỗi nguồn trong một lần nhận diện** để tránh vượt giới hạn nhận diện file dài. Nếu lời dài hơn, chia clip/thuyết minh thành đoạn ngắn trước. Kết quả được chia thành các câu ngắn khoảng 8 từ / 44 ký tự / 3,2 giây, dựa vào dấu câu và khoảng ngắt; người dùng vẫn có thể sửa từng câu, dời mốc và **xuất SRT**.
+- Mặc định **chỉ chạy nhận diện trên thiết bị** (khi recognizer cho ngôn ngữ đó hỗ trợ `supportsOnDeviceRecognition`). Nếu không hỗ trợ, ứng dụng thông báo chứ không tự gửi âm thanh. Bật **Cho phép dịch vụ Speech của Apple** là hành động đồng ý riêng biệt; khi bật, iOS có thể sử dụng mạng/dịch vụ Apple để nhận diện audio.
+- **Thay toàn bộ phụ đề hiện có** là tùy chọn; mặc định app thêm các câu mới vào dự án và giữ câu có sẵn. Hãy xem và chỉnh lại độ chính xác trước khi xuất.
+
+### Subtitle styling
+- 4 preset **Cổ điển**, **Tối giản**, **Vàng nổi bật**, **Tương phản**.
+- Kích cỡ chữ 65–160%, độ mờ nền 0–95%, màu chữ HEX, bóng chữ bật/tắt. Giao diện preview và Core Animation export nhận cùng thông số.
+- Phụ đề vẫn kéo được vào các vị trí trên/dưới/trái/phải bằng tọa độ X/Y trong tab Phụ đề.
+- Các thông số phụ đề được lưu trong project JSON, tương thích với dự án 2.8–3.4 bằng giá trị mặc định khi không có `subtitleAppearance`.
+
+### Cách kiểm tra
+1. Thêm video 10–30 giây có giọng nói rõ hoặc thu một bản thuyết minh.
+2. Chọn đúng clip video rồi vào **Phụ đề**, chọn nguồn và ngôn ngữ, bấm **Nhận diện và tạo phụ đề**.
+3. Nếu máy không hỗ trợ nhận diện offline cho ngôn ngữ đó, cân nhắc chủ động bật quyền dịch vụ Apple và thử lại khi kết nối mạng.
+4. Đọc lại từng câu, sửa từ sai hoặc chỉnh mốc. Chọn preset và căn phụ đề theo khung.
+5. Bấm **Tạo SRT** để xuất tệp hoặc **Xem thử toàn bộ · 720p** để kiểm tra trên MP4, rồi xuất 1080p.
+
+### Giới hạn
+- Kết quả Apple Speech có thể nhận sai từ riêng, giọng địa phương, lời trong bài hát và nhiều người nói chồng nhau. Không tự xác nhận chính xác 100%.
+- Bản v3.5 là Auto Captions theo cụm từ, **chưa có karaoke animation theo từng từ**, dịch phụ đề đa ngôn ngữ hay khử giọng trước khi nhận diện.
+- Build bằng GitHub Actions chỉ xác nhận biên dịch; chưa được thử trên iPhone 12 Pro Max thực tế. File IPA chưa được Apple ký.
