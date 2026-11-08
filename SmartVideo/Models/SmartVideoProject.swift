@@ -23,6 +23,8 @@ struct SmartVideoProject: Codable {
     var musicFileName: String?
     var voiceFileName: String?
     var originalVoiceFileName: String?
+    var originalMusicFileName: String?
+    var musicMasteringSettings: VoiceMasteringSettings
     var voiceMasteringSettings: VoiceMasteringSettings
     var musicVolume: Float
     var musicStartSeconds: Double
@@ -54,6 +56,8 @@ struct SmartVideoProject: Codable {
          contentMode: String, quality: String, musicFileName: String?,
          voiceFileName: String?,
          originalVoiceFileName: String?,
+         originalMusicFileName: String?,
+         musicMasteringSettings: VoiceMasteringSettings,
          voiceMasteringSettings: VoiceMasteringSettings,
          musicVolume: Float, musicStartSeconds: Double,
          musicHighlightDuration: Double, musicFadeIn: Double,
@@ -81,6 +85,8 @@ struct SmartVideoProject: Codable {
         self.musicFileName = musicFileName
         self.voiceFileName = voiceFileName
         self.originalVoiceFileName = originalVoiceFileName
+        self.originalMusicFileName = originalMusicFileName
+        self.musicMasteringSettings = musicMasteringSettings
         self.voiceMasteringSettings = voiceMasteringSettings
         self.musicVolume = musicVolume
         self.musicStartSeconds = musicStartSeconds
@@ -109,6 +115,7 @@ struct SmartVideoProject: Codable {
              detectedTempoBPM, subtitles, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
              voiceFileName, originalVoiceFileName,
+             originalMusicFileName, musicMasteringSettings,
              voiceMasteringSettings, musicVolume, musicStartSeconds,
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
              keepOriginalAudio, voiceOffset, voiceVolume, vfxPresets,
@@ -146,6 +153,12 @@ struct SmartVideoProject: Codable {
         originalVoiceFileName = try values.decodeIfPresent(
             String.self, forKey: .originalVoiceFileName
         )
+        originalMusicFileName = try values.decodeIfPresent(
+            String.self, forKey: .originalMusicFileName
+        )
+        musicMasteringSettings = try values.decodeIfPresent(
+            VoiceMasteringSettings.self, forKey: .musicMasteringSettings
+        ) ?? MusicTonePreset.original.settings
         voiceMasteringSettings = try values.decodeIfPresent(
             VoiceMasteringSettings.self, forKey: .voiceMasteringSettings
         ) ?? VoiceMasteringSettings()
