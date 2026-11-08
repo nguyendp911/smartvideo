@@ -4,6 +4,15 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.2.0 – Media Inspector
+
+- Thêm công cụ **Media Inspector** cho clip đang chọn: đọc codec, kích thước, thời lượng, FPS metadata, bitrate ước tính, thông tin audio, dung lượng và dấu hiệu HDR.
+- Hiển thị cảnh báo với các trường hợp thường cần chú ý khi dựng như HDR, độ phân giải cao, FPS trên 60, nhiều track, thiếu âm thanh hoặc dung lượng lớn.
+- Tạo báo cáo kỹ thuật dạng văn bản để chia sẻ khi cần chẩn đoán lỗi. Toàn bộ việc đọc metadata chạy cục bộ bằng AVFoundation; không tải media lên server.
+- FPS, bitrate và HDR chỉ được báo khi metadata của tệp cung cấp đủ thông tin. Cảnh báo là gợi ý tương thích, không đảm bảo dự đoán mọi lỗi codec hoặc render.
+
+
+
 - **Giao diện không cuộn cả màn hình:** preview phía trên luôn cố định, timeline cuộn ngang, thanh công cụ 4 thẻ Đoạn / Khung / Phụ đề / Âm thanh, nút xuất MP4 cố định bên dưới.
 - **Tỷ lệ trực tiếp:** chọn video 9:16 hoặc 16:9 để thấy ngay canvas thay đổi trên preview; chế độ Vừa khung/Phủ đầy được áp dụng cả lúc render.
 - **Timeline:** nhập nhiều video/ảnh bằng PhotosPicker, chỉnh điểm bắt đầu và thời lượng, đổi chỗ 1 bước qua nút trái/phải, xóa clip, preview clip đang chọn.
