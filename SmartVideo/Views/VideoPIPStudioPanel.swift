@@ -5,6 +5,7 @@ struct VideoPIPStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
     @Binding var pickerItem: PhotosPickerItem?
+    let onScrub: (Double) -> Void
 
     private var selected: VideoOverlayClip? {
         model.videoOverlays.first { $0.id == selectedID }
@@ -68,6 +69,26 @@ struct VideoPIPStudioPanel: View {
                                               model.totalDuration - item.start)),
                        step: 0.1).tint(.cyan)
 
+                MultiPointKeyframePanel(
+                    keyframes: $model.videoOverlays[idx].keyframes,
+                    easing: $model.videoOverlays[idx].easing,
+                    pathMode: $model.videoOverlays[idx].pathMode,
+                    start: item.start, duration: item.duration,
+                    timelineSecond: model.timelineSecond,
+                    legacyStart: OverlayKeyframe(
+                        progress: 0, x: item.startX, y: item.startY,
+                        scale: item.width, opacity: item.opacity,
+                        rotationDegrees: 0
+                    ),
+                    legacyEnd: OverlayKeyframe(
+                        progress: 1, x: item.endX, y: item.endY,
+                        scale: item.width, opacity: item.opacity,
+                        rotationDegrees: 0
+                    ),
+                    onScrub: onScrub
+                )
+
+                if item.keyframes.isEmpty {
                 row("Kích thước", value: item.width * 100, suffix: "%")
                 Slider(value: $model.videoOverlays[idx].width,
                        in: 0.10...0.95, step: 0.05).tint(.cyan)
@@ -95,6 +116,7 @@ struct VideoPIPStudioPanel: View {
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
+                }
             }
         }.padding(10)
     }

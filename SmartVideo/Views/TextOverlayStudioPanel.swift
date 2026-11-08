@@ -3,6 +3,7 @@ import SwiftUI
 struct TextOverlayStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
+    let onScrub: (Double) -> Void
 
     private var selected: TextOverlayClip? {
         model.textOverlays.first { $0.id == selectedID }
@@ -68,6 +69,25 @@ struct TextOverlayStudioPanel: View {
                        in: 0.1...max(0.2, model.totalDuration - item.start),
                        step: 0.1).tint(.cyan)
 
+                MultiPointKeyframePanel(
+                    keyframes: $model.textOverlays[idx].keyframes,
+                    easing: $model.textOverlays[idx].easing,
+                    pathMode: $model.textOverlays[idx].pathMode,
+                    start: item.start, duration: item.duration,
+                    timelineSecond: model.timelineSecond,
+                    legacyStart: OverlayKeyframe(
+                        progress: 0, x: item.startX, y: item.startY,
+                        scale: 0.45, opacity: item.opacity,
+                        rotationDegrees: 0
+                    ),
+                    legacyEnd: OverlayKeyframe(
+                        progress: 1, x: item.endX, y: item.endY,
+                        scale: 0.45, opacity: item.opacity,
+                        rotationDegrees: 0
+                    ),
+                    onScrub: onScrub
+                )
+
                 row("Cỡ chữ", "\(Int(item.fontSize))")
                 Slider(value: $model.textOverlays[idx].fontSize,
                        in: 20...120, step: 2).tint(.cyan)
@@ -81,6 +101,7 @@ struct TextOverlayStudioPanel: View {
                 Toggle("Nền tối sau chữ",
                        isOn: $model.textOverlays[idx].useBackground)
                     .font(.caption)
+                if item.keyframes.isEmpty {
                 row("Độ mờ", "\(Int(item.opacity * 100))%")
                 Slider(value: $model.textOverlays[idx].opacity,
                        in: 0.05...1, step: 0.05).tint(.cyan)
@@ -114,6 +135,7 @@ struct TextOverlayStudioPanel: View {
                 }
                 .buttonStyle(.bordered)
                 .font(.caption)
+                }
             }
         }.padding(10)
     }
