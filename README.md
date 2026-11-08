@@ -280,3 +280,24 @@ Phiên bản này nâng cấp **workflow dựng phim**, không sao chép giao di
 **Giới hạn hiện tại**: SoundFX chỉ nghe thử độc lập trong editor, chưa có phát trực tiếp bản phối tổng hợp theo con trỏ (cần preview mixer riêng). Không có waveform toàn bài cho nhạc dài trên 90 giây, không tạo tiếng bằng mô hình AI, chưa có bộ lọc EQ/compressor đa băng hoặc pitch shifting. Các hiệu ứng tự tổng hợp là tín hiệu ngắn cơ bản, không thay thế thư viện âm thanh chuyên nghiệp.
 
 Kiểm thử bằng GitHub Actions xác nhận biên dịch iOS/Simulator và tạo IPA chưa ký; cần thử xuất MP4 với nhiều track SFX chồng lên nhau trên iPhone 12 Pro Max để xác nhận chất lượng/đồng bộ thực tế.
+
+
+## ViePN Smart Video v3.2.0 – Beat Sync & Audio Mix Audition
+
+Bản này nối tiếp v3.1.0, tập trung vào các thao tác phối âm nhanh phục vụ chỉnh sửa video nhiều lớp:
+
+- **Phân tích nhịp MP3/M4A cục bộ**: Tab **Âm FX → Phân tích nhịp MP3** đọc PCM tối đa 90 giây từ mốc cắt nhạc đã chọn; phát hiện biến động RMS và đề xuất BPM trong khoảng khoảng 70–180 BPM. Đây là **ước lượng từ onset/âm lượng**, không phải nhận diện âm nhạc bằng AI hoặc bảo đảm nhịp chính xác 100%.
+- **Lưới nhịp**: Hiển thị mốc nhịp nhỏ dưới thanh tua timeline và trong tab Âm FX. Nếu bật lặp nhạc, lưới lặp theo độ dài phần nhạc đã chọn; vùng nhạc chưa phân tích không có mốc.
+- **Căn nhịp cho âm thanh**: Chọn một đoạn SFX → **Căn nhịp** để đổi vị trí bắt đầu sang nhịp gần nhất. Hoặc chọn **Căn tất cả FX**. Có thể chỉnh lại vị trí phát bằng slider sau khi căn.
+- **Nghe bản phối nhiều track ngay trong editor**: bấm **Nghe bản phối** để phát MP3, thuyết minh và các SFX (tối đa 12 lớp), bắt đầu từ con trỏ timeline. Dùng một `AVMutableComposition` và `AVMutableAudioMix` trong bộ nhớ; **không xuất file tạm**.
+- **Phạm vi bản phối được nghe thử**: **không gồm tiếng gốc video, PIP, hoặc ducking nhạc nền theo giọng nói**. Nếu cần xác nhận âm lượng đầy đủ và đồng bộ cuối cùng, hãy xuất một MP4 ngắn rồi nghe lại.
+- **Giữ nguyên dự án cũ**: mảng beat/bpm mới trong file dự án JSON được đọc bằng giá trị tùy chọn; dự án bản trước không có trường này vẫn mở bình thường. Mốc thời gian SFX sau khi snap được lưu cùng dự án.
+
+### Cách thử nhanh
+1. Thêm video khoảng 20–30 giây, vào **Âm thanh** và chọn MP3 có nhịp trống rõ.
+2. Mở **Âm FX**, thêm hiệu ứng Pop, Whoosh hay Impact. Bấm **Phân tích nhịp MP3**.
+3. Quan sát BPM và lưới nhịp. Chọn SFX → **Căn nhịp**, hoặc **Căn tất cả FX**.
+4. Đưa con trỏ về đầu hoặc đoạn muốn kiểm tra → **Nghe bản phối**. Nếu đúng ý, xuất MP4.
+5. Mở **Dự án** → Lưu → Mở lại và kiểm tra các đoạn SFX vẫn nằm ở mốc đã căn.
+
+**Giới hạn**: Nhịp ước lượng có thể sai nửa/nhân đôi BPM ở nhạc phức tạp. Bộ nghe thử âm thanh mới không thay thế phần preview video tổng hợp đầy đủ, và chưa có EQ/compressor hay thay đổi pitch cho mỗi SFX. Việc build thành công chỉ chứng minh mã nguồn tương thích ở bước biên dịch; cần chạy thực tế trên iPhone 12 Pro Max.
