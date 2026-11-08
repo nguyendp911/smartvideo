@@ -136,6 +136,8 @@ struct NarrationStudioPanel: View {
                 Button {
                     if recorder.isRecording {
                         model.voiceoverURL = recorder.stop()
+                        model.originalVoiceoverURL = nil
+                        model.masteringMessage = ""
                     } else {
                         recorder.start()
                     }
@@ -218,6 +220,8 @@ struct NarrationStudioPanel: View {
             Text("Giữ khoảng đệm 0,12 giây trước/sau câu để tránh cắt mất âm đầu. Nên nghe lại bản đã xử lý; tính năng này chưa tự đồng bộ phụ đề theo phần lời bị cắt.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+
+            VoiceMasteringPanel(model: model)
         }
         .padding(10)
     }
