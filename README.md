@@ -251,3 +251,15 @@ Phiên bản này nâng cấp **workflow dựng phim**, không sao chép giao di
 - Dự án v2.9 lưu và mở lại các overlay. Trình đọc dự án vẫn hỗ trợ dự án JSON v2.8 không có trường overlay; cần giữ các tệp PNG cùng với dữ liệu ứng dụng.
 - **Giới hạn**: chưa hỗ trợ overlay video có alpha, mask/chroma key nâng cao, easing đa điểm, hoặc xuất từng track riêng. Các hiệu ứng/phụ đề đều được render cuối khi xuất MP4; preview không phải full realtime timeline compositor.
 - Cần kiểm thử kết xuất với PNG trong suốt, nhiều lớp, video 720p/1080p trên iPhone 12 Pro Max. GitHub Actions xác nhận *biên dịch*, không xác nhận mọi hiệu ứng xuất đúng trên thiết bị thật.
+
+
+## v3.0.0 – Nền tảng dựng nhiều lớp (Video PIP / Text / Chroma Key)
+
+- **Video PIP**: tab **Video PIP** → Thêm video từ Photos. Tạo nhiều track video độc lập (giới hạn 4 track PIP đồng thời); điều chỉnh thời gian xuất hiện, độ dài, kích thước, opacity, vị trí điểm đầu/cuối. Video gốc nằm ở timeline chính; track PIP được chèn vào `AVMutableComposition` và transform bằng `AVMutableVideoCompositionLayerInstruction`. Tiếng từ video PIP đang **tắt mặc định**, chưa có mixer riêng.
+- **Text Overlay**: tab **Chữ** → tạo nhiều lớp chữ độc lập với phụ đề. Chỉnh nội dung, thời gian, độ mờ, cỡ chữ, màu HEX, nền tối, tọa độ chuyển động và lựa chọn gia tốc. Được render trực tiếp vào MP4 bằng Core Animation.
+- **Chroma Key ảnh**: tab **Overlay** → chọn ảnh xanh lá/xanh dương → bật **Chroma Key**. Thay đổi ngưỡng tách màu và độ mềm viền. Xử lý bằng Core Image CIColorCube để xuất ảnh alpha, KHÔNG sửa tệp PNG/JPG nguồn.
+- **Chroma Key video**: chưa được hỗ trợ. Video PIP có hình chuyển động nhưng chưa xử lý khử nền xanh theo từng frame; cần custom pixel-buffer compositor để làm đúng.
+- **Editor preview**: hiển thị ảnh đã khử nền, xem trước chữ và vị trí keyframe theo con trỏ; **video PIP chỉ hiện một frame đại diện**, bản MP4 xuất mới phát video phủ đầy đủ.
+- **Lưu/mở dự án**: lưu cả ảnh phủ, video PIP, lớp chữ và tùy chọn chroma. File dự án JSON cũ (v2.8/v2.9) vẫn được đọc: field thiếu mặc định là mảng rỗng, thuộc tính chroma mới mặc định tắt. Không xóa file media trong thư mục ứng dụng nếu cần mở lại.
+- **Giới hạn**: đây mới là nền tảng multi-layer. Chưa có mask/chroma key video, clip speed riêng cho PIP, time-stretch audio PIP, chuyển cảnh giữa các PIP, timeline preview tổng hợp toàn bộ video, hoặc realtime GPU compositor.
+- **Kiểm thử**: GitHub Actions chỉ xác nhận biên dịch iPhone/Simulator và đóng gói unsigned IPA. Cần kiểm tra trên iPhone 12 Pro Max với dự án ngắn, một lớp video PIP và một ảnh xanh trước khi xuất dự án nhiều lớp 1080p.
