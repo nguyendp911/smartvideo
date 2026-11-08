@@ -11,6 +11,39 @@ final class EditorViewModel: ObservableObject {
     @Published var textOverlays: [TextOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
     @Published var isImportingSoundEffects = false
+    @Published var isDetectingBeats = false
+    @Published var musicBeatSourceTimes: [Double] = []
+    @Published var detectedTempoBPM: Double = 0
+    @Published var beatConfidence: Double = 0
+    @Published var beatScanStart: Double = 0
+
+    /// Mapped to the video timeline (not source media clock).
+    var timelineBeatMarkers: [Double] {
+        guard !musicBeatSourceTimes.isEmpty, musicDuration > 0, totalDuration > 0 else {
+            return []
+        }
+        let start = min(max(0, musicStartSeconds), musicDuration)
+        let segment = min(max(0, musicDuration - start),
+                          musicHighlightDuration > 0 ?
+                            musicHighlightDuration : musicDuration)
+        guard segment > 0.1 else { return [] }
+        let count = repeatShortMusic ?
+            min(60, max(1, Int(ceil(totalDuration / segment)))) : 1
+        var markers: [Double] = []
+        for iteration in 0..<count {
+            let offset = Double(iteration) * segment
+            for beat in musicBeatSourceTimes {
+                let relative = beat - start
+                if relative >= 0, relative < segment {
+                    let timeline = relative + offset
+                    if timeline <= totalDuration {
+                        markers.append(timeline)
+                    }
+                }
+            }
+        }
+        return markers.sorted()
+    }
     @Published var timelineSecond: Double = 0
     @Published var timelineZoom: Double = 1.0
     @Published var projectName: String = "Dự án mới"
@@ -144,6 +177,9 @@ final class EditorViewModel: ObservableObject {
                         )
                     }
                     musicDuration = duration
+                    musicBeatSourceTimes = []
+                    detectedTempoBPM = 0
+                    beatConfidence = 0
                     musicStartSeconds = 0
             musicHighlightDuration = 0
             musicHighlights = []
@@ -506,6 +542,70 @@ final class EditorViewModel: ObservableObject {
         textOverlays.removeAll { $0.id == id }
     }
 
+    // MARK: - Local rhythm detection and SFX synchronization
+
+    func analyzeMusicBeats() {
+        guard let url = musicURL, !isDetectingBeats else {
+            if musicURL == nil {
+                errorText = "Hãy chọn nhạc MP3/M4A trong Âm thanh trước."
+            }
+            return
+        }
+        isDetectingBeats = true
+        musicBeatSourceTimes = []
+        detectedTempoBPM = 0
+        beatConfidence = 0
+        let sourceStart = musicStartSeconds
+        let segment = musicHighlightDuration
+        Task {
+            defer { isDetectingBeats = false }
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try await MusicBeatAnalyzer.analyze(
+                        url: url, start: sourceStart,
+                        scanDuration: segment > 0 ? min(segment, 90) : 90
+                    )
+                }.value
+                guard musicURL == url else { return }
+                musicBeatSourceTimes = result.sourceTimes
+                detectedTempoBPM = result.tempoBPM
+                beatConfidence = result.confidence
+                beatScanStart = sourceStart
+            } catch {
+                errorText = "Không phân tích được nhịp MP3: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    @discardableResult
+    func snapSoundToNearestBeat(_ id: UUID) -> Bool {
+        guard let index = soundEffects.firstIndex(where: { $0.id == id }) else {
+            return false
+        }
+        guard !timelineBeatMarkers.isEmpty else {
+            errorText = "Hãy bấm Phân tích nhịp trước khi căn SFX."
+            return false
+        }
+        let current = soundEffects[index].start
+        guard let nearest = timelineBeatMarkers.min(by: {
+            abs($0 - current) < abs($1 - current)
+        }) else { return false }
+        soundEffects[index].start = min(
+            max(0, nearest), max(0, totalDuration - 0.1)
+        )
+        return true
+    }
+
+    func snapAllSoundsToBeats() {
+        guard !timelineBeatMarkers.isEmpty else {
+            errorText = "Hãy phân tích nhạc để có các mốc nhịp trước."
+            return
+        }
+        for effect in soundEffects {
+            _ = snapSoundToNearestBeat(effect.id)
+        }
+    }
+
     // MARK: - Independent sound-effect tracks
 
     func importSoundEffect(from sourceURL: URL) {
@@ -630,6 +730,8 @@ final class EditorViewModel: ObservableObject {
                 clips: clips, imageOverlays: imageOverlays,
                 videoOverlays: videoOverlays, textOverlays: textOverlays,
                 soundEffects: soundEffects,
+                beatSourceTimes: musicBeatSourceTimes,
+                detectedTempoBPM: detectedTempoBPM,
                 subtitles: subtitles,
                 transition: transition.rawValue,
                 transitionSeconds: transitionSeconds,
@@ -701,6 +803,9 @@ final class EditorViewModel: ObservableObject {
                 return overlay
             }
             textOverlays = p.textOverlays
+            musicBeatSourceTimes = p.beatSourceTimes
+            detectedTempoBPM = p.detectedTempoBPM
+            beatConfidence = 0
             soundEffects = p.soundEffects.map {
                 var effect = $0
                 effect.fileURL = MediaStorage.mediaDirectory.appendingPathComponent(
@@ -775,6 +880,8 @@ final class EditorViewModel: ObservableObject {
         videoOverlays = []
         textOverlays = []
         soundEffects = []
+        musicBeatSourceTimes = []
+        detectedTempoBPM = 0
         subtitles = []
         musicURL = nil
         voiceoverURL = nil
