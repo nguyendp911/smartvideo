@@ -3,13 +3,13 @@ import UniformTypeIdentifiers
 
 /// The file type selection for the single system Files importer.
 enum EditorDocumentKind: String, Identifiable {
-    case music, voice, subtitles
+    case music, voice, subtitles, soundEffect
 
     var id: String { rawValue }
 
     var allowedTypes: [UTType] {
         switch self {
-        case .music, .voice:
+        case .music, .voice, .soundEffect:
             return [
                 .audio,
                 UTType(filenameExtension: "mp3") ?? .audio,

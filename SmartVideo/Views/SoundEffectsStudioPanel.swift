@@ -7,7 +7,7 @@ struct SoundEffectsStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     let importAudio: () -> Void
 
-    @State private var selectedID: UUID?
+    @Binding var selectedID: UUID?
     @State private var previewPlayer: AVAudioPlayer?
 
     private var selectedIndex: Int? {

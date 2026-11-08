@@ -16,6 +16,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case overlay = "Overlay"
     case pip = "Video PIP"
     case title = "Chữ"
+    case sfx = "Âm FX"
 
     var id: String { rawValue }
     var symbol: String {
@@ -32,6 +33,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .overlay: return "square.on.square"
         case .pip: return "pip"
         case .title: return "textformat"
+        case .sfx: return "waveform"
         }
     }
 }
@@ -54,6 +56,7 @@ struct EditorView: View {
     @State private var pickedPIP: PhotosPickerItem?
     @State private var selectedPIPID: UUID?
     @State private var selectedTextID: UUID?
+    @State private var selectedSoundID: UUID?
 
     private let accent = Color.cyan
 
@@ -166,6 +169,8 @@ struct EditorView: View {
                 case .music: model.importMusic(from: url)
                 case .voice: model.importVoiceover(from: url)
                 case .subtitles: model.importSubtitles(from: url)
+                case .soundEffect:
+                    model.importSoundEffect(from: url)
                 }
             case .failure(let error):
                 model.errorText = "Không thể mở tệp: \(error.localizedDescription)"
@@ -503,6 +508,56 @@ struct EditorView: View {
                     }
                 }
             }
+            if !model.soundEffects.isEmpty {
+                HStack(spacing: 6) {
+                    Text("FX")
+                        .font(.caption2.bold())
+                        .foregroundStyle(.cyan)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(Color.cyan.opacity(0.08))
+                            ForEach(model.soundEffects) { item in
+                                Button {
+                                    selectedSoundID = item.id
+                                    activeTool = .sfx
+                                    scrubTimeline(to: item.start)
+                                } label: {
+                                    Text("♫ " + item.filename)
+                                        .font(.system(size: 8))
+                                        .lineLimit(1)
+                                        .foregroundStyle(.white)
+                                        .padding(.horizontal, 3)
+                                        .frame(maxWidth: .infinity,
+                                               maxHeight: .infinity)
+                                        .background(
+                                            selectedSoundID == item.id ?
+                                                Color.cyan.opacity(0.63) :
+                                                Color.blue.opacity(0.55),
+                                            in: RoundedRectangle(cornerRadius: 4)
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                                .frame(
+                                    width: max(14, geo.size.width *
+                                        CGFloat(min(1, item.duration /
+                                            max(0.1, model.totalDuration)))),
+                                    height: 24
+                                )
+                                .offset(
+                                    x: geo.size.width * CGFloat(
+                                        min(1, max(0, item.start /
+                                            max(0.1, model.totalDuration)))
+                                    )
+                                )
+                            }
+                        }
+                        .clipped()
+                    }
+                    .frame(height: 24)
+                }
+                .frame(height: 27)
+            }
             HStack(spacing: 9) {
                 Button {
                     model.undoEdit()
@@ -538,7 +593,8 @@ struct EditorView: View {
             .font(.caption)
             .buttonStyle(.bordered)
         }
-        .frame(height: 154, alignment: .top)
+        .frame(height: model.soundEffects.isEmpty ? 154 : 186,
+               alignment: .top)
     }
 
     private func timecode(_ second: Double) -> String {
@@ -630,6 +686,11 @@ struct EditorView: View {
                                        pickerItem: $pickedPIP)
         case .title: TextOverlayStudioPanel(model: model,
                                             selectedID: $selectedTextID)
+        case .sfx: SoundEffectsStudioPanel(model: model,
+                                          selectedID: $selectedSoundID) {
+            activeFilePicker = .soundEffect
+            showDocumentImporter = true
+        }
         }
     }
 
@@ -1266,6 +1327,13 @@ struct EditorView: View {
                     showDocumentImporter = true
                 } label: {
                     Label("Tệp giọng đọc", systemImage: "mic")
+                }
+                .buttonStyle(.bordered)
+
+                Button {
+                    activeTool = .sfx
+                } label: {
+                    Label("Âm FX", systemImage: "waveform")
                 }
                 .buttonStyle(.bordered)
             }
