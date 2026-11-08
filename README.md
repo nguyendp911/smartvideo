@@ -318,3 +318,32 @@ Bản v3.3.0 bổ sung xử lý giọng thuyết minh offline, tương tự nhó
 - **Giới hạn định dạng**: tập trung giọng mono/stereo, iOS AVAudioFile PCM 8–192kHz, tệp dài tối đa 15 phút để tránh xuất file PCM quá lớn. Một số định dạng audio codec lạ có thể không giải mã được.
 - **Lưu ý hệ thống**: file CAF chưa nén có thể chiếm nhiều bộ nhớ lưu trữ. App giữ các phiên bản đã xử lý trong Media để không làm hỏng dự án đã lưu; trước khi xóa app hãy sao lưu toàn bộ media, không chỉ JSON.
 - **Kiểm thử**: GitHub Actions xác nhận biên dịch iPhone/Simulator và đóng gói IPA chưa ký. Chưa kiểm thử tốc độ, crash hoặc chất lượng audio end-to-end trên iPhone 12 Pro Max thật. Nên xuất thử một MP4 10–20 giây, so sánh âm thanh và mới áp dụng trên clip dài.
+
+
+## ViePN Smart Video v3.4.0 – Music Mastering, RMS Normalize, Synchronized Draft Preview
+
+### 1. Music Mastering
+- Tab **Âm thanh → Music Mastering**: sáu preset EQ gốc **Nguyên bản, Âm ấm, Sáng rõ, Bass Boost, Điện ảnh, Lo-fi**. Có các slider bass/mid/treble ±12 dB, tỷ lệ compressor 1:1–5:1 và ngưỡng nén -34 đến -8 dBFS.
+- **Áp dụng EQ**: chạy bộ xử lý PCM offline, tạo CAF nhạc đã qua EQ/compressor; file gốc được giữ lại. **Khôi phục nhạc gốc** để trở về file chưa xử lý. Chỉ thay đổi âm thanh khi bấm áp dụng, slider riêng không tự thay đổi video cuối.
+- Từng dự án JSON lưu tham số music mastering, nhạc gốc và nhạc đã xử lý. Tương thích dự án trước v3.4 (trường mới là tùy chọn).
+
+### 2. Chuẩn hóa RMS và bảo vệ đỉnh
+- **Chuẩn hóa RMS** cho nhạc tới mục tiêu **-18 dBFS**; cho thuyết minh tới **-20 dBFS**, bằng công cụ quét PCM hai lượt và xuất CAF mới.
+- Gain điều chỉnh trong khoảng **-15 dB đến +12 dB** và giới hạn đỉnh sample **-1 dBFS**. Nếu nguồn có nhiều transient đỉnh cao, mức đích RMS sẽ **không đạt**, vì ưu tiên không méo tiếng.
+- Đây là **RMS thông thường, không phải LUFS EBU R128, loudness-gating hoặc true-peak oversampling**. Không quảng cáo là chuẩn hóa LUFS chuẩn phát hành. Các bộ xử lý tạo file PCM trung gian lớn, mỗi file tối đa 15 phút.
+- Có thể **Nghe bản gốc / Nghe bản xử lý** trong Studio thuyết minh và **Nghe nhạc** trong Music Mastering.
+
+### 3. Xem thử toàn bộ hình + tiếng đồng bộ
+- Nút **Xem thử toàn bộ · 720p** bên dưới editor sẽ dựng **một MP4 720p đầy đủ** thông qua cùng bộ AVFoundation/VideoRenderer đang dùng cho xuất 1080p.
+- Màn hình **Xem thử bản dựng** sử dụng AVKit `VideoPlayer` để phát MP4 với chuyển cảnh, VFX, ảnh và video PIP, text overlay, tiếng gốc, nhạc, giọng đọc và SFX được ghép **trong cùng file**. Nhấn Đóng để quay về chỉnh sửa.
+- Đây **không phải preview realtime tức thì**: phải đợi render MP4, và dự án dài vẫn tốn nhiều thời gian/bộ nhớ. Preview được dựng cho *toàn bộ timeline* (không chỉ 10–20 giây gần con trỏ). Chỉnh sửa xong phải bấm lại để tạo bản nháp mới.
+- Video preview được lưu ở Exports của app; khuyến nghị dọn các file render nháp cũ khi không dùng (các bản hiện tại chưa có chức năng tự dọn hết lịch sử render nháp).
+
+### Kiểm thử đề xuất
+1. Nhập video 10–20 giây, nhạc MP3 và một track thuyết minh.
+2. Tab **Âm thanh**: chọn **Bass Boost** → **Áp dụng EQ** → **Nghe nhạc**. Thử **Chuẩn hóa RMS**, rồi **Khôi phục nhạc gốc**.
+3. Tab **Giọng**: **Chuẩn hóa giọng · RMS -20 dBFS**, nghe trước và sau.
+4. Thêm âm FX, phụ đề và chuyển cảnh; bấm **Xem thử toàn bộ · 720p** để kiểm tra hình/tiếng khớp.
+5. Chỉnh sửa lại, xuất 1080p và đối chiếu với preview. Lưu dự án → mở lại và kiểm tra file âm thanh gốc, file đã xử lý, preset và thông số.
+
+**Trạng thái**: GitHub Actions xác minh khả năng biên dịch iOS và tạo unsigned IPA. Hiệu ứng âm thanh chưa được thử nghiệm end-to-end trên iPhone 12 Pro Max; cần nghe và kiểm tra nhiều định dạng audio cụ thể trên thiết bị thật.
