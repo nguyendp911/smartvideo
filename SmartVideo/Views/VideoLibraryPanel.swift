@@ -31,6 +31,7 @@ struct VideoLibraryPanel: View {
     @State private var resolverToken = ""
     @State private var linkText = ""
     @State private var photoSelection: PhotosPickerItem?
+    @State private var showFilesImporter = false
     @State private var hasPermission = false
     @State private var showServerOptions = false
     @State private var tokenMessage = ""
@@ -70,6 +71,20 @@ struct VideoLibraryPanel: View {
             Task {
                 await library.importFromPhotosPicker(selection)
                 photoSelection = nil
+            }
+        }
+        .fileImporter(
+            isPresented: $showFilesImporter,
+            allowedContentTypes: [.mpeg4Movie, .quickTimeMovie, .movie],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                if let url = urls.first {
+                    Task { await library.importFromFiles(url) }
+                }
+            case .failure(let error):
+                library.errorText = "Không thể chọn video: \(error.localizedDescription)"
             }
         }
         .sheet(item: $previewItem) { item in
@@ -195,6 +210,20 @@ struct VideoLibraryPanel: View {
                     Spacer()
                     Label("Nhập video đã lưu từ Ảnh",
                           systemImage: "photo.on.rectangle.angled")
+                        .font(.caption.bold())
+                    Spacer()
+                }
+            }
+            .buttonStyle(.bordered)
+            .disabled(library.isDownloading)
+
+            Button {
+                showFilesImporter = true
+            } label: {
+                HStack {
+                    Spacer()
+                    Label("Nhập MP4/MOV từ Files hoặc Safari",
+                          systemImage: "folder.badge.plus")
                         .font(.caption.bold())
                     Spacer()
                 }
