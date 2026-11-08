@@ -13,6 +13,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case ai = "AI"
     case narration = "Giọng"
     case metadata = "Metadata"
+    case overlay = "Overlay"
 
     var id: String { rawValue }
     var symbol: String {
@@ -26,6 +27,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .ai: return "sparkles"
         case .narration: return "mic.circle"
         case .metadata: return "tag"
+        case .overlay: return "square.on.square"
         }
     }
 }
@@ -43,6 +45,8 @@ struct EditorView: View {
     @State private var localSecond = 0.0
     @State private var isPlaying = false
     @State private var showProjects = false
+    @State private var pickedOverlay: PhotosPickerItem?
+    @State private var selectedOverlayID: UUID?
 
     private let accent = Color.cyan
 
@@ -95,6 +99,14 @@ struct EditorView: View {
         }
         .background(Color(red: 0.055, green: 0.067, blue: 0.09)
             .ignoresSafeArea())
+        .onChange(of: pickedOverlay) { item in
+            guard let item else { return }
+            Task {
+                await model.importImageOverlay(item)
+                selectedOverlayID = model.imageOverlays.last?.id
+                pickedOverlay = nil
+            }
+        }
         .onChange(of: pickerItems) { items in
             guard !items.isEmpty else { return }
             Task {
@@ -246,6 +258,52 @@ struct EditorView: View {
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .padding(6)
+                }
+
+                // Preview independent image overlays only during their
+                // active time range. Drag to reposition start keyframe.
+                ForEach(model.imageOverlays) { overlay in
+                    if playheadSecond >= overlay.start && playheadSecond <= overlay.end,
+                       let index = model.imageOverlays.firstIndex(where: { $0.id == overlay.id }),
+                       let image = UIImage(contentsOfFile: overlay.fileURL.path) {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: canvasWidth * CGFloat(overlay.scale))
+                            .opacity(overlay.opacity)
+                            .rotationEffect(.degrees(overlay.rotationDegrees))
+                            .position(
+                                x: canvasWidth * CGFloat(overlay.startX),
+                                y: canvasHeight * CGFloat(overlay.startY)
+                            )
+                            .overlay {
+                                if activeTool == .overlay &&
+                                    selectedOverlayID == overlay.id {
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .stroke(.cyan, lineWidth: 1)
+                                        .frame(width: canvasWidth * CGFloat(overlay.scale))
+                                        .position(
+                                            x: canvasWidth * CGFloat(overlay.startX),
+                                            y: canvasHeight * CGFloat(overlay.startY)
+                                        )
+                                }
+                            }
+                            .gesture(
+                                DragGesture(minimumDistance: 0,
+                                            coordinateSpace: .named("captionCanvas"))
+                                    .onChanged { value in
+                                        guard activeTool == .overlay else { return }
+                                        selectedOverlayID = overlay.id
+                                        model.imageOverlays[index].startX =
+                                            min(0.95, max(0.05,
+                                                Double(value.location.x / canvasWidth)))
+                                        model.imageOverlays[index].startY =
+                                            min(0.95, max(0.05,
+                                                Double(value.location.y / canvasHeight)))
+                                    }
+                            )
+                            .allowsHitTesting(activeTool == .overlay)
+                    }
                 }
 
                 if !model.vfxPresets.isEmpty {
@@ -523,6 +581,9 @@ struct EditorView: View {
             showDocumentImporter = true
         }
         case .metadata: MetadataPanel(model: model)
+        case .overlay: OverlayStudioPanel(model: model,
+                                           selectedOverlayID: $selectedOverlayID,
+                                           pickedOverlay: $pickedOverlay)
         }
     }
 
