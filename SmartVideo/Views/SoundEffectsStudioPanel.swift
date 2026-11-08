@@ -262,8 +262,12 @@ struct SoundEffectsStudioPanel: View {
                 )
                 let player = AVPlayer(playerItem: item)
                 mixPlayer = player
-                player.seek(to: CMTime(seconds: min(playhead, duration),
-                                       preferredTimescale: 600))
+                player.seek(
+                    to: CMTime(seconds: min(playhead, duration),
+                               preferredTimescale: 600),
+                    toleranceBefore: .zero,
+                    toleranceAfter: .zero
+                )
                 player.play()
             } catch {
                 model.errorText = "Không nghe được bản phối: \(error.localizedDescription)"
