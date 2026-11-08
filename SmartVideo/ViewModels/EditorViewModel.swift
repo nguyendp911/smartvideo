@@ -821,6 +821,104 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Image overlay multi-point keyframe editing
+
+    @discardableResult
+    func addImageOverlayKeyframe(_ id: UUID, atTimeline second: Double) -> UUID? {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        var overlay = imageOverlays[index]
+        guard overlay.duration > 0.15 else { return nil }
+        let progress = min(0.985, max(0.015,
+            (second - overlay.start) / overlay.duration
+        ))
+        if overlay.keyframes.isEmpty {
+            overlay.keyframes = OverlayKeyframeSampler.frames(for: overlay)
+        }
+        if let existing = overlay.keyframes.first(where: {
+            abs($0.progress - progress) < 0.015
+        }) {
+            return existing.id
+        }
+        guard overlay.keyframes.count < 16 else {
+            errorText = "Giới hạn 16 keyframe trên mỗi lớp ảnh."
+            return nil
+        }
+        var sample = OverlayKeyframeSampler.sample(
+            overlay, atProgress: progress
+        )
+        sample.id = UUID()
+        sample.progress = progress
+        overlay.keyframes.append(sample)
+        overlay.keyframes.sort { $0.progress < $1.progress }
+        imageOverlays[index] = overlay
+        return sample.id
+    }
+
+    func removeImageOverlayKeyframe(_ id: UUID, frameID: UUID) {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        guard let k = imageOverlays[index].keyframes.firstIndex(where: {
+            $0.id == frameID
+        }) else { return }
+        let frames = imageOverlays[index].keyframes
+        // Endpoints anchor the visible segment, never remove them.
+        guard k > 0, k < frames.count - 1 else { return }
+        imageOverlays[index].keyframes.remove(at: k)
+    }
+
+    func applyImageKeyframePreset(_ id: UUID, preset: ImageKeyframePreset) {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        imageOverlays[index].keyframes = preset.makeFrames(
+            from: imageOverlays[index]
+        )
+    }
+
+    func clearImageKeyframes(_ id: UUID) {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        let current = imageOverlays[index]
+        let frames = OverlayKeyframeSampler.frames(for: current)
+        guard let first = frames.first, let last = frames.last else { return }
+        imageOverlays[index].startX = first.x
+        imageOverlays[index].startY = first.y
+        imageOverlays[index].endX = last.x
+        imageOverlays[index].endY = last.y
+        imageOverlays[index].scale = first.scale
+        imageOverlays[index].opacity = first.opacity
+        imageOverlays[index].rotationDegrees = first.rotationDegrees
+        imageOverlays[index].keyframes = []
+    }
+
+    func translateImageOverlay(_ id: UUID, dx: Double, dy: Double) {
+        guard let index = imageOverlays.firstIndex(where: { $0.id == id }),
+              dx.isFinite, dy.isFinite else { return }
+        let item = imageOverlays[index]
+        let frames = OverlayKeyframeSampler.frames(for: item)
+        let minX = frames.map(\.x).min() ?? 0.5
+        let maxX = frames.map(\.x).max() ?? 0.5
+        let minY = frames.map(\.y).min() ?? 0.5
+        let maxY = frames.map(\.y).max() ?? 0.5
+        let shiftX = min(max(dx, 0.03 - minX), 0.97 - maxX)
+        let shiftY = min(max(dy, 0.03 - minY), 0.97 - maxY)
+        if item.keyframes.isEmpty {
+            imageOverlays[index].startX += shiftX
+            imageOverlays[index].endX += shiftX
+            imageOverlays[index].startY += shiftY
+            imageOverlays[index].endY += shiftY
+        } else {
+            for frameIndex in imageOverlays[index].keyframes.indices {
+                imageOverlays[index].keyframes[frameIndex].x += shiftX
+                imageOverlays[index].keyframes[frameIndex].y += shiftY
+            }
+        }
+    }
+
     func removeImageOverlay(_ id: UUID) {
         imageOverlays.removeAll { $0.id == id }
     }
