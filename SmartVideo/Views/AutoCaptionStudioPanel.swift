@@ -38,6 +38,11 @@ struct AutoCaptionStudioPanel: View {
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
+            Toggle("Nhận diện toàn bộ (tối đa 10 phút)",
+                   isOn: $model.processLongAutoCaptions)
+                .font(.caption)
+                .tint(.cyan)
+
             Toggle("Thay toàn bộ phụ đề hiện có",
                    isOn: $model.replaceExistingAutoCaptions)
                 .font(.caption)
@@ -64,9 +69,9 @@ struct AutoCaptionStudioPanel: View {
                     .foregroundStyle(.cyan)
             }
 
-            Text("Mỗi lần phân tích tối đa 58 giây đầu của nguồn được chọn. " +
-                 "Nếu là video, thời gian phụ đề tự căn theo vị trí, điểm cắt " +
-                 "và tốc độ của clip. Hãy kiểm tra và sửa lời nhận diện trước khi xuất.")
+            Text("Âm thanh dài được chia thành các phần 52 giây, nhận diện " +
+                 "lần lượt để giữ thời điểm từng từ; giới hạn 10 phút mỗi lần. " +
+                 "Có thể mất nhiều thời gian. Sửa từ sai trước khi xuất MP4/SRT.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -131,6 +136,36 @@ struct SubtitleStylePanel: View {
                           text: $model.subtitleAppearance.foregroundHex)
                     .textFieldStyle(.roundedBorder)
                     .textInputAutocapitalization(.characters)
+            }
+
+            Divider()
+            Toggle("Karaoke · sáng từng từ theo giọng nói",
+                   isOn: $model.subtitleAppearance.karaokeEnabled)
+                .font(.caption.bold())
+                .tint(.cyan)
+
+            if model.subtitleAppearance.karaokeEnabled {
+                Picker("Hiệu ứng karaoke",
+                       selection: $model.subtitleAppearance.karaokeMotion) {
+                    ForEach(KaraokeMotion.allCases) { motion in
+                        Text(motion.rawValue).tag(motion)
+                    }
+                }
+                .font(.caption)
+                .pickerStyle(.segmented)
+
+                HStack {
+                    Text("Màu chữ đang đọc")
+                        .font(.caption)
+                    TextField("FFE563",
+                              text: $model.subtitleAppearance.karaokeHex)
+                        .textFieldStyle(.roundedBorder)
+                        .textInputAutocapitalization(.characters)
+                }
+                Text("Karaoke chỉ hoạt động với phụ đề Auto Captions " +
+                     "có mốc thời gian từng từ. Phụ đề SRT/TXT vẫn hiển thị bình thường.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(10)

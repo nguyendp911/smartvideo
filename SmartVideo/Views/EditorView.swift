@@ -369,7 +369,14 @@ struct EditorView: View {
                 )
 
                 if !previewCaption.isEmpty {
-                    Text(previewCaption)
+                    KaraokeSubtitlePreview(
+                        text: previewCaption,
+                        cue: model.subtitles.first(where: {
+                            $0.start <= playheadSecond && $0.end >= playheadSecond
+                        }),
+                        appearance: model.subtitleAppearance,
+                        playhead: playheadSecond
+                    )
                         .font(.system(size: max(10, min(28,
                             canvasWidth * 0.046 * CGFloat(model.subtitleAppearance.fontScale))),
                                       weight: .semibold))
@@ -1327,6 +1334,11 @@ struct EditorView: View {
                     HStack(spacing: 6) {
                         Text(String(format: "%.1f → %.1fs", cue.start, cue.end))
                             .font(.caption2.monospacedDigit())
+                        if cue.hasAlignedWords {
+                            Text("\(cue.words.count) từ")
+                                .font(.caption2)
+                                .foregroundStyle(.cyan)
+                        }
                         Spacer()
                         Button("← 0.5s") {
                             let distance = min(0.5, cue.start)

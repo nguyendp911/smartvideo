@@ -58,24 +58,34 @@ enum SubtitleOverlay {
             )
             background.opacity = 0
 
-            let textLayer = CATextLayer()
-            textLayer.frame = background.bounds.insetBy(dx: fontSize * 0.25, dy: 4)
-            textLayer.string = cue.text
-            textLayer.font = UIFont.boldSystemFont(ofSize: fontSize)
-            textLayer.fontSize = fontSize
-            textLayer.alignmentMode = .center
-            textLayer.foregroundColor = TextOverlayRenderer.uiColor(
-                hex: appearance.foregroundHex
-            ).cgColor
-            if appearance.shadowEnabled {
-                textLayer.shadowColor = UIColor.black.cgColor
-                textLayer.shadowOpacity = 0.9
-                textLayer.shadowRadius = 2.5
-                textLayer.shadowOffset = CGSize(width: 1, height: -1)
+            if appearance.karaokeEnabled && cue.hasAlignedWords &&
+               cue.words.count <= 14 {
+                KaraokeSubtitleRenderer.attach(
+                    cue: cue, appearance: appearance,
+                    to: background, fontSize: fontSize
+                )
+            } else {
+                let textLayer = CATextLayer()
+                textLayer.frame = background.bounds.insetBy(
+                    dx: fontSize * 0.25, dy: 4
+                )
+                textLayer.string = cue.text
+                textLayer.font = UIFont.boldSystemFont(ofSize: fontSize)
+                textLayer.fontSize = fontSize
+                textLayer.alignmentMode = .center
+                textLayer.foregroundColor = TextOverlayRenderer.uiColor(
+                    hex: appearance.foregroundHex
+                ).cgColor
+                if appearance.shadowEnabled {
+                    textLayer.shadowColor = UIColor.black.cgColor
+                    textLayer.shadowOpacity = 0.9
+                    textLayer.shadowRadius = 2.5
+                    textLayer.shadowOffset = CGSize(width: 1, height: -1)
+                }
+                textLayer.isWrapped = true
+                textLayer.contentsScale = 2
+                background.addSublayer(textLayer)
             }
-            textLayer.isWrapped = true
-            textLayer.contentsScale = 2
-            background.addSublayer(textLayer)
 
             let visible = CAKeyframeAnimation(keyPath: "opacity")
             visible.values = [0, 1, 1, 0]
