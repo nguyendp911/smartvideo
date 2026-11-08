@@ -56,6 +56,14 @@ final class EditorViewModel: ObservableObject {
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
     @Published var subtitles: [SubtitleCue] = []
+    @Published var subtitleAppearance = SubtitleAppearance()
+    @Published var autoCaptionSource: AutoCaptionSource = .narration
+    @Published var autoCaptionLanguage: AutoCaptionLanguage = .vietnamese
+    @Published var allowAppleSpeechService = false
+    @Published var replaceExistingAutoCaptions = false
+    @Published var isGeneratingAutoCaptions = false
+    @Published var autoCaptionStatus = ""
+    private let autoCaptionSpeech = AutoCaptionSpeech()
     @Published var transition: VideoTransition = .cut
     @Published var transitionSeconds: Double = 0.45
     @Published var vfxPresets: Set<VFXPreset> = []
@@ -276,6 +284,114 @@ final class EditorViewModel: ObservableObject {
             subtitles = parsed
         } catch {
             errorText = "Không nhập được phụ đề: \(error.localizedDescription)"
+        }
+    }
+
+    // MARK: - Speech to timed Auto Captions
+
+    func generateAutoCaptions(selectedClipID: UUID?) {
+        guard !isGeneratingAutoCaptions, !clips.isEmpty else { return }
+        let source = autoCaptionSource
+        let language = autoCaptionLanguage.rawValue
+        let allowApple = allowAppleSpeechService
+        let replace = replaceExistingAutoCaptions
+
+        let audioFile: URL
+        let timelineOffset: Double
+        let speed: Double
+        let maximum: Double
+        let needsExtraction: Bool
+
+        switch source {
+        case .narration:
+            guard let voiceoverURL else {
+                errorText = "Hãy thêm giọng thuyết minh trong tab Âm thanh hoặc Giọng."
+                return
+            }
+            audioFile = voiceoverURL
+            timelineOffset = voiceoverOffset
+            speed = 1
+            maximum = 58
+            needsExtraction = true
+        case .selectedVideo:
+            guard let index = clips.firstIndex(where: { $0.id == selectedClipID }),
+                  clips[index].kind == .video else {
+                errorText = "Chọn một clip VIDEO có lời nói trên timeline trước."
+                return
+            }
+            let clip = clips[index]
+            audioFile = clip.fileURL
+            timelineOffset = timelineStart(of: index)
+            speed = max(0.25, clip.playbackSpeed)
+            maximum = clip.duration
+            needsExtraction = true
+        }
+
+        isGeneratingAutoCaptions = true
+        autoCaptionStatus = "Đang chuẩn bị audio để nhận diện…"
+
+        Task {
+            defer { isGeneratingAutoCaptions = false }
+            var temporaryURL: URL?
+            defer {
+                if let temporaryURL {
+                    try? FileManager.default.removeItem(at: temporaryURL)
+                }
+            }
+            do {
+                let fileURL: URL
+                if source == .selectedVideo {
+                    guard let clip = clips.first(where: { $0.id == selectedClipID }) else {
+                        throw SmartVideoError.invalidMedia("Clip đã được thay đổi trước khi phân tích.")
+                    }
+                    let extracted = try await AutoCaptionSpeech.extractAudio(from: clip)
+                    temporaryURL = extracted
+                    fileURL = extracted
+                } else if needsExtraction {
+                    let extracted = try await AutoCaptionSpeech.extractAudio(
+                        from: audioFile, beginningAt: 0,
+                        maximumDuration: maximum
+                    )
+                    temporaryURL = extracted
+                    fileURL = extracted
+                } else {
+                    fileURL = audioFile
+                }
+
+                autoCaptionStatus = "Nhận diện \(language)…"
+                let cues = try await autoCaptionSpeech.recognize(
+                    fileURL: fileURL,
+                    localeIdentifier: language,
+                    allowAppleService: allowApple
+                )
+                // Return time codes are relative to the extracted segment.
+                let translated = cues.compactMap { cue -> SubtitleCue? in
+                    let start = timelineOffset + cue.start / speed
+                    let end = timelineOffset + cue.end / speed
+                    guard start < totalDuration, end > start else { return nil }
+                    return SubtitleCue(
+                        start: max(0, start),
+                        end: min(totalDuration, max(start + 0.10, end)),
+                        text: cue.text
+                    )
+                }
+                guard !translated.isEmpty else {
+                    throw SmartVideoError.invalidMedia(
+                        "Không nhận diện được lời nói. Thử chọn đoạn có tiếng rõ hơn."
+                    )
+                }
+                if replace {
+                    subtitles = translated
+                } else {
+                    subtitles.append(contentsOf: translated)
+                    subtitles.sort { $0.start < $1.start }
+                }
+                autoCaptionStatus = "Đã tạo \(translated.count) câu có thời gian. " +
+                    "Kiểm tra nội dung và vị trí trước khi xuất."
+            } catch {
+                autoCaptionStatus = ""
+                errorText = "Auto Captions: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -909,6 +1025,7 @@ final class EditorViewModel: ObservableObject {
                 beatSourceTimes: musicBeatSourceTimes,
                 detectedTempoBPM: detectedTempoBPM,
                 subtitles: subtitles,
+                subtitleAppearance: subtitleAppearance,
                 transition: transition.rawValue,
                 transitionSeconds: transitionSeconds,
                 canvas: canvas.rawValue, contentMode: contentMode.rawValue,
@@ -997,6 +1114,8 @@ final class EditorViewModel: ObservableObject {
                 return effect
             }
             subtitles = p.subtitles
+            subtitleAppearance = p.subtitleAppearance
+            autoCaptionStatus = ""
             transition = VideoTransition.allCases.first {
                 $0.rawValue == p.transition
             } ?? .cut
@@ -1073,6 +1192,8 @@ final class EditorViewModel: ObservableObject {
         musicBeatSourceTimes = []
         detectedTempoBPM = 0
         subtitles = []
+        subtitleAppearance = SubtitleAppearance()
+        autoCaptionStatus = ""
         musicURL = nil
         originalMusicURL = nil
         musicMasteringSettings = VoiceMasteringSettings(
@@ -1274,6 +1395,7 @@ final class EditorViewModel: ObservableObject {
         let workFadeOut = musicFadeOut
         let workVoice = voiceoverURL
         let workSubtitles = subtitles
+        let workSubtitleAppearance = subtitleAppearance
         let workSubtitleX = subtitleX
         let workSubtitleY = subtitleY
         let workKeepOriginal = keepOriginalAudio
@@ -1306,6 +1428,7 @@ final class EditorViewModel: ObservableObject {
                         voiceoverOffset: workVoiceOffset,
                         voiceoverVolume: workVoiceVolume,
                         subtitles: workSubtitles,
+                        subtitleAppearance: workSubtitleAppearance,
                         subtitleX: workSubtitleX,
                         subtitleY: workSubtitleY,
                         keepOriginalAudio: workKeepOriginal,
