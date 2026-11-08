@@ -454,3 +454,38 @@ Thêm **bộ keyframe nhiều điểm dành cho lớp ảnh/logo/sticker Overlay
 - Cả preview và bản xuất sử dụng cùng thuật toán lấy mẫu, nhưng **AVFoundation vẫn nội suy các ma trận biến đổi tuyến tính giữa từng mẫu** nên xoay góc lớn có thể khác nhẹ với preview, nhất là khi nhiều lớp PIP hoạt động đồng thời.
 - Chưa có điều khiển đường cong bằng tay nắm Bézier, motion tracking tự động, xử lý alpha/chroma theo từng frame cho video hoặc bộ trộn âm riêng của video PIP.
 - Mã iPhone/Simulator được kiểm tra bằng GitHub Actions; **chưa kiểm thử hiệu suất hoặc độ chính xác render trên iPhone 12 Pro Max thật**. IPA do CI tạo là file chưa ký.
+
+
+## ViePN Smart Video v3.9.0 – Preset Studio PRO (24 original presets)
+
+### Sáu bộ sưu tập / 24 công thức dựng thật
+- **Cinematic**: Neo Cinema, Noir Luxe, Golden Film, Midnight Thriller.
+- **Social / Reels**: Viral Pop, Neon Pulse, Flash Cut, Digital Edge.
+- **Lifestyle**: Soft Morning, Sunset Diary, Clean Vlog, Rose Bloom.
+- **Editorial**: Mono Editorial, Minimal Vision, Gallery White, Quiet Luxury.
+- **Retro**: Analog 35, VHS Tape, Y2K Lights, Memory Film.
+- **Product / Brand**: Product Hero, Luxury Reveal, Tech Launch, Food Glow.
+
+Mỗi preset là một **công thức chỉnh sửa được** chứ không phải ảnh màu gắn nhãn: có bộ lọc Core Image dành cho ảnh tĩnh, chuyển động Ken Burns, tổ hợp VFX trên composition MP4, cường độ hiệu ứng, lựa chọn cut/dissolve, kiểu phụ đề, và preset chuyển động title. Không dùng nhạc/ảnh/logo/asset của CapCut hay từ bên thứ ba.
+
+### Tính năng của Preset Studio
+- Mở **Công cụ → Preset Pro**, tìm theo tên hoặc cảm xúc, lọc theo sáu danh mục, lưu preset yêu thích qua AppStorage trên thiết bị.
+- Chạm vào một thẻ để xem công thức và bảng màu **minh họa**, bấm **Áp dụng toàn dự án** để đổi thật bộ màu **của các clip ảnh**, chuyển động ảnh, VFX, thời gian chuyển cảnh, và kiểu phụ đề. Media nguồn không bị ghi đè.
+- **14 màu Core Image mới** bổ sung cho năm kiểu có sẵn: Teal & Orange, Noir Luxe, Golden Hour, Soft Pastel, Moody, Clean Studio, Forest, Analog 35, Rose Film, Desert, Midnight, Neon Pop, Editorial, Creamy. Tổng cộng 19 kiểu màu trong danh sách clip ảnh. Các bộ lọc mới chạy khi xuất MP4 và còn hiển thị trên preview ảnh (downsample để tránh chiếm RAM lớn).
+- **Thêm tiêu đề** là hành động tùy chọn riêng: tạo một text overlay với keyframe chuyển động, màu chữ tương ứng preset, nội dung ban đầu “NHẬP TIÊU ĐỀ” có thể chỉnh sửa trong tab Chữ. Không tự thêm chữ/nhãn watermark vào video khi chỉ bấm Áp dụng.
+- **Hoàn tác preset** trở về thiết lập ngay trước lần áp dụng gần nhất (bao gồm clips, VFX, transition, subtitle appearance). Vì nút Thêm tiêu đề là thao tác riêng, xóa tiêu đề ở tab Chữ nếu không dùng.
+- Chỉnh cường độ VFX của preset đang áp dụng, bấm **Xem thử MP4 · 720p** để render thử cùng pipeline xuất cuối. Preset ID được lưu vào file JSON dự án và đọc tùy chọn để tương thích dự án cũ.
+- Khi áp dụng một preset mới, màu/hiệu ứng/transition cũ trong cùng nhóm được **thay thế có chủ đích**, không tự xếp chồng vô hạn. Các track âm thanh, phụ đề đã gõ, video PIP, clip chữ có sẵn và file nguồn được giữ nguyên.
+
+### Giới hạn quan trọng
+- Bộ màu Core Image 19 look **chỉ áp dụng cho clip ảnh tĩnh**. Các clip video đang được dựng bằng AVFoundation, nên hiện preset chỉ phối VFX, chuyển cảnh và title trên **video**; đây chưa phải LUT/3D LUT color grade áp trực tiếp lên từng khung video.
+- Thẻ preset hiển thị gradient bảng màu **minh họa**, không phải thumbnail chính xác của footage. Với ảnh, preview chỉnh sửa dùng bộ lọc thực; với video, xem bản MP4 720p để kiểm tra VFX.
+- **Không phải bộ preset thương mại sao chép CapCut**. Đây là 24 công thức gốc được viết bằng Swift/Core Image/AVFoundation/Core Animation, không yêu cầu máy chủ hoặc mua thêm gói hiệu ứng.
+- Build iPhone/Simulator qua GitHub Actions kiểm tra tương thích mã và tạo IPA chưa ký; chất lượng của từng preset trên nhiều video HDR/codec khác nhau cần thử thực tế trên iPhone.
+
+### Kiểm tra nhanh
+1. Thêm 2–3 clip ảnh + video ngắn, mở **Preset Pro**.
+2. Chọn **Neo Cinema → Áp dụng toàn dự án**. Xem preview ảnh đã đổi màu; video sẽ mang VFX và chuyển cảnh theo công thức.
+3. Thử **Thêm tiêu đề**, chuyển sang tab Chữ và gõ tên dự án.
+4. Bấm **Xem thử MP4 · 720p**, so sánh với bản xuất. Đổi preset sang **Clean Vlog** và dùng **Hoàn tác** nếu cần.
+5. Lưu dự án, mở lại và kiểm tra dữ liệu preset, màu ảnh, VFX và text overlay vẫn còn.
