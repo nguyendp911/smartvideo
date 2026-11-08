@@ -240,3 +240,14 @@ Phiên bản này nâng cấp **workflow dựng phim**, không sao chép giao di
 4. Bấm biểu tượng folder → nhập tên dự án → **Lưu dự án hiện tại** → **Tạo dự án mới** → mở lại dự án đã lưu.
 5. Xuất MP4 ngắn, kiểm tra timeline sau khi chỉnh. Với video codec đặc biệt, bản nguồn vẫn được giữ để thử lại.
 
+
+
+## ViePN Smart Video v2.9.0 – Overlay & Picture-in-Picture
+
+- Thêm tab **Overlay** (mở nhanh từ menu Công cụ): chọn ảnh/logo/sticker từ Ảnh iOS. Trình nhập overlay lưu thành PNG giữ kênh alpha, **không chuyển JPEG làm mất nền trong suốt**.
+- Mỗi ảnh là một **track overlay độc lập** với thời điểm bắt đầu, thời lượng, kích thước theo khung, độ mờ, xoay và vị trí. Kéo ảnh trên preview để đặt vị trí.
+- Hỗ trợ hai **keyframe vị trí**: điểm đầu (X/Y) và điểm cuối (X/Y). AVFoundation/Core Animation nội suy vị trí khi xuất MP4. Preview tính nội suy theo con trỏ timeline; kéo ảnh dịch cả đường chuyển động.
+- Có thể thêm nhiều overlay và chỉnh riêng từng lớp, không xóa hay sửa ảnh/video nguồn. Overlay được ghi **trên lớp VFX và dưới phụ đề** trong cùng \`AVVideoCompositionCoreAnimationTool\`.
+- Dự án v2.9 lưu và mở lại các overlay. Trình đọc dự án vẫn hỗ trợ dự án JSON v2.8 không có trường overlay; cần giữ các tệp PNG cùng với dữ liệu ứng dụng.
+- **Giới hạn**: chưa hỗ trợ overlay video có alpha, mask/chroma key nâng cao, easing đa điểm, hoặc xuất từng track riêng. Các hiệu ứng/phụ đề đều được render cuối khi xuất MP4; preview không phải full realtime timeline compositor.
+- Cần kiểm thử kết xuất với PNG trong suốt, nhiều lớp, video 720p/1080p trên iPhone 12 Pro Max. GitHub Actions xác nhận *biên dịch*, không xác nhận mọi hiệu ứng xuất đúng trên thiết bị thật.
