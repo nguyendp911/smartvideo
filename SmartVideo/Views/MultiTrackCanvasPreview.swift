@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// Lightweight editor previews. The actual moving PIP video renders through
-/// AVFoundation; the thumbnail shown here is intentionally a still frame.
+/// Editing preview is deliberately lightweight: PIP shows a video thumbnail,
+/// while the exported MP4 contains the real moving video composition.
 struct VideoPIPCanvasPreview: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
@@ -12,53 +12,90 @@ struct VideoPIPCanvasPreview: View {
     var body: some View {
         ZStack {
             ForEach(model.videoOverlays) { item in
-                if second >= item.start && second <= item.end,
-                   let index = model.videoOverlays.firstIndex(where: { $0.id == item.id }) {
-                    let ratio = min(1, max(0,
-                        (second - item.start) / max(0.1, item.duration)))
-                    let x = item.startX + (item.endX - item.startX) * ratio
-                    let y = item.startY + (item.endY - item.startY) * ratio
-                    TimelineThumbnail(clip: TimelineClip(
-                        kind: .video, fileURL: item.fileURL,
-                        duration: item.sourceDuration,
-                        startTime: item.sourceStart,
-                        originalDuration: item.sourceDuration
-                    ))
-                    .frame(width: canvas.width * item.width,
-                           height: canvas.width * item.width * 0.58)
-                    .clipShape(RoundedRectangle(cornerRadius: 5))
-                    .opacity(item.opacity)
-                    .overlay {
-                        if editable && selectedID == item.id {
-                            RoundedRectangle(cornerRadius: 5)
-                                .stroke(.cyan, lineWidth: 2)
-                                .frame(width: canvas.width * item.width,
-                                       height: canvas.width * item.width * 0.58)
-                        }
-                    }
-                    .position(x: canvas.width * x, y: canvas.height * y)
-                    .gesture(
-                        DragGesture(minimumDistance: 0,
-                                    coordinateSpace: .named("captionCanvas"))
-                            .onChanged { value in
-                                guard editable else { return }
-                                selectedID = item.id
-                                let dx = Double(value.location.x / canvas.width) - x
-                                let dy = Double(value.location.y / canvas.height) - y
-                                model.videoOverlays[index].startX =
-                                    min(0.95, max(0.05, item.startX + dx))
-                                model.videoOverlays[index].startY =
-                                    min(0.95, max(0.05, item.startY + dy))
-                                model.videoOverlays[index].endX =
-                                    min(0.95, max(0.05, item.endX + dx))
-                                model.videoOverlays[index].endY =
-                                    min(0.95, max(0.05, item.endY + dy))
-                            }
+                if second >= item.start && second <= item.end {
+                    VideoPIPPreviewItem(
+                        model: model, selectedID: $selectedID,
+                        item: item, second: second,
+                        canvas: canvas, editable: editable
                     )
-                    .allowsHitTesting(editable)
                 }
             }
-        }.frame(width: canvas.width, height: canvas.height)
+        }
+        .frame(width: canvas.width, height: canvas.height)
+    }
+}
+
+private struct VideoPIPPreviewItem: View {
+    @ObservedObject var model: EditorViewModel
+    @Binding var selectedID: UUID?
+    let item: VideoOverlayClip
+    let second: Double
+    let canvas: CGSize
+    let editable: Bool
+
+    private var current: OverlayKeyframe {
+        let progress = (second - item.start) / max(0.1, item.duration)
+        return OverlayKeyframeSampler.sample(item, atProgress: progress)
+    }
+
+    var body: some View {
+        TimelineThumbnail(clip: TimelineClip(
+            kind: .video, fileURL: item.fileURL,
+            duration: item.sourceDuration,
+            startTime: item.sourceStart,
+            originalDuration: item.sourceDuration
+        ))
+        .frame(
+            width: canvas.width * current.scale,
+            height: canvas.width * current.scale * 0.58
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .opacity(current.opacity)
+        .rotationEffect(.degrees(current.rotationDegrees))
+        .overlay {
+            if editable && selectedID == item.id {
+                RoundedRectangle(cornerRadius: 5)
+                    .stroke(.cyan, lineWidth: 2)
+            }
+        }
+        .position(
+            x: canvas.width * current.x,
+            y: canvas.height * current.y
+        )
+        .gesture(
+            DragGesture(minimumDistance: 0,
+                        coordinateSpace: .named("captionCanvas"))
+                .onChanged { value in
+                    translate(to: value.location)
+                }
+        )
+        .allowsHitTesting(editable)
+    }
+
+    private func translate(to point: CGPoint) {
+        guard editable, canvas.width > 0, canvas.height > 0,
+              let index = model.videoOverlays.firstIndex(where: {
+                  $0.id == item.id
+              }) else { return }
+        selectedID = item.id
+        let desiredDX = Double(point.x / canvas.width) - current.x
+        let desiredDY = Double(point.y / canvas.height) - current.y
+        let frames = OverlayKeyframeSampler.frames(for: item)
+        let dx = max((0.03 - (frames.map(\.x).min() ?? 0.5)),
+                     min(desiredDX, 0.97 - (frames.map(\.x).max() ?? 0.5)))
+        let dy = max((0.03 - (frames.map(\.y).min() ?? 0.5)),
+                     min(desiredDY, 0.97 - (frames.map(\.y).max() ?? 0.5)))
+        if item.keyframes.isEmpty {
+            model.videoOverlays[index].startX += dx
+            model.videoOverlays[index].startY += dy
+            model.videoOverlays[index].endX += dx
+            model.videoOverlays[index].endY += dy
+        } else {
+            for i in model.videoOverlays[index].keyframes.indices {
+                model.videoOverlays[index].keyframes[i].x += dx
+                model.videoOverlays[index].keyframes[i].y += dy
+            }
+        }
     }
 }
 
@@ -93,21 +130,20 @@ private struct TextOverlayPreviewItem: View {
     let canvas: CGSize
     let editable: Bool
 
-    private var fraction: Double {
-        min(1, max(0, (second - item.start) / max(0.1, item.duration)))
+    private var current: OverlayKeyframe {
+        let progress = (second - item.start) / max(0.1, item.duration)
+        return OverlayKeyframeSampler.sample(item, atProgress: progress)
     }
-    private var currentX: Double {
-        item.startX + (item.endX - item.startX) * fraction
-    }
-    private var currentY: Double {
-        item.startY + (item.endY - item.startY) * fraction
-    }
+
     private var fontPoints: CGFloat {
-        CGFloat(min(30, max(10, item.fontSize * Double(canvas.width) / 1080)))
+        CGFloat(min(30, max(10,
+            item.fontSize * Double(canvas.width) / 1080)))
     }
+
     private var titleColor: Color {
         Color(uiColor: TextOverlayRenderer.uiColor(hex: item.colorHex))
     }
+
     private var titleBackground: Color {
         item.useBackground ? Color.black.opacity(0.50) : .clear
     }
@@ -119,9 +155,12 @@ private struct TextOverlayPreviewItem: View {
             .multilineTextAlignment(.center)
             .padding(5)
             .frame(width: canvas.width * 0.85)
-            .background(titleBackground,
-                        in: RoundedRectangle(cornerRadius: 6))
-            .opacity(item.opacity)
+            .background(
+                titleBackground, in: RoundedRectangle(cornerRadius: 6)
+            )
+            .scaleEffect(current.scale / 0.45)
+            .rotationEffect(.degrees(current.rotationDegrees))
+            .opacity(current.opacity)
             .overlay {
                 if editable && selectedID == item.id {
                     RoundedRectangle(cornerRadius: 6)
@@ -129,8 +168,8 @@ private struct TextOverlayPreviewItem: View {
                 }
             }
             .position(
-                x: canvas.width * currentX,
-                y: canvas.height * currentY
+                x: canvas.width * current.x,
+                y: canvas.height * current.y
             )
             .gesture(
                 DragGesture(minimumDistance: 0,
@@ -143,19 +182,28 @@ private struct TextOverlayPreviewItem: View {
     }
 
     private func moveText(to point: CGPoint) {
-        guard editable,
-              let index = model.textOverlays.firstIndex(where: { $0.id == item.id }),
-              canvas.width > 0, canvas.height > 0 else { return }
+        guard editable, canvas.width > 0, canvas.height > 0,
+              let index = model.textOverlays.firstIndex(where: {
+                  $0.id == item.id
+              }) else { return }
         selectedID = item.id
-        let deltaX = Double(point.x / canvas.width) - currentX
-        let deltaY = Double(point.y / canvas.height) - currentY
-        model.textOverlays[index].startX =
-            min(0.95, max(0.05, item.startX + deltaX))
-        model.textOverlays[index].startY =
-            min(0.95, max(0.05, item.startY + deltaY))
-        model.textOverlays[index].endX =
-            min(0.95, max(0.05, item.endX + deltaX))
-        model.textOverlays[index].endY =
-            min(0.95, max(0.05, item.endY + deltaY))
+        let desiredDX = Double(point.x / canvas.width) - current.x
+        let desiredDY = Double(point.y / canvas.height) - current.y
+        let frames = OverlayKeyframeSampler.frames(for: item)
+        let dx = max((0.03 - (frames.map(\.x).min() ?? 0.5)),
+                     min(desiredDX, 0.97 - (frames.map(\.x).max() ?? 0.5)))
+        let dy = max((0.03 - (frames.map(\.y).min() ?? 0.5)),
+                     min(desiredDY, 0.97 - (frames.map(\.y).max() ?? 0.5)))
+        if item.keyframes.isEmpty {
+            model.textOverlays[index].startX += dx
+            model.textOverlays[index].startY += dy
+            model.textOverlays[index].endX += dx
+            model.textOverlays[index].endY += dy
+        } else {
+            for i in model.textOverlays[index].keyframes.indices {
+                model.textOverlays[index].keyframes[i].x += dx
+                model.textOverlays[index].keyframes[i].y += dy
+            }
+        }
     }
 }
