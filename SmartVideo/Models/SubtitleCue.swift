@@ -1,10 +1,56 @@
 import Foundation
 
-struct SubtitleCue: Identifiable, Equatable, Codable {
-    var id = UUID()
+/// Timing is always in *global video timeline* seconds, not file offsets.
+struct SubtitleWord: Codable, Equatable {
     var start: Double
     var end: Double
     var text: String
+}
+
+struct SubtitleCue: Identifiable, Equatable, Codable {
+    var id: UUID
+    var start: Double
+    var end: Double
+    var text: String
+    var words: [SubtitleWord]
+
+    init(id: UUID = UUID(), start: Double, end: Double,
+         text: String, words: [SubtitleWord] = []) {
+        self.id = id
+        self.start = start
+        self.end = end
+        self.text = text
+        self.words = words
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, start, end, text, words
+    }
+
+    init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        id = try fields.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        start = try fields.decode(Double.self, forKey: .start)
+        end = try fields.decode(Double.self, forKey: .end)
+        text = try fields.decode(String.self, forKey: .text)
+        words = try fields.decodeIfPresent([SubtitleWord].self, forKey: .words) ?? []
+    }
+
+    var hasAlignedWords: Bool {
+        guard !words.isEmpty else { return false }
+        // If the user manually rewrote the caption, do not play the
+        // outdated word timing against unrelated text.
+        return Self.cleaned(words.map(\.text).joined(separator: " ")) ==
+            Self.cleaned(text)
+    }
+
+    private static func cleaned(_ text: String) -> String {
+        text.replacingOccurrences(of: " ,", with: ",")
+            .replacingOccurrences(of: " .", with: ".")
+            .replacingOccurrences(of: " ?", with: "?")
+            .replacingOccurrences(of: " !", with: "!")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }
 
 enum SubtitleFile {

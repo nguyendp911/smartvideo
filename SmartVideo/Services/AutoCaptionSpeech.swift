@@ -27,12 +27,6 @@ enum AutoCaptionLanguage: String, CaseIterable, Identifiable {
     }
 }
 
-private struct RecognizedWord {
-    let start: Double
-    let end: Double
-    let text: String
-}
-
 /// Speech recognition of existing media; no microphone recording.
 /// On-device is enforced unless the user explicitly permits Apple service.
 /// Recognition is limited to one audio segment up to 58 seconds per request.
@@ -113,7 +107,7 @@ final class AutoCaptionSpeech {
                 in: .whitespacesAndNewlines
             )
             guard !text.isEmpty else { return nil }
-            return RecognizedWord(
+            return SubtitleWord(
                 start: segment.timestamp,
                 end: segment.timestamp + max(0.05, segment.duration),
                 text: text
@@ -127,10 +121,10 @@ final class AutoCaptionSpeech {
         activeTask = nil
     }
 
-    private static func makeCues(_ words: [RecognizedWord]) -> [SubtitleCue] {
+    private static func makeCues(_ words: [SubtitleWord]) -> [SubtitleCue] {
         guard !words.isEmpty else { return [] }
         var cues: [SubtitleCue] = []
-        var phrases: [RecognizedWord] = []
+        var phrases: [SubtitleWord] = []
 
         func flush() {
             guard let first = phrases.first, let last = phrases.last else {
@@ -146,7 +140,8 @@ final class AutoCaptionSpeech {
                 cues.append(SubtitleCue(
                     start: max(0, first.start),
                     end: max(first.start + 0.14, last.end + 0.07),
-                    text: phrase
+                    text: phrase,
+                    words: phrases
                 ))
             }
             phrases.removeAll(keepingCapacity: true)
