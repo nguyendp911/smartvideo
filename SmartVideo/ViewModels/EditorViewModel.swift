@@ -68,6 +68,23 @@ final class EditorViewModel: ObservableObject {
     @Published var transition: VideoTransition = .cut
     @Published var transitionSeconds: Double = 0.45
     @Published var vfxPresets: Set<VFXPreset> = []
+    @Published var appliedStudioPresetID: String?
+    @Published var studioPresetMessage: String = ""
+
+    private struct PresetUndo {
+        let clips: [TimelineClip]
+        let vfx: Set<VFXPreset>
+        let strength: Double
+        let coverage: VFXCoverage
+        let start: Double
+        let end: Double
+        let transition: VideoTransition
+        let transitionSeconds: Double
+        let subtitleStyle: SubtitleAppearance
+        let previousPresetID: String?
+    }
+    private var studioPresetUndo: PresetUndo?
+    var canUndoStudioPreset: Bool { studioPresetUndo != nil }
     @Published var vfxIntensity: Double = 0.30
     @Published var vfxCoverage: VFXCoverage = .videoOnly
     @Published var vfxStartTime: Double = 0
@@ -1186,7 +1203,8 @@ final class EditorViewModel: ObservableObject {
                 vfxStart: vfxStartTime, vfxEnd: vfxEndTime,
                 subtitleX: subtitleX, subtitleY: subtitleY,
                 stripMetadata: stripMetadata,
-                addMetadata: addCustomMetadata, metadata: metadata
+                addMetadata: addCustomMetadata, metadata: metadata,
+                studioPresetID: appliedStudioPresetID
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -1225,6 +1243,9 @@ final class EditorViewModel: ObservableObject {
             checkpoint()
             projectID = p.id
             projectName = p.name
+            appliedStudioPresetID = p.studioPresetID
+            studioPresetUndo = nil
+            studioPresetMessage = ""
             clips = restoredClips
             imageOverlays = p.imageOverlays.map {
                 var overlay = $0
@@ -1320,6 +1341,9 @@ final class EditorViewModel: ObservableObject {
         checkpoint()
         projectID = UUID()
         projectName = "Dự án mới"
+        appliedStudioPresetID = nil
+        studioPresetUndo = nil
+        studioPresetMessage = ""
         clips = []
         imageOverlays = []
         videoOverlays = []
@@ -1461,6 +1485,83 @@ final class EditorViewModel: ObservableObject {
 
     /// One-tap edit template using real motion and dissolve exports.
     /// This modifies project settings only and never touches original media.
+    // MARK: - Curated professional preset studio
+
+    func applyStudioPreset(_ preset: StudioPreset) {
+        guard !clips.isEmpty else {
+            errorText = "Hãy nhập ít nhất một clip ảnh hoặc video trước khi áp dụng preset."
+            return
+        }
+        studioPresetUndo = PresetUndo(
+            clips: clips, vfx: vfxPresets, strength: vfxIntensity,
+            coverage: vfxCoverage, start: vfxStartTime, end: vfxEndTime,
+            transition: transition, transitionSeconds: transitionSeconds,
+            subtitleStyle: subtitleAppearance,
+            previousPresetID: appliedStudioPresetID
+        )
+        // All settings are applied in memory and saved with the normal project.
+        // Source images, videos, speech and music remain untouched.
+        for index in clips.indices where clips[index].kind == .image {
+            clips[index].imageLook = preset.imageLook
+            clips[index].imageMotion = preset.motion
+        }
+        vfxPresets = Set(preset.effects)
+        vfxIntensity = preset.intensity
+        vfxCoverage = .videoOnly
+        vfxStartTime = 0
+        vfxEndTime = 0
+        transition = preset.transition
+        transitionSeconds = 0.42
+        subtitleAppearance = preset.subtitleStyle.settings
+        appliedStudioPresetID = preset.id
+        studioPresetMessage = "Đã áp dụng \(preset.title). " +
+            "Màu Core Image dành cho clip ảnh; clip video dùng VFX và chuyển cảnh."
+    }
+
+    func undoStudioPreset() {
+        guard let prior = studioPresetUndo else { return }
+        clips = prior.clips
+        vfxPresets = prior.vfx
+        vfxIntensity = prior.strength
+        vfxCoverage = prior.coverage
+        vfxStartTime = prior.start
+        vfxEndTime = prior.end
+        transition = prior.transition
+        transitionSeconds = prior.transitionSeconds
+        subtitleAppearance = prior.subtitleStyle
+        appliedStudioPresetID = prior.previousPresetID
+        studioPresetUndo = nil
+        studioPresetMessage = "Đã hoàn tác preset gần nhất."
+    }
+
+    @discardableResult
+    func addStudioPresetTitle(_ preset: StudioPreset) -> UUID? {
+        guard totalDuration >= 0.1 else {
+            errorText = "Hãy nhập clip trước khi thêm tiêu đề."
+            return nil
+        }
+        var item = TextOverlayClip()
+        item.text = "NHẬP TIÊU ĐỀ"
+        item.start = min(max(0, timelineSecond), max(0, totalDuration - 0.2))
+        item.duration = min(3.2, max(0.12, totalDuration - item.start))
+        item.startX = 0.5
+        item.startY = 0.56
+        item.endX = 0.5
+        item.endY = 0.56
+        item.fontSize = 64
+        item.colorHex = preset.textColor
+        item.opacity = 1
+        item.useBackground = false
+        item.easing = .easeInOut
+        item.keyframes = preset.titleMotion.makeFrames(
+            x: 0.5, y: 0.56, scale: 0.45, opacity: 1
+        )
+        textOverlays.append(item)
+        studioPresetMessage = "Đã thêm tiêu đề \(preset.title). " +
+            "Chạm vào lớp chữ để thay nội dung."
+        return item.id
+    }
+
     func applyCinematicPreset() {
         checkpoint()
         transition = .dissolve

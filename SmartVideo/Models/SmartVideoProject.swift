@@ -46,6 +46,7 @@ struct SmartVideoProject: Codable {
     var stripMetadata: Bool
     var addMetadata: Bool
     var metadata: ExportMetadata
+    var studioPresetID: String?
 
     init(id: UUID, name: String, savedAt: Date, clips: [TimelineClip],
          imageOverlays: [ImageOverlayClip],
@@ -66,7 +67,8 @@ struct SmartVideoProject: Codable {
          voiceOffset: Double, voiceVolume: Float, vfxPresets: [String],
          vfxIntensity: Double, vfxCoverage: String, vfxStart: Double,
          vfxEnd: Double, subtitleX: Double, subtitleY: Double,
-         stripMetadata: Bool, addMetadata: Bool, metadata: ExportMetadata) {
+         stripMetadata: Bool, addMetadata: Bool, metadata: ExportMetadata,
+         studioPresetID: String?) {
         self.id = id
         self.name = name
         self.savedAt = savedAt
@@ -109,6 +111,7 @@ struct SmartVideoProject: Codable {
         self.stripMetadata = stripMetadata
         self.addMetadata = addMetadata
         self.metadata = metadata
+        self.studioPresetID = studioPresetID
     }
 
     enum CodingKeys: String, CodingKey {
@@ -122,7 +125,8 @@ struct SmartVideoProject: Codable {
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
              keepOriginalAudio, voiceOffset, voiceVolume, vfxPresets,
              vfxIntensity, vfxCoverage, vfxStart, vfxEnd, subtitleX,
-             subtitleY, stripMetadata, addMetadata, metadata
+             subtitleY, stripMetadata, addMetadata, metadata,
+             studioPresetID
     }
 
     // Old v2.8 projects did not contain overlays.
@@ -186,6 +190,8 @@ struct SmartVideoProject: Codable {
         stripMetadata = try values.decode(Bool.self, forKey: .stripMetadata)
         addMetadata = try values.decode(Bool.self, forKey: .addMetadata)
         metadata = try values.decode(ExportMetadata.self, forKey: .metadata)
+        studioPresetID = try values.decodeIfPresent(String.self,
+                                                   forKey: .studioPresetID)
     }
 }
 
