@@ -4,7 +4,20 @@ import CoreImage
 /// Original color transforms using built-in Core Image filters. These looks
 /// are applied to still-image clips in the actual MP4 writer.
 enum StudioColorGrader {
-    static func apply(_ image: CIImage, look: ImageLook) -> CIImage {
+    static func apply(_ image: CIImage, look: ImageLook,
+                      intensity: Double = 1.0) -> CIImage {
+        let amount = min(1, max(0, intensity.isFinite ? intensity : 1))
+        guard amount > 0.0001, look != .original else { return image }
+        let graded = fullStrength(image, look: look)
+        if amount >= 0.9999 { return graded }
+        return image.applyingFilter("CIDissolveTransition", parameters: [
+            kCIInputTargetImageKey: graded,
+            kCIInputTimeKey: amount
+        ]).cropped(to: image.extent)
+    }
+
+    private static func fullStrength(_ image: CIImage,
+                                     look: ImageLook) -> CIImage {
         switch look {
         case .original:
             return image
