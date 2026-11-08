@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Photos
+import PhotosUI
 import Security
 
 /// One independent on-device video vault. Records are kept in the user's
@@ -212,6 +213,83 @@ final class SocialVideoLibrary: ObservableObject {
                 try? FileManager.default.removeItem(at: destination)
             }
             errorText = "Không tải được video: \(error.localizedDescription)"
+            downloadStatus = ""
+        }
+    }
+
+    /// Import the file that PhotosPicker has already copied into Media.
+    /// It is moved into the independent vault rather than duplicated.
+    func importFromPhotosPicker(_ selection: PhotosPickerItem) async {
+        guard !isDownloading else { return }
+        isDownloading = true
+        downloadStatus = "Đang nhập video đã lưu trong Ảnh…"
+        defer { isDownloading = false }
+
+        var original: URL?
+        var destination: URL?
+        do {
+            guard let picked = try await selection.loadTransferable(
+                type: PickedMovie.self
+            ) else {
+                throw SmartVideoError.invalidMedia(
+                    "Không đọc được video từ ứng dụng Ảnh."
+                )
+            }
+            original = picked.url
+            let asset = AVURLAsset(url: picked.url)
+            guard !(try await asset.loadTracks(withMediaType: .video)).isEmpty else {
+                throw SmartVideoError.invalidMedia(
+                    "Video không chứa track hình hợp lệ."
+                )
+            }
+            let duration = try await asset.load(.duration).seconds
+            guard duration.isFinite, duration > 0 else {
+                throw SmartVideoError.invalidMedia(
+                    "Không đọc được thời lượng video."
+                )
+            }
+            let size = try FileManager.default.attributesOfItem(
+                atPath: picked.url.path
+            )[.size] as? NSNumber
+            let bytes = size?.int64Value ?? 0
+            guard bytes > 0, bytes <= 300 * 1024 * 1024 else {
+                throw SmartVideoError.invalidMedia(
+                    "Video vượt quá giới hạn 300 MB của Kho."
+                )
+            }
+            let suffix = picked.url.pathExtension.lowercased()
+            let safeSuffix = ["mp4", "mov", "m4v"].contains(suffix)
+                ? suffix : "mov"
+            let filename = "ViePN-FromPhotos-\(UUID().uuidString).\(safeSuffix)"
+            let moved = MediaStorage.downloadsDirectory
+                .appendingPathComponent(filename)
+            try FileManager.default.moveItem(at: picked.url, to: moved)
+            original = nil
+            destination = moved
+
+            let entry = SavedSocialVideo(
+                title: "Video từ Ảnh · " + Date().formatted(
+                    date: .numeric, time: .shortened
+                ),
+                source: .direct, sourceLink: "",
+                filename: filename, duration: duration, fileSize: bytes
+            )
+            entries.insert(entry, at: 0)
+            do { try saveIndex() }
+            catch {
+                entries.removeAll { $0.id == entry.id }
+                throw error
+            }
+            destination = nil
+            downloadStatus = "Đã nhập video từ Ảnh vào Kho."
+        } catch {
+            if let original {
+                try? FileManager.default.removeItem(at: original)
+            }
+            if let destination {
+                try? FileManager.default.removeItem(at: destination)
+            }
+            errorText = "Không nhập từ Ảnh được: \(error.localizedDescription)"
             downloadStatus = ""
         }
     }
