@@ -8,6 +8,8 @@ struct SoundEffectsStudioPanel: View {
     @Binding var selectedID: UUID?
     let importAudio: () -> Void
     @State private var previewPlayer: AVAudioPlayer?
+    @State private var mixPlayer: AVPlayer?
+    @State private var isPreparingMix = false
 
     private var selectedIndex: Int? {
         guard let selectedID else { return nil }
@@ -58,6 +60,88 @@ struct SoundEffectsStudioPanel: View {
                               model.clips.isEmpty)
                 }
             }
+
+            Divider()
+            HStack {
+                Label("Beat Sync · Phối âm", systemImage: "metronome")
+                    .font(.subheadline.bold())
+                Spacer()
+                if model.detectedTempoBPM > 0 {
+                    Text(String(format: "~%.0f BPM", model.detectedTempoBPM))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.cyan)
+                }
+            }
+
+            HStack(spacing: 7) {
+                Button {
+                    model.analyzeMusicBeats()
+                } label: {
+                    Label(model.isDetectingBeats ? "Đang phân tích..." :
+                          "Phân tích nhịp MP3", systemImage: "waveform.path.ecg")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.musicURL == nil || model.isDetectingBeats)
+
+                Button {
+                    model.snapAllSoundsToBeats()
+                } label: {
+                    Label("Căn tất cả FX", systemImage: "magnet")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.timelineBeatMarkers.isEmpty ||
+                          model.soundEffects.isEmpty)
+            }
+            .font(.caption)
+
+            if model.isDetectingBeats {
+                ProgressView("Đang phân tích năng lượng âm thanh…")
+                    .font(.caption2)
+            }
+
+            if !model.timelineBeatMarkers.isEmpty {
+                HStack {
+                    Text("\(model.timelineBeatMarkers.count) mốc nhịp")
+                        .font(.caption2)
+                    Spacer()
+                    Text("Ước lượng từ tín hiệu, có thể sai nhịp")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.secondary)
+                }
+                BeatTimelineStrip(beatPositions: model.timelineBeatMarkers,
+                                  totalDuration: model.totalDuration)
+                    .frame(height: 28)
+            } else if model.musicURL == nil {
+                Text("Chọn nhạc nền trong tab Âm thanh để phân tích nhịp.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 8) {
+                Button {
+                    if mixPlayer != nil {
+                        mixPlayer?.pause()
+                        mixPlayer = nil
+                    } else {
+                        playMixedAudio()
+                    }
+                } label: {
+                    Label(mixPlayer == nil ?
+                          (isPreparingMix ? "Đang chuẩn bị..." : "Nghe bản phối") :
+                          "Dừng bản phối",
+                          systemImage: mixPlayer == nil ?
+                              "play.circle.fill" : "stop.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(isPreparingMix || (
+                    model.soundEffects.isEmpty &&
+                    model.musicURL == nil &&
+                    model.voiceoverURL == nil
+                ))
+            }
+            Text("Nghe thử bản phối từ con trỏ: MP3 + giọng thuyết minh + SFX. Chưa bao gồm tiếng gốc video và ducking nên kết quả cuối vẫn cần kiểm tra MP4.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
 
             HStack {
                 Text("Track âm thanh")
@@ -121,7 +205,7 @@ struct SoundEffectsStudioPanel: View {
                 editorForSelected(index)
             }
 
-            Text("Âm thanh tự tạo là mẫu gốc do ứng dụng tổng hợp. Mỗi track có thể phát chồng lên nhạc nền, giọng đọc và tiếng video. Preview là nghe riêng hiệu ứng; cần xuất MP4 để nghe bản phối cuối.")
+            Text("SFX có thể phát chồng lên nhạc nền, giọng đọc và tiếng video. Bộ nghe thử bản phối chưa gồm tiếng gốc clip; khi xuất MP4, track gốc vẫn theo tùy chọn Giữ tiếng gốc.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -133,6 +217,57 @@ struct SoundEffectsStudioPanel: View {
         }
         .onDisappear {
             previewPlayer?.stop()
+            mixPlayer?.pause()
+            mixPlayer = nil
+        }
+    }
+
+    private func playMixedAudio() {
+        guard !isPreparingMix else { return }
+        previewPlayer?.stop()
+        isPreparingMix = true
+        let duration = model.totalDuration
+        let music = model.musicURL
+        let voice = model.voiceoverURL
+        let effects = model.soundEffects
+        let start = model.musicStartSeconds
+        let highlight = model.musicHighlightDuration
+        let repeatMusic = model.repeatShortMusic
+        let musicVolume = model.musicVolume
+        let musicFadeIn = model.musicFadeIn
+        let musicFadeOut = model.musicFadeOut
+        let voiceStart = model.voiceoverOffset
+        let voiceVolume = model.voiceoverVolume
+        let playhead = model.timelineSecond
+        Task {
+            defer { isPreparingMix = false }
+            do {
+                let item = try await AudioMixPreviewComposer.makeItem(
+                    duration: duration,
+                    musicURL: music,
+                    musicStart: start,
+                    musicHighlightDuration: highlight,
+                    repeatMusic: repeatMusic,
+                    musicVolume: musicVolume,
+                    musicFadeIn: musicFadeIn,
+                    musicFadeOut: musicFadeOut,
+                    narrationURL: voice,
+                    narrationStart: voiceStart,
+                    narrationVolume: voiceVolume,
+                    effects: effects
+                )
+                try AVAudioSession.sharedInstance().setCategory(
+                    .playback, mode: .default,
+                    options: [.mixWithOthers]
+                )
+                let player = AVPlayer(playerItem: item)
+                mixPlayer = player
+                player.seek(to: CMTime(seconds: min(playhead, duration),
+                                       preferredTimescale: 600))
+                player.play()
+            } catch {
+                model.errorText = "Không nghe được bản phối: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -168,6 +303,14 @@ struct SoundEffectsStudioPanel: View {
                     Label("Nghe thử", systemImage: "play.circle")
                 }
                 .buttonStyle(.bordered)
+
+                Button {
+                    _ = model.snapSoundToNearestBeat(item.id)
+                } label: {
+                    Label("Căn nhịp", systemImage: "metronome")
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.timelineBeatMarkers.isEmpty)
 
                 Button {
                     model.moveSoundEffectToPlayhead(item.id)
