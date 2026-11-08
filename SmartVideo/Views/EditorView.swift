@@ -365,17 +365,9 @@ struct EditorView: View {
                                     ZStack {
                                         RoundedRectangle(cornerRadius: 6)
                                             .fill(Color.white.opacity(0.09))
-                                        if clip.kind == .image,
-                                           let image = UIImage(contentsOfFile: clip.fileURL.path) {
-                                            Image(uiImage: image)
-                                                .resizable()
-                                                .scaledToFill()
-                                                .frame(width: timelineClipWidth(clip), height: 35)
-                                                .clipped()
-                                        } else {
-                                            Image(systemName: "film.fill")
-                                                .foregroundStyle(.cyan)
-                                        }
+                                        TimelineThumbnail(clip: clip)
+                                            .frame(width: timelineClipWidth(clip), height: 35)
+                                            .clipped()
                                     }
                                     .frame(width: timelineClipWidth(clip), height: 35)
                                     .clipShape(RoundedRectangle(cornerRadius: 6))
