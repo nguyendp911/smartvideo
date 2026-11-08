@@ -404,3 +404,27 @@ Bản v3.3.0 bổ sung xử lý giọng thuyết minh offline, tương tự nhó
 5. Lưu, đóng và mở lại dự án, kiểm tra words được giữ và các phụ đề cũ không bị mất.
 
 **Giới hạn**: Apple Speech không bảo đảm độ chính xác tuyệt đối, đặc biệt với giọng vùng miền, nền nhạc lớn và nhiều người nói. Cách highlight dùng Core Animation trên MP4, không phải mô hình karaoke optical flow. Build thành công là kiểm tra biên dịch; cần test trên iPhone 12 Pro Max trước khi làm dự án dài.
+
+
+## ViePN Smart Video v3.7.0 – Multi-Point Keyframe Animator
+
+Thêm **bộ keyframe nhiều điểm dành cho lớp ảnh/logo/sticker Overlay**. So với kiểu v2.9–v3.6 chỉ có vị trí đầu/cuối, v3.7 cho phép tạo tối đa **16 mốc** trên mỗi lớp ảnh và điều khiển độc lập **X, Y, scale, rotation, opacity**.
+
+### Các tính năng
+- Trong **Công cụ → Overlay**, chọn ảnh rồi bấm **Thêm tại con trỏ** để tạo mốc ngay tại vị trí đang tua. Mỗi mốc dùng tỷ lệ 0–100% của thời lượng overlay, nên khi kéo dài/rút ngắn overlay, nhịp chuyển động tự co giãn.
+- Chạm vào mốc để nhảy đến thời điểm, rồi chỉnh **Vị trí ngang/dọc**, **Kích thước**, **Độ mờ**, **Góc xoay**. Các mốc giữa có thể di chuyển trên thời gian hoặc xóa; mốc đầu và cuối luôn được giữ.
+- **5 hiệu ứng gốc**: Zoom điện ảnh, Trượt từ dưới, Nhịp phóng, Xoay 360°, Xuất hiện/Tan. Các preset tạo ra mốc thật, có thể chỉnh thủ công sau đó.
+- **Gia tốc giữa mốc**: Tuyến tính, Tăng tốc, Giảm tốc hoặc Mượt hai đầu. Chọn trên Overlay Studio.
+- Hiển thị **hình thoi màu cam** trên timeline khi chọn lớp ảnh Overlay; chạm một hình thoi để tua chính xác đến mốc đó.
+- Kéo ảnh trực tiếp trên preview để **dịch toàn bộ đường chuyển động**, không xóa keyframe; preview tính nội suy X/Y/zoom/alpha/góc xoay theo con trỏ.
+- Khi xuất MP4, hệ thống sử dụng **CAKeyframeAnimation** với từng mốc và cùng Core Animation composition đang dùng cho VFX và phụ đề; không làm thay đổi file ảnh nguồn. PNG alpha và Chroma Key ảnh tiếp tục hoạt động.
+- Dữ liệu mới lưu trong **imageOverlays[].keyframes** của JSON dự án. Các dự án v2.8–v3.6 không có mảng này vẫn mở theo đường chuyển động hai điểm cũ. Bấm **Về 2 điểm** để quay về cách dựng cũ.
+
+### Cách thử trên iPhone
+1. Nhập video 10–20 giây rồi vào **Overlay → Thêm ảnh** (logo PNG trong suốt).
+2. Bấm **Zoom điện ảnh**, chọn các mốc dưới phần Keyframe Pro để tùy chỉnh zoom/alpha và xoay.
+3. Kéo slider timeline để kiểm tra hoạt ảnh, hoặc tạo thêm mốc theo con trỏ. Chạm các hình thoi cam để tua đến từng mốc.
+4. Bấm **Xem thử toàn bộ · 720p** và xuất MP4; so sánh chuyển động thực tế với preview.
+5. Lưu dự án, mở lại, kiểm tra các mốc vẫn có thể sửa và preset không làm hỏng file gốc.
+
+**Giới hạn:** Bộ keyframe nhiều điểm trong v3.7 **chỉ áp dụng cho Overlay ảnh**; Video PIP và chữ độc lập vẫn dùng chuyển động hai điểm. Nội suy preview có thể khác nhẹ với Core Animation của file xuất. GitHub Actions chỉ xác nhận mã biên dịch và tạo IPA; chưa đo hiệu suất render nhiều lớp trên iPhone 12 Pro Max.
