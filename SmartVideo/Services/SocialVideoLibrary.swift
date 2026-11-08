@@ -190,9 +190,10 @@ final class SocialVideoLibrary: ObservableObject {
                 )
             }
 
-            let title = "\(source.rawValue) · \(Date().formatted(
+            let formattedDate = Date().formatted(
                 date: .numeric, time: .shortened
-            ))"
+            )
+            let title = "\(source.rawValue) · \(formattedDate)"
             let item = SavedSocialVideo(
                 title: title, source: source, sourceLink: link,
                 filename: filename, duration: duration, fileSize: bytes
