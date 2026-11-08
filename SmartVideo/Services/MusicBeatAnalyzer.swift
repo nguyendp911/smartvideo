@@ -59,9 +59,10 @@ enum MusicBeatAnalyzer {
             let byteCount = CMBlockBufferGetDataLength(block)
             guard byteCount > 1 else { continue }
             var pcm = [Int16](repeating: 0, count: byteCount / 2)
+            let copyLength = pcm.count * MemoryLayout<Int16>.size
             let status = pcm.withUnsafeMutableBytes { bytes in
                 CMBlockBufferCopyDataBytes(block, atOffset: 0,
-                                           dataLength: pcm.count * 2,
+                                           dataLength: copyLength,
                                            destination: bytes.baseAddress!)
             }
             guard status == kCMBlockBufferNoErr else { continue }
