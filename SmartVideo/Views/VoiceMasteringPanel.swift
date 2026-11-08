@@ -17,78 +17,16 @@ struct VoiceMasteringPanel: View {
                     .foregroundStyle(.cyan)
             }
 
-            Text("Xử lý âm thanh thuyết minh thật trước khi ghép MP4. EQ, compressor và noise gate hoạt động offline; bản thu gốc được giữ để khôi phục.")
+            Text("EQ, compressor và noise gate xử lý thật bản thuyết minh trước khi ghép MP4. File gốc được giữ lại.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
-            Text("Chất giọng")
-                .font(.caption.bold())
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 6),
-                GridItem(.flexible(), spacing: 6),
-                GridItem(.flexible(), spacing: 6)
-            ], spacing: 6) {
-                ForEach(VoiceMasteringPreset.allCases) { preset in
-                    Button(preset.rawValue) {
-                        model.masteringSettings = preset.settings
-                    }
-                    .font(.caption2)
-                    .padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(
-                        model.masteringSettings == preset.settings ?
-                            Color.cyan.opacity(0.28) :
-                            Color.white.opacity(0.08),
-                        in: RoundedRectangle(cornerRadius: 8)
-                    )
-                    .buttonStyle(.plain)
-                }
-            }
-
+            VoiceMasteringPresets(model: model)
             Divider()
-            Text("EQ 3 dải")
-                .font(.subheadline.bold())
-
-            dbSlider("Bass · 155 Hz", value: $model.masteringSettings.bassDB,
-                     bounds: -12...12)
-            dbSlider("Mid · 1,45 kHz", value: $model.masteringSettings.midDB,
-                     bounds: -12...12)
-            dbSlider("Treble · 4,9 kHz", value: $model.masteringSettings.trebleDB,
-                     bounds: -12...12)
-
+            VoiceMasteringEQ(model: model)
             Divider()
-            Text("Compressor")
-                .font(.subheadline.bold())
-
-            dbSlider("Ngưỡng nén", value:
-                     $model.masteringSettings.compressorThreshold,
-                     bounds: -36...(-8), suffix: " dBFS")
-
-            HStack {
-                Text("Tỷ lệ nén")
-                Spacer()
-                Text(String(format: "%.1f:1",
-                            model.masteringSettings.compressorRatio))
-                    .monospacedDigit()
-            }.font(.caption)
-            Slider(value: $model.masteringSettings.compressorRatio,
-                   in: 1...6, step: 0.5)
-                .tint(.cyan)
-
-            Toggle("Noise gate · giảm ồn khi không nói",
-                   isOn: $model.masteringSettings.noiseGateEnabled)
-                .font(.caption)
-                .tint(.cyan)
-            if model.masteringSettings.noiseGateEnabled {
-                dbSlider("Ngưỡng lọc tiếng nhỏ", value:
-                         $model.masteringSettings.noiseGateThreshold,
-                         bounds: -60...(-30), suffix: " dBFS")
-            }
-
-            dbSlider("Tăng gain đầu ra", value:
-                     $model.masteringSettings.outputGainDB,
-                     bounds: -6...8)
-
+            VoiceMasteringDynamics(model: model)
+            Divider()
             HStack(spacing: 8) {
                 Button {
                     beforePlayer?.stop()
@@ -97,7 +35,7 @@ struct VoiceMasteringPanel: View {
                 } label: {
                     Label(model.isMasteringVoice ? "Đang xử lý..." :
                           "Áp dụng vào giọng đọc",
-                          systemImage: "waveform.badge.checkmark")
+                          systemImage: "waveform")
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(model.isMasteringVoice || model.voiceoverURL == nil)
@@ -116,7 +54,7 @@ struct VoiceMasteringPanel: View {
             .font(.caption)
 
             if model.isMasteringVoice {
-                ProgressView("Đang xử lý PCM, không ghi đè bản gốc…")
+                ProgressView("Đang xử lý âm thanh…")
                     .font(.caption)
             }
             if !model.masteringMessage.isEmpty {
@@ -124,18 +62,18 @@ struct VoiceMasteringPanel: View {
                     .font(.caption2)
                     .foregroundStyle(.cyan)
             }
+
             if model.originalVoiceoverURL != nil {
-                HStack {
+                HStack(spacing: 8) {
                     Button("Nghe bản gốc") {
-                        if let url = model.originalVoiceoverURL {
-                            play(url, processed: false)
+                        if let source = model.originalVoiceoverURL {
+                            play(source, processed: false)
                         }
                     }
                     .buttonStyle(.bordered)
-
                     Button("Nghe bản xử lý") {
-                        if let url = model.voiceoverURL {
-                            play(url, processed: true)
+                        if let source = model.voiceoverURL {
+                            play(source, processed: true)
                         }
                     }
                     .buttonStyle(.bordered)
@@ -143,7 +81,7 @@ struct VoiceMasteringPanel: View {
                 .font(.caption)
             }
 
-            Text("Noise gate chỉ hạ tiếng nhỏ trong đoạn im lặng, không phải khử tạp âm bằng AI. Compressor có thể làm nền ồn rõ hơn; hãy nghe so sánh trước/sau. Âm lượng lớn được giới hạn mức đỉnh để tránh clipping.")
+            Text("Noise gate chỉ giảm tiếng rất nhỏ khi không nói, không phải khử ồn bằng AI. Compressor có thể làm tiếng nền rõ hơn; nên nghe so sánh trước và sau.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -153,22 +91,6 @@ struct VoiceMasteringPanel: View {
         .onDisappear {
             beforePlayer?.stop()
             afterPlayer?.stop()
-        }
-    }
-
-    private func dbSlider(_ label: String, value: Binding<Double>,
-                          bounds: ClosedRange<Double>,
-                          suffix: String = " dB") -> some View {
-        VStack(spacing: 3) {
-            HStack {
-                Text(label)
-                Spacer()
-                Text(String(format: "%+.1f%@", value.wrappedValue, suffix))
-                    .monospacedDigit()
-            }
-            .font(.caption)
-            Slider(value: value, in: bounds, step: 0.5)
-                .tint(.cyan)
         }
     }
 
@@ -186,7 +108,127 @@ struct VoiceMasteringPanel: View {
                 beforePlayer = player
             }
         } catch {
-            model.errorText = "Không phát được bản giọng đọc: \(error.localizedDescription)"
+            model.errorText = "Không phát được giọng đọc: \(error.localizedDescription)"
+        }
+    }
+}
+
+private struct VoiceMasteringPresets: View {
+    @ObservedObject var model: EditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Chất giọng")
+                .font(.subheadline.bold())
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 6),
+                GridItem(.flexible(), spacing: 6),
+                GridItem(.flexible(), spacing: 6)
+            ], spacing: 6) {
+                ForEach(VoiceMasteringPreset.allCases) { preset in
+                    Button {
+                        model.masteringSettings = preset.settings
+                    } label: {
+                        Text(preset.rawValue)
+                            .font(.caption2.bold())
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 9)
+                            .background(
+                                model.masteringSettings == preset.settings ?
+                                    Color.cyan.opacity(0.30) :
+                                    Color.white.opacity(0.08),
+                                in: RoundedRectangle(cornerRadius: 8)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+private struct VoiceMasteringEQ: View {
+    @ObservedObject var model: EditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("EQ 3 dải")
+                .font(.subheadline.bold())
+            VoiceDBSlider(title: "Bass · 155 Hz",
+                          value: $model.masteringSettings.bassDB,
+                          range: -12...12)
+            VoiceDBSlider(title: "Mid · 1,45 kHz",
+                          value: $model.masteringSettings.midDB,
+                          range: -12...12)
+            VoiceDBSlider(title: "Treble · 4,9 kHz",
+                          value: $model.masteringSettings.trebleDB,
+                          range: -12...12)
+        }
+    }
+}
+
+private struct VoiceMasteringDynamics: View {
+    @ObservedObject var model: EditorViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text("Compressor & Noise Gate")
+                .font(.subheadline.bold())
+
+            VoiceDBSlider(title: "Ngưỡng nén",
+                          value: $model.masteringSettings.compressorThreshold,
+                          range: -36...(-8), suffix: " dBFS")
+
+            HStack {
+                Text("Tỷ lệ nén")
+                Spacer()
+                Text(String(format: "%.1f:1",
+                            model.masteringSettings.compressorRatio))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: $model.masteringSettings.compressorRatio,
+                   in: 1...6, step: 0.5)
+                .tint(.cyan)
+
+            Toggle("Noise gate · giảm tiếng nhỏ",
+                   isOn: $model.masteringSettings.noiseGateEnabled)
+                .font(.caption)
+                .tint(.cyan)
+
+            if model.masteringSettings.noiseGateEnabled {
+                VoiceDBSlider(
+                    title: "Ngưỡng mở cổng",
+                    value: $model.masteringSettings.noiseGateThreshold,
+                    range: -60...(-30),
+                    suffix: " dBFS"
+                )
+            }
+
+            VoiceDBSlider(title: "Gain đầu ra",
+                          value: $model.masteringSettings.outputGainDB,
+                          range: -6...8)
+        }
+    }
+}
+
+private struct VoiceDBSlider: View {
+    let title: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    var suffix: String = " dB"
+
+    var body: some View {
+        VStack(spacing: 3) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(String(format: "%+.1f%@", value, suffix))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: $value, in: range, step: 0.5)
+                .tint(.cyan)
         }
     }
 }
