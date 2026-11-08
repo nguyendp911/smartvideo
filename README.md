@@ -489,3 +489,29 @@ Mỗi preset là một **công thức chỉnh sửa được** chứ không ph�
 3. Thử **Thêm tiêu đề**, chuyển sang tab Chữ và gõ tên dự án.
 4. Bấm **Xem thử MP4 · 720p**, so sánh với bản xuất. Đổi preset sang **Clean Vlog** và dùng **Hoàn tác** nếu cần.
 5. Lưu dự án, mở lại và kiểm tra dữ liệu preset, màu ảnh, VFX và text overlay vẫn còn.
+
+
+## ViePN Smart Video v4.0.0 — Real Video Grading & A/B Compare
+
+### Tính năng mới
+- 24 preset Preset Pro nay có thể áp bộ màu Core Image lên **cả ảnh tĩnh lẫn khung hình video**, bên cạnh VFX, chuyển cảnh và title. Không chỉ tô màu thumbnail.
+- Bộ màu gồm 19 kiểu gốc. Có slider cường độ 0–100% cho từng clip trong Hiệu ứng; có slider áp đồng loạt toàn dự án trong Preset Pro.
+- Chế độ **So sánh trước / sau** cho xem footage gốc hoặc sau khi áp màu. Toggle chỉ ảnh hưởng preview, không thay đổi lựa chọn màu đã lưu hoặc xuất MP4.
+- Ảnh tĩnh preview bằng Core Image downsample. Video preview qua AVPlayerItem.videoComposition với cùng công thức màu trong bộ xuất.
+- JSON dự án lưu lookIntensity riêng mỗi clip; dự án cũ thiếu trường này sẽ mặc định 1.0 và tiếp tục mở được.
+
+### Pipeline video chuẩn bị trước khi dựng
+- Nếu clip video có màu khác Nguyên bản và intensity > 0, bộ xuất trích đúng vùng video đã cắt rồi tạo một MOV trung gian qua AVVideoComposition áp Core Image filter frame-by-frame.
+- MOV trung gian bảo toàn đường xử lý tiếng nguồn khi định dạng hỗ trợ; TimelineComposer tiếp tục trộn nhạc nền, giọng đọc, SFX, PIP, chuyển cảnh và phụ đề bằng pipeline cũ.
+- Đầu ra MP4 720p xem thử và 1080p chính thức đều dùng bước video grading này. Media nguồn không bị thay đổi. File trung gian được xóa sau khi xuất xong hoặc lỗi.
+
+### Hạn chế
+- Các kiểu màu dùng Core Image, **không phải LUT 3D .cube nhập ngoài** hay bộ chỉnh màu chuyên dụng Dolby Vision HDR.
+- Video có màu cần transcode thêm một lượt, sẽ tăng thời gian xuất, sử dụng dung lượng tạm và mức tiêu thụ pin. Một số codec, HDR và máy thiếu dung lượng có thể không hỗ trợ.
+- Cần thử nghiệm end-to-end trên iPhone 12 Pro Max thật; GitHub Actions chỉ xác nhận biên dịch và khả năng tạo unsigned IPA.
+
+### Thử nghiệm
+1. Nhập video ngắn 10–20 giây có tiếng và ảnh tĩnh, chọn clip video trong tab Hiệu ứng.
+2. Chọn Neo Cinema, Golden Hour hoặc Midnight; thử chỉnh 25%, 65%, 100%. Bật/tắt So sánh trước / sau.
+3. Mở Preset Pro → Áp dụng toàn dự án, chỉnh cường độ màu chung, xem MP4 preview 720p và so với bản 1080p.
+4. Kiểm tra video gốc còn tiếng, PIP và subtitles vẫn chạy, rồi lưu/khôi phục dự án để kiểm tra các cường độ còn nguyên.
