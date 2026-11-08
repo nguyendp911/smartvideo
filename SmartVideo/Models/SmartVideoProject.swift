@@ -22,6 +22,8 @@ struct SmartVideoProject: Codable {
     var quality: String
     var musicFileName: String?
     var voiceFileName: String?
+    var originalVoiceFileName: String?
+    var voiceMasteringSettings: VoiceMasteringSettings
     var musicVolume: Float
     var musicStartSeconds: Double
     var musicHighlightDuration: Double
@@ -50,7 +52,10 @@ struct SmartVideoProject: Codable {
          subtitles: [SubtitleCue],
          transition: String, transitionSeconds: Double, canvas: String,
          contentMode: String, quality: String, musicFileName: String?,
-         voiceFileName: String?, musicVolume: Float, musicStartSeconds: Double,
+         voiceFileName: String?,
+         originalVoiceFileName: String?,
+         voiceMasteringSettings: VoiceMasteringSettings,
+         musicVolume: Float, musicStartSeconds: Double,
          musicHighlightDuration: Double, musicFadeIn: Double,
          musicFadeOut: Double, musicRepeat: Bool, keepOriginalAudio: Bool,
          voiceOffset: Double, voiceVolume: Float, vfxPresets: [String],
@@ -75,6 +80,8 @@ struct SmartVideoProject: Codable {
         self.quality = quality
         self.musicFileName = musicFileName
         self.voiceFileName = voiceFileName
+        self.originalVoiceFileName = originalVoiceFileName
+        self.voiceMasteringSettings = voiceMasteringSettings
         self.musicVolume = musicVolume
         self.musicStartSeconds = musicStartSeconds
         self.musicHighlightDuration = musicHighlightDuration
@@ -101,7 +108,8 @@ struct SmartVideoProject: Codable {
              textOverlays, soundEffects, beatSourceTimes,
              detectedTempoBPM, subtitles, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
-             voiceFileName, musicVolume, musicStartSeconds,
+             voiceFileName, originalVoiceFileName,
+             voiceMasteringSettings, musicVolume, musicStartSeconds,
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
              keepOriginalAudio, voiceOffset, voiceVolume, vfxPresets,
              vfxIntensity, vfxCoverage, vfxStart, vfxEnd, subtitleX,
@@ -135,6 +143,12 @@ struct SmartVideoProject: Codable {
         quality = try values.decode(String.self, forKey: .quality)
         musicFileName = try values.decodeIfPresent(String.self, forKey: .musicFileName)
         voiceFileName = try values.decodeIfPresent(String.self, forKey: .voiceFileName)
+        originalVoiceFileName = try values.decodeIfPresent(
+            String.self, forKey: .originalVoiceFileName
+        )
+        voiceMasteringSettings = try values.decodeIfPresent(
+            VoiceMasteringSettings.self, forKey: .voiceMasteringSettings
+        ) ?? VoiceMasteringSettings()
         musicVolume = try values.decode(Float.self, forKey: .musicVolume)
         musicStartSeconds = try values.decode(Double.self, forKey: .musicStartSeconds)
         musicHighlightDuration = try values.decode(Double.self, forKey: .musicHighlightDuration)
