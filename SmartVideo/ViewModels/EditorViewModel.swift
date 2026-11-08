@@ -441,7 +441,7 @@ final class EditorViewModel: ObservableObject {
             guard let data = try await selection.loadTransferable(type: Data.self) else {
                 throw SmartVideoError.invalidMedia("Không tải được ảnh phủ.")
             }
-            let file = try MediaStorage.storeImage(data: data)
+            let file = try MediaStorage.storeOverlayImage(data: data)
             var overlay = ImageOverlayClip(fileURL: file)
             overlay.start = min(timelineSecond, max(0, totalDuration - 0.2))
             overlay.duration = min(3, max(0.2, totalDuration - overlay.start))

@@ -40,6 +40,27 @@ enum MediaStorage {
         return destination
     }
 
+    /// Preserve the alpha channel of logos, stickers and transparent PNGs.
+    /// Unlike the JPEG flattening path used for timeline photographs, this
+    /// path does NOT draw over an opaque background.
+    static func storeOverlayImage(data: Data) throws -> URL {
+        guard let image = UIImage(data: data) else {
+            throw SmartVideoError.invalidMedia("Ảnh overlay không hợp lệ.")
+        }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = false
+        let output = UIGraphicsImageRenderer(size: image.size, format: format)
+            .pngData { context in
+                image.draw(in: CGRect(origin: .zero, size: image.size))
+            }
+        let target = mediaDirectory.appendingPathComponent(
+            "Overlay-\(UUID().uuidString).png"
+        )
+        try output.write(to: target, options: .atomic)
+        return target
+    }
+
     static func copyToMedia(_ file: URL, fallbackExtension: String) throws -> URL {
         let suffix = file.pathExtension.isEmpty ? fallbackExtension : file.pathExtension
         let destination = mediaDirectory.appendingPathComponent(UUID().uuidString + "." + suffix)
