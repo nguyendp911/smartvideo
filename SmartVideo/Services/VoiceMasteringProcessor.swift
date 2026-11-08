@@ -205,7 +205,9 @@ enum VoiceMasteringProcessor {
         }
 
         mutating func process(_ sample: Double) -> Double {
-            high.process(mid.process(low.process(sample)))
+            let lowBand = low.process(sample)
+            let midBand = mid.process(lowBand)
+            return high.process(midBand)
         }
     }
 
