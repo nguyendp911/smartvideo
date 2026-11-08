@@ -499,6 +499,32 @@ struct EditorView: View {
                     .frame(height: 16)
                 }
 
+                if activeTool == .pip, let selectedPIPID,
+                   let item = model.videoOverlays.first(where: {
+                       $0.id == selectedPIPID
+                   }) {
+                    MultiTrackKeyframeTimelineStrip(
+                        frames: OverlayKeyframeSampler.frames(for: item),
+                        start: item.start, duration: item.duration,
+                        totalDuration: model.totalDuration,
+                        onScrub: { scrubTimeline(to: $0) }
+                    )
+                    .frame(height: 24)
+                }
+
+                if activeTool == .title, let selectedTextID,
+                   let item = model.textOverlays.first(where: {
+                       $0.id == selectedTextID
+                   }) {
+                    MultiTrackKeyframeTimelineStrip(
+                        frames: OverlayKeyframeSampler.frames(for: item),
+                        start: item.start, duration: item.duration,
+                        totalDuration: model.totalDuration,
+                        onScrub: { scrubTimeline(to: $0) }
+                    )
+                    .frame(height: 24)
+                }
+
                 if let selectedOverlayID,
                    let overlay = model.imageOverlays.first(where: {
                        $0.id == selectedOverlayID
@@ -653,7 +679,9 @@ struct EditorView: View {
         }
         .frame(height: (model.soundEffects.isEmpty ? 154 : 186) +
                (model.timelineBeatMarkers.isEmpty ? 0 : 17) +
-               (activeTool == .overlay && selectedOverlayID != nil ? 24 : 0),
+               ((activeTool == .overlay && selectedOverlayID != nil) ||
+                (activeTool == .pip && selectedPIPID != nil) ||
+                (activeTool == .title && selectedTextID != nil) ? 24 : 0),
                alignment: .top)
     }
 
@@ -744,9 +772,11 @@ struct EditorView: View {
                                            onScrub: { scrubTimeline(to: $0) })
         case .pip: VideoPIPStudioPanel(model: model,
                                        selectedID: $selectedPIPID,
-                                       pickerItem: $pickedPIP)
+                                       pickerItem: $pickedPIP,
+                                       onScrub: { scrubTimeline(to: $0) })
         case .title: TextOverlayStudioPanel(model: model,
-                                            selectedID: $selectedTextID)
+                                            selectedID: $selectedTextID,
+                                            onScrub: { scrubTimeline(to: $0) })
         case .sfx: SoundEffectsStudioPanel(model: model,
                                           selectedID: $selectedSoundID) {
             activeFilePicker = .soundEffect
