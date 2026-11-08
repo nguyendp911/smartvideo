@@ -7,6 +7,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case clip = "Đoạn"
     case frame = "Khung"
     case vfx = "VFX"
+    case presets = "Preset Pro"
     case captions = "Phụ đề"
     case audio = "Âm thanh"
     case effects = "Hiệu ứng"
@@ -24,6 +25,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .clip: return "scissors"
         case .frame: return "aspectratio"
         case .vfx: return "wand.and.stars"
+        case .presets: return "square.grid.3x3.topleft.filled"
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
         case .effects: return "wand.and.stars"
@@ -757,6 +759,11 @@ struct EditorView: View {
         case .clip: clipPanel
         case .frame: framePanel
         case .vfx: VFXLibraryPanel(model: model)
+        case .presets: PresetStudioPanel(model: model) { id in
+            selectedTextID = id
+            activeTool = .title
+            scrubTimeline(to: model.textOverlays.first(where: { $0.id == id })?.start ?? 0)
+        }
         case .captions: subtitlePanel
         case .audio: audioPanel
         case .effects: effectsPanel
