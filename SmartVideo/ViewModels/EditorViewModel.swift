@@ -6,6 +6,15 @@ import AVFoundation
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
+    @Published var timelineSecond: Double = 0
+    @Published var timelineZoom: Double = 1.0
+    @Published var projectName: String = "Dự án mới"
+    @Published var savedProjectNames: [String] = []
+    @Published var lastSaveMessage: String?
+    private var undoStack: [[TimelineClip]] = []
+    private var redoStack: [[TimelineClip]] = []
+    var canUndo: Bool { !undoStack.isEmpty }
+    var canRedo: Bool { !redoStack.isEmpty }
     @Published var subtitles: [SubtitleCue] = []
     @Published var transition: VideoTransition = .cut
     @Published var transitionSeconds: Double = 0.45
@@ -74,6 +83,7 @@ final class EditorViewModel: ObservableObject {
 
     func importSelections(_ selections: [PhotosPickerItem]) async {
         guard !selections.isEmpty else { return }
+        checkpoint()
         isImporting = true
         defer { isImporting = false }
 
@@ -421,13 +431,111 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Precise, non-destructive timeline editing
+
+    private func checkpoint() {
+        undoStack.append(clips)
+        if undoStack.count > 40 { undoStack.removeFirst() }
+        redoStack.removeAll()
+        objectWillChange.send()
+    }
+
+    func undoEdit() {
+        guard let previous = undoStack.popLast() else { return }
+        redoStack.append(clips)
+        clips = previous
+        timelineSecond = min(timelineSecond, totalDuration)
+        objectWillChange.send()
+    }
+
+    func redoEdit() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(clips)
+        clips = next
+        timelineSecond = min(timelineSecond, totalDuration)
+        objectWillChange.send()
+    }
+
+    func timelineStart(of index: Int) -> Double {
+        guard clips.indices.contains(index) else { return 0 }
+        var cursor = 0.0
+        for item in 0..<index {
+            cursor += clips[item].renderedDuration
+            if transition == .dissolve {
+                cursor -= min(transitionSeconds,
+                    clips[item].renderedDuration * 0.24,
+                    clips[item + 1].renderedDuration * 0.24)
+            }
+        }
+        return cursor
+    }
+
+    func clipAtTimeline(_ second: Double) -> (index: Int, local: Double)? {
+        guard !clips.isEmpty else { return nil }
+        let target = min(max(0, second), max(totalDuration - 0.001, 0))
+        // An overlap is displayed using the incoming clip, as in the
+        // default timeline compositor.
+        for index in clips.indices.reversed() {
+            let start = timelineStart(of: index)
+            if target >= start {
+                return (index, min(clips[index].renderedDuration,
+                                    max(0, target - start)))
+            }
+        }
+        return (0, 0)
+    }
+
+    @discardableResult
+    func splitClip(at second: Double) -> UUID? {
+        guard let position = clipAtTimeline(second) else { return nil }
+        let index = position.index
+        let source = clips[index]
+        let outputSeconds = source.renderedDuration
+        let leftOutput = position.local
+        // Prevent sub-frame/near-zero pieces.
+        guard leftOutput >= 0.20, outputSeconds - leftOutput >= 0.20 else {
+            errorText = "Đặt con trỏ cách mép đoạn ít nhất 0,2 giây rồi tách."
+            return nil
+        }
+
+        checkpoint()
+        var left = source
+        var right = source
+        right.id = UUID()
+        if source.kind == .video {
+            let leftSourceSeconds = leftOutput * source.playbackSpeed
+            left.duration = leftSourceSeconds
+            right.startTime = source.startTime + leftSourceSeconds
+            right.duration = max(0.1, source.duration - leftSourceSeconds)
+        } else {
+            left.duration = leftOutput
+            right.duration = max(0.1, source.duration - leftOutput)
+        }
+        clips.replaceSubrange(index...index, with: [left, right])
+        return right.id
+    }
+
+    @discardableResult
+    func duplicateClip(id: UUID) -> UUID? {
+        guard let index = clips.firstIndex(where: { $0.id == id }) else { return nil }
+        checkpoint()
+        var copy = clips[index]
+        copy.id = UUID()
+        clips.insert(copy, at: index + 1)
+        return copy.id
+    }
+
     func removeClip(id: UUID) {
+        guard clips.contains(where: { $0.id == id }) else { return }
+        checkpoint()
         clips.removeAll { $0.id == id }
+        timelineSecond = min(timelineSecond, totalDuration)
     }
 
     /// One-tap edit template using real motion and dissolve exports.
     /// This modifies project settings only and never touches original media.
     func applyCinematicPreset() {
+        checkpoint()
         transition = .dissolve
         transitionSeconds = 0.45
         for index in clips.indices where clips[index].kind == .image {
@@ -441,6 +549,7 @@ final class EditorViewModel: ObservableObject {
         guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
         let to = index + delta
         guard clips.indices.contains(to) else { return }
+        checkpoint()
         clips.swapAt(index, to)
     }
 
