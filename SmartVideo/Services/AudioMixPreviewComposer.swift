@@ -5,6 +5,7 @@ import AVFoundation
 /// Includes background music, narration and up to 12 SFX tracks.
 /// Video clip source audio is intentionally excluded.
 enum AudioMixPreviewComposer {
+    @MainActor
     static func makeItem(
         duration: Double,
         musicURL: URL?,

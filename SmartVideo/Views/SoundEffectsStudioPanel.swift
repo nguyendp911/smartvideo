@@ -262,7 +262,7 @@ struct SoundEffectsStudioPanel: View {
                 )
                 let player = AVPlayer(playerItem: item)
                 mixPlayer = player
-                player.seek(
+                await player.seek(
                     to: CMTime(seconds: min(playhead, duration),
                                preferredTimescale: 600),
                     toleranceBefore: .zero,
