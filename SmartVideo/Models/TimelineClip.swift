@@ -30,6 +30,20 @@ enum ImageLook: String, CaseIterable, Identifiable, Codable {
     case mono = "Đen trắng"
     case warm = "Màu ấm"
     case cool = "Màu lạnh"
+    case tealOrange = "Teal & Orange"
+    case noir = "Noir Luxe"
+    case golden = "Golden Hour"
+    case pastel = "Soft Pastel"
+    case moody = "Moody"
+    case clean = "Clean Studio"
+    case forest = "Forest"
+    case vintage = "Analog 35"
+    case rose = "Rose Film"
+    case desert = "Desert"
+    case midnight = "Midnight"
+    case neon = "Neon Pop"
+    case editorial = "Editorial"
+    case creamy = "Creamy"
 
     var id: String { rawValue }
 }
