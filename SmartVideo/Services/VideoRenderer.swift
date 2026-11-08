@@ -337,7 +337,7 @@ final class VideoRenderer {
                 y: (size.height - extent.height * scale) / 2
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
-        let styled = colorGrade(fitted, preset: imageLook)
+        let styled = StudioColorGrader.apply(fitted, look: imageLook)
         let staticFrame = styled.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
