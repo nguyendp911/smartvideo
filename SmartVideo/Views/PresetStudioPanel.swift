@@ -80,7 +80,7 @@ struct PresetStudioPanel: View {
                 detailPanel(preset)
             }
 
-            Text("Màu Core Image áp dụng trực tiếp lên clip ẢNH. Với clip VIDEO, preset dùng hiệu ứng VFX, chuyển cảnh và lớp chữ hiện có; chưa phải LUT màu video. Ảnh màu trong thẻ chỉ minh họa bảng màu, muốn kiểm tra chính xác hãy render preview 720p.")
+            Text("Màu Core Image giờ áp dụng cho cả ẢNH và từng khung hình VIDEO. Với video, bộ xuất tạo một đoạn trung gian có giữ track tiếng trước khi dựng timeline. Thẻ màu chỉ minh họa bảng màu; hãy xem preview của footage thật.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
         }
@@ -101,7 +101,7 @@ struct PresetStudioPanel: View {
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text("V3.9")
+            Text("V4.0")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.cyan)
         }
@@ -299,6 +299,23 @@ struct PresetStudioPanel: View {
                     .font(.caption2)
                     .buttonStyle(.bordered)
                     .disabled(!model.canUndoStudioPreset)
+                }
+            }
+
+            if model.appliedStudioPresetID == preset.id {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text("Cường độ màu · Ảnh & Video")
+                        Spacer()
+                        Text("\(Int(model.projectGradeIntensity * 100))%")
+                            .monospacedDigit()
+                    }
+                    .font(.caption)
+                    Slider(value: Binding(
+                        get: { model.projectGradeIntensity },
+                        set: { model.setProjectGradeIntensity($0) }
+                    ), in: 0...1, step: 0.05)
+                        .tint(.cyan)
                 }
             }
 
