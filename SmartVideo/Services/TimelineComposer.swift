@@ -29,6 +29,7 @@ final class TimelineComposer {
     func compose(
         clips: [TimelineClip],
         sourceURLs: [URL],
+        videoOverlays: [VideoOverlayClip],
         renderSize: CGSize,
         contentMode: CanvasContentMode,
         transition: VideoTransition,
@@ -234,6 +235,114 @@ final class TimelineComposer {
             }
         }
 
+        // Insert each PIP video onto its own muted composition track.
+        // Split composition instructions at overlay boundaries so the video
+        // source is layered in front of the appropriate timeline clips.
+        struct VideoLayerSpan {
+            let start: CMTime
+            let end: CMTime
+            let instruction: AVMutableVideoCompositionLayerInstruction
+        }
+        var videoSpans: [VideoLayerSpan] = []
+        let timelineEnd = endTimes.last ?? .zero
+
+        for overlay in videoOverlays.prefix(4) {
+            try Task.checkCancellation()
+            guard overlay.duration > 0.04,
+                  overlay.start < timelineEnd.seconds else { continue }
+            let asset = AVURLAsset(url: overlay.fileURL)
+            guard let source = try await asset.loadTracks(withMediaType: .video).first else {
+                throw SmartVideoError.missingVideoTrack(overlay.filename)
+            }
+            let duration = try await asset.load(.duration)
+            guard duration.seconds.isFinite && duration.seconds > overlay.sourceStart else {
+                throw SmartVideoError.invalidMedia("Overlay video có mốc thời gian lỗi.")
+            }
+            let from = CMTime(seconds: max(0, overlay.sourceStart),
+                              preferredTimescale: 600)
+            let start = CMTime(seconds: max(0, overlay.start),
+                               preferredTimescale: 600)
+            let availableSource = CMTimeSubtract(duration, from)
+            let availableTimeline = CMTimeSubtract(timelineEnd, start)
+            let chosen = CMTimeMinimum(
+                CMTimeMinimum(availableSource, availableTimeline),
+                CMTime(seconds: overlay.duration, preferredTimescale: 600)
+            )
+            guard CMTimeCompare(chosen, .zero) > 0 else { continue }
+
+            guard let outputTrack = composition.addMutableTrack(
+                withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else { throw SmartVideoError.cannotCreateWriter }
+            try outputTrack.insertTimeRange(
+                CMTimeRange(start: from, duration: chosen),
+                of: source, at: start
+            )
+
+            let natural = try await source.load(.naturalSize)
+            let orientation = try await source.load(.preferredTransform)
+            let entry = AVMutableVideoCompositionLayerInstruction(assetTrack: outputTrack)
+            let firstTransform = pipTransform(
+                sourceSize: natural, preferred: orientation, canvas: renderSize,
+                x: overlay.startX, y: overlay.startY, width: overlay.width
+            )
+            let lastTransform = pipTransform(
+                sourceSize: natural, preferred: orientation, canvas: renderSize,
+                x: overlay.endX, y: overlay.endY, width: overlay.width
+            )
+            let span = CMTimeRange(start: start, duration: chosen)
+            if overlay.startX != overlay.endX || overlay.startY != overlay.endY {
+                entry.setTransformRamp(fromStartTransform: firstTransform,
+                                       toEndTransform: lastTransform,
+                                       timeRange: span)
+            } else {
+                entry.setTransform(firstTransform, at: start)
+            }
+            entry.setOpacity(Float(max(0, min(1, overlay.opacity))), at: start)
+            videoSpans.append(VideoLayerSpan(
+                start: start, end: CMTimeAdd(start, chosen), instruction: entry
+            ))
+        }
+
+        if !videoSpans.isEmpty {
+            var rebuilt: [AVMutableVideoCompositionInstruction] = []
+            for instruction in instructions {
+                let firstTime = instruction.timeRange.start
+                let lastTime = instruction.timeRange.end
+                var boundaries: [CMTime] = [firstTime, lastTime]
+                for span in videoSpans {
+                    if CMTimeCompare(span.start, firstTime) > 0 &&
+                       CMTimeCompare(span.start, lastTime) < 0 {
+                        boundaries.append(span.start)
+                    }
+                    if CMTimeCompare(span.end, firstTime) > 0 &&
+                       CMTimeCompare(span.end, lastTime) < 0 {
+                        boundaries.append(span.end)
+                    }
+                }
+                boundaries.sort { CMTimeCompare($0, $1) < 0 }
+                for index in 0..<(boundaries.count - 1) {
+                    let from = boundaries[index]
+                    let to = boundaries[index + 1]
+                    guard CMTimeCompare(to, from) > 0 else { continue }
+                    let piece = AVMutableVideoCompositionInstruction()
+                    piece.timeRange = CMTimeRange(
+                        start: from, duration: CMTimeSubtract(to, from)
+                    )
+                    piece.backgroundColor = UIColor.black.cgColor
+                    let active = videoSpans.filter {
+                        CMTimeCompare($0.start, from) <= 0 &&
+                        CMTimeCompare($0.end, from) > 0
+                    }
+                    // Higher overlay z-order first; composition instructions
+                    // list front-to-back.
+                    piece.layerInstructions = active.reversed().map(\.instruction) +
+                        instruction.layerInstructions
+                    rebuilt.append(piece)
+                }
+            }
+            instructions = rebuilt
+        }
+
         let videoComposition = AVMutableVideoComposition()
         videoComposition.renderSize = renderSize
         videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
@@ -246,6 +355,31 @@ final class TimelineComposer {
             duration: endTimes.last ?? .zero,
             originalMixParameters: originalParams
         )
+    }
+
+    private func pipTransform(
+        sourceSize: CGSize,
+        preferred: CGAffineTransform,
+        canvas: CGSize,
+        x: Double, y: Double, width: Double
+    ) -> CGAffineTransform {
+        let source = CGRect(origin: .zero, size: sourceSize)
+            .applying(preferred).standardized
+        guard source.width > 0, source.height > 0 else { return .identity }
+        let desiredWidth = canvas.width * CGFloat(min(0.95, max(0.1, width)))
+        let factor = desiredWidth / source.width
+        let desiredHeight = source.height * factor
+        let centerX = CGFloat(min(1, max(0, x))) * canvas.width
+        let centerY = CGFloat(min(1, max(0, y))) * canvas.height
+        return preferred
+            .concatenating(CGAffineTransform(
+                translationX: -source.minX, y: -source.minY
+            ))
+            .concatenating(CGAffineTransform(scaleX: factor, y: factor))
+            .concatenating(CGAffineTransform(
+                translationX: centerX - desiredWidth / 2,
+                y: centerY - desiredHeight / 2
+            ))
     }
 
     private func aspectTransform(
