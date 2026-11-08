@@ -499,6 +499,23 @@ struct EditorView: View {
                     .frame(height: 16)
                 }
 
+                if let selectedOverlayID,
+                   let overlay = model.imageOverlays.first(where: {
+                       $0.id == selectedOverlayID
+                   }), activeTool == .overlay {
+                    HStack(spacing: 5) {
+                        Image(systemName: "diamond.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.orange)
+                        OverlayKeyframeTimelineStrip(
+                            overlay: overlay,
+                            totalDuration: model.totalDuration,
+                            onScrub: { scrubTimeline(to: $0) }
+                        )
+                    }
+                    .frame(height: 23)
+                }
+
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 4) {
                         ForEach(Array(model.clips.enumerated()), id: \.element.id) { index, clip in
@@ -635,7 +652,8 @@ struct EditorView: View {
             .buttonStyle(.bordered)
         }
         .frame(height: (model.soundEffects.isEmpty ? 154 : 186) +
-               (model.timelineBeatMarkers.isEmpty ? 0 : 17),
+               (model.timelineBeatMarkers.isEmpty ? 0 : 17) +
+               (activeTool == .overlay && selectedOverlayID != nil ? 24 : 0),
                alignment: .top)
     }
 
