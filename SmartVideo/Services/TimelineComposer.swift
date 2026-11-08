@@ -32,7 +32,8 @@ final class TimelineComposer {
         renderSize: CGSize,
         contentMode: CanvasContentMode,
         transition: VideoTransition,
-        transitionSeconds: Double
+        transitionSeconds: Double,
+        keepOriginalAudio: Bool
     ) async throws -> TimelineBuild {
         guard clips.count == sourceURLs.count, !clips.isEmpty else {
             throw SmartVideoError.invalidMedia("Timeline không hợp lệ.")
@@ -125,7 +126,7 @@ final class TimelineComposer {
                 )
             }
 
-            if let sourceAudio = part.sourceAudio {
+            if keepOriginalAudio, let sourceAudio = part.sourceAudio {
                 let availableRange = try await sourceAudio.load(.timeRange)
                 let audioAvailable = CMTimeSubtract(availableRange.end, part.from)
                 if audioAvailable.isValid && CMTimeCompare(audioAvailable, .zero) > 0 {

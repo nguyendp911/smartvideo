@@ -86,7 +86,8 @@ final class VideoRenderer {
             renderSize: size,
             contentMode: contentMode,
             transition: transition,
-            transitionSeconds: transitionSeconds
+            transitionSeconds: transitionSeconds,
+            keepOriginalAudio: keepOriginalAudio
         )
         let composition = timeline.composition
         let videoComposition = timeline.videoComposition
