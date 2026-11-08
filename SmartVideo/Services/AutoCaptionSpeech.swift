@@ -180,16 +180,26 @@ final class AutoCaptionSpeech {
                 "Chỉ clip video có tiếng nói mới nhận diện được."
             )
         }
-        let asset = AVURLAsset(url: clip.fileURL)
+        return try await extractAudio(
+            from: clip.fileURL, beginningAt: clip.startTime,
+            maximumDuration: clip.duration
+        )
+    }
+
+    static func extractAudio(
+        from fileURL: URL, beginningAt start: Double,
+        maximumDuration: Double
+    ) async throws -> URL {
+        let asset = AVURLAsset(url: fileURL)
         guard !(try await asset.loadTracks(withMediaType: .audio)).isEmpty else {
             throw SmartVideoError.invalidMedia(
                 "Video không có track âm thanh."
             )
         }
         let duration = try await asset.load(.duration).seconds
-        let from = max(0, clip.startTime)
+        let from = max(0, start)
         let seconds = min(max(0, duration - from),
-                          max(0, clip.duration), 58)
+                          max(0, maximumDuration), 58)
         guard seconds >= 0.5 else {
             throw SmartVideoError.invalidMedia(
                 "Đoạn clip có lời nói phải dài tối thiểu 0,5 giây."
