@@ -43,11 +43,11 @@ struct MediaInspectorPanel: View {
                 if let inspection {
                     VStack(alignment: .leading, spacing: 7) {
                         metric("Định dạng", inspection.videoCodec ?? (clip.kind == .image ? "Ảnh tĩnh" : "Không rõ"))
-                        metric("Kích thước", "\\(inspection.width.map(String.init) ?? "—") × \\(inspection.height.map(String.init) ?? "—")")
+                        metric("Kích thước", "\(inspection.width.map(String.init) ?? "—") × \(inspection.height.map(String.init) ?? "—")")
                         metric("Thời lượng", inspection.duration.map { String(format: "%.2f giây", $0) } ?? (clip.kind == .image ? "Ảnh tĩnh" : "Không rõ"))
                         metric("Tốc độ khung hình", inspection.nominalFrameRate.map { String(format: "%.3f FPS", $0) } ?? "Không có metadata")
                         metric("Bitrate video", inspection.videoBitrate.map { String(format: "%.2f Mbps", $0 / 1_000_000) } ?? "Không có metadata")
-                        metric("Âm thanh", inspection.hasAudio ? "\\(inspection.audioCodec ?? "Có") · \\(inspection.audioChannels.map(String.init) ?? "?") kênh" : "Không có track")
+                        metric("Âm thanh", inspection.hasAudio ? "\(inspection.audioCodec ?? "Có") · \(inspection.audioChannels.map(String.init) ?? "?") kênh" : "Không có track")
                         metric("HDR", inspection.isHDR.map { $0 ? "Phát hiện HDR" : "Không phát hiện HDR" } ?? "Không xác định")
                         if let inspectionSize = inspection.fileSize {
                             metric("Dung lượng", ByteCountFormatter.string(fromByteCount: inspectionSize, countStyle: .file))
@@ -59,7 +59,7 @@ struct MediaInspectorPanel: View {
                                 .font(.caption.bold())
                                 .foregroundStyle(.orange)
                             ForEach(Array(inspection.warnings.enumerated()), id: \.offset) { _, warning in
-                                Text("• \\(warning)")
+                                Text("• \(warning)")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
@@ -105,7 +105,7 @@ struct MediaInspectorPanel: View {
         do {
             inspection = try await MediaInspector.inspect(clip.fileURL)
         } catch {
-            self.error = "Không đọc được metadata: \\(error.localizedDescription)"
+            self.error = "Không đọc được metadata: \(error.localizedDescription)"
         }
     }
 }
