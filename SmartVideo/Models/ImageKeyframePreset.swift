@@ -10,9 +10,13 @@ enum ImageKeyframePreset: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 
     func makeFrames(from overlay: ImageOverlayClip) -> [OverlayKeyframe] {
-        let x = overlay.startX
-        let y = overlay.startY
-        let scale = min(0.95, max(0.1, overlay.scale))
+        makeFrames(x: overlay.startX, y: overlay.startY,
+                   scale: overlay.scale, opacity: overlay.opacity)
+    }
+
+    func makeFrames(x: Double, y: Double,
+                    scale baseScale: Double, opacity: Double) -> [OverlayKeyframe] {
+        let scale = min(0.95, max(0.1, baseScale))
         func point(_ t: Double, _ x: Double, _ y: Double,
                    _ z: Double, _ alpha: Double, _ rotation: Double = 0
         ) -> OverlayKeyframe {
