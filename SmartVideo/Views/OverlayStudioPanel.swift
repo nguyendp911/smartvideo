@@ -158,7 +158,41 @@ struct OverlayStudioPanel: View {
                 Slider(value: $model.imageOverlays[index].endY,
                        in: 0.05...0.95, step: 0.01)
 
-                Text("Overlay được ghi vào MP4, trên VFX và dưới phụ đề. Mới hỗ trợ lớp ảnh, chưa hỗ trợ overlay video hoặc nhiều keyframe phức tạp.")
+                Divider()
+                Toggle("Chroma Key – Xóa nền màu", isOn:
+                        $model.imageOverlays[index].chromaEnabled)
+                    .font(.caption.bold())
+                    .tint(.cyan)
+                if item.chromaEnabled {
+                    Picker("Màu nền cần xóa", selection:
+                           $model.imageOverlays[index].chromaColor) {
+                        ForEach(ChromaKeyColor.allCases) { color in
+                            Text(color.rawValue).tag(color)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    Text("Ngưỡng tách nền · " +
+                         String(format: "%.2f", item.chromaTolerance))
+                        .font(.caption)
+                    Slider(value: $model.imageOverlays[index].chromaTolerance,
+                           in: 0.06...0.65, step: 0.02).tint(.cyan)
+                    Text("Độ mềm viền · " +
+                         String(format: "%.2f", item.chromaSoftness))
+                        .font(.caption)
+                    Slider(value: $model.imageOverlays[index].chromaSoftness,
+                           in: 0.02...0.35, step: 0.01).tint(.cyan)
+                    Text("Chroma Key hiện áp dụng cho ảnh Overlay xanh lá/xanh dương. Video PIP chưa hỗ trợ xóa nền xanh theo từng frame.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+
+                Picker("Gia tốc keyframe",
+                       selection: $model.imageOverlays[index].easing) {
+                    ForEach(OverlayEasing.allCases) { style in
+                        Text(style.rawValue).tag(style)
+                    }
+                }.pickerStyle(.menu)
+
+                Text("Lớp ảnh được xuất vào MP4. Giữ PNG trong suốt và có thể chỉnh Chroma Key không phá hủy file gốc.")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }

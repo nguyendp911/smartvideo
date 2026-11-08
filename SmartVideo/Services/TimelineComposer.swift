@@ -335,7 +335,9 @@ final class TimelineComposer {
                     }
                     // Higher overlay z-order first; composition instructions
                     // list front-to-back.
-                    piece.layerInstructions = active.reversed().map(\.instruction) +
+                    piece.layerInstructions = active.reversed().map {
+                        $0.instruction as AVVideoCompositionLayerInstruction
+                    } +
                         instruction.layerInstructions
                     rebuilt.append(piece)
                 }
