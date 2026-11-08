@@ -14,6 +14,8 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case narration = "Giọng"
     case metadata = "Metadata"
     case overlay = "Overlay"
+    case pip = "Video PIP"
+    case title = "Chữ"
 
     var id: String { rawValue }
     var symbol: String {
@@ -28,6 +30,8 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .narration: return "mic.circle"
         case .metadata: return "tag"
         case .overlay: return "square.on.square"
+        case .pip: return "pip"
+        case .title: return "textformat"
         }
     }
 }
@@ -47,6 +51,9 @@ struct EditorView: View {
     @State private var showProjects = false
     @State private var pickedOverlay: PhotosPickerItem?
     @State private var selectedOverlayID: UUID?
+    @State private var pickedPIP: PhotosPickerItem?
+    @State private var selectedPIPID: UUID?
+    @State private var selectedTextID: UUID?
 
     private let accent = Color.cyan
 
@@ -99,6 +106,14 @@ struct EditorView: View {
         }
         .background(Color(red: 0.055, green: 0.067, blue: 0.09)
             .ignoresSafeArea())
+        .onChange(of: pickedPIP) { item in
+            guard let item else { return }
+            Task {
+                await model.importVideoOverlay(item)
+                selectedPIPID = model.videoOverlays.last?.id
+                pickedPIP = nil
+            }
+        }
         .onChange(of: pickedOverlay) { item in
             guard let item else { return }
             Task {
@@ -260,6 +275,13 @@ struct EditorView: View {
                         .padding(6)
                 }
 
+                VideoPIPCanvasPreview(
+                    model: model, selectedID: $selectedPIPID,
+                    second: playheadSecond,
+                    canvas: CGSize(width: canvasWidth, height: canvasHeight),
+                    editable: activeTool == .pip
+                )
+
                 if !model.vfxPresets.isEmpty {
                     VFXPreviewOverlay(presets: model.vfxPresets,
                                       intensity: model.vfxIntensity)
@@ -272,14 +294,12 @@ struct EditorView: View {
                 ForEach(model.imageOverlays) { overlay in
                     if playheadSecond >= overlay.start && playheadSecond <= overlay.end,
                        let index = model.imageOverlays.firstIndex(where: { $0.id == overlay.id }),
-                       let image = UIImage(contentsOfFile: overlay.fileURL.path) {
+                       FileManager.default.fileExists(atPath: overlay.fileURL.path) {
                         let fraction = min(1, max(0,
                             (playheadSecond - overlay.start) / max(0.1, overlay.duration)))
                         let currentX = overlay.startX + (overlay.endX - overlay.startX) * fraction
                         let currentY = overlay.startY + (overlay.endY - overlay.startY) * fraction
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFit()
+                        KeyedOverlayImage(overlay: overlay)
                             .frame(width: canvasWidth * CGFloat(overlay.scale))
                             .opacity(overlay.opacity)
                             .rotationEffect(.degrees(overlay.rotationDegrees))
@@ -326,6 +346,13 @@ struct EditorView: View {
                             .allowsHitTesting(activeTool == .overlay)
                     }
                 }
+
+                TextCanvasPreview(
+                    model: model, selectedID: $selectedTextID,
+                    second: playheadSecond,
+                    canvas: CGSize(width: canvasWidth, height: canvasHeight),
+                    editable: activeTool == .title
+                )
 
                 if !previewCaption.isEmpty {
                     Text(previewCaption)
@@ -598,6 +625,11 @@ struct EditorView: View {
         case .overlay: OverlayStudioPanel(model: model,
                                            selectedOverlayID: $selectedOverlayID,
                                            pickedOverlay: $pickedOverlay)
+        case .pip: VideoPIPStudioPanel(model: model,
+                                       selectedID: $selectedPIPID,
+                                       pickerItem: $pickedPIP)
+        case .title: TextOverlayStudioPanel(model: model,
+                                            selectedID: $selectedTextID)
         }
     }
 
