@@ -267,11 +267,12 @@ struct EditorView: View {
             ZStack {
                 Color.black
                 if let clip = selectedClip {
-                    if clip.kind == .image,
-                       let image = UIImage(contentsOfFile: clip.fileURL.path) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: model.contentMode == .fill ? .fill : .fit)
+                    if clip.kind == .image {
+                        StudioLookPhotoPreview(
+                            fileURL: clip.fileURL,
+                            look: clip.imageLook,
+                            contentMode: model.contentMode
+                        )
                             .frame(width: canvasWidth, height: canvasHeight)
                             .scaleEffect(x: clip.flipHorizontal ? -1 : 1,
                                          y: clip.flipVertical ? -1 : 1)
