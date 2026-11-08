@@ -23,6 +23,7 @@ struct ImageOverlayClip: Identifiable, Codable, Equatable {
     var chromaTolerance: Double = 0.22
     var chromaSoftness: Double = 0.14
     var easing: OverlayEasing = .easeInOut
+    var pathMode: OverlayMotionPath = .straight
     /// Empty means the original two-point position animation is retained.
     var keyframes: [OverlayKeyframe] = []
 
@@ -33,7 +34,7 @@ struct ImageOverlayClip: Identifiable, Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case id, fileURL, start, duration, startX, startY, endX, endY,
              scale, opacity, rotationDegrees, chromaEnabled, chromaColor,
-             chromaTolerance, chromaSoftness, easing, keyframes
+             chromaTolerance, chromaSoftness, easing, pathMode, keyframes
     }
 
     init(from decoder: Decoder) throws {
@@ -57,6 +58,8 @@ struct ImageOverlayClip: Identifiable, Codable, Equatable {
         chromaSoftness = try keyed.decodeIfPresent(Double.self,
                                                    forKey: .chromaSoftness) ?? 0.14
         easing = try keyed.decodeIfPresent(OverlayEasing.self, forKey: .easing) ?? .easeInOut
+        pathMode = try keyed.decodeIfPresent(OverlayMotionPath.self,
+                                             forKey: .pathMode) ?? .straight
         keyframes = try keyed.decodeIfPresent([OverlayKeyframe].self,
                                               forKey: .keyframes) ?? []
     }

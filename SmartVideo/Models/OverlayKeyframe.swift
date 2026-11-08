@@ -65,6 +65,11 @@ enum OverlayKeyframeSampler {
 
     static func sample(_ overlay: ImageOverlayClip,
                        atProgress raw: Double) -> OverlayKeyframe {
+        if overlay.pathMode == .curved {
+            return sample(frames: frames(for: overlay),
+                          easing: overlay.easing, path: .curved,
+                          atProgress: raw)
+        }
         let frames = frames(for: overlay)
         let progress = min(1, max(0, raw.isFinite ? raw : 0))
         guard let first = frames.first, let last = frames.last else {

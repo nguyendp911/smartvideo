@@ -38,6 +38,15 @@ struct OverlayKeyframeStudio: View {
                     }
                     .font(.caption)
                     .pickerStyle(.menu)
+
+                    Picker("Đường chuyển động",
+                           selection: $model.imageOverlays[index].pathMode) {
+                        ForEach(OverlayMotionPath.allCases) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .font(.caption)
+                    .pickerStyle(.segmented)
                 } else {
                     Text("Chưa bật chế độ nhiều điểm. Vị trí đầu/cuối " +
                          "đang hoạt động như các phiên bản trước.")

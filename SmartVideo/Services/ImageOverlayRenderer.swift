@@ -29,7 +29,13 @@ enum ImageOverlayRenderer {
             let end = min(timelineDuration, max(begin, item.end))
             guard end > begin + 0.05 else { continue }
             let duration = end - begin
-            let frames = OverlayKeyframeSampler.frames(for: item)
+            let authoredFrames = OverlayKeyframeSampler.frames(for: item)
+            let frames = item.pathMode == .curved
+                ? OverlayKeyframeSampler.samples(
+                    frames: authoredFrames, easing: item.easing,
+                    path: item.pathMode, stepsPerSegment: 8
+                  )
+                : authoredFrames
             guard frames.count >= 2, let first = frames.first else { continue }
 
             // Separate the timeline visibility gate from the animated alpha.
@@ -72,7 +78,8 @@ enum ImageOverlayRenderer {
             let timing = frames.map { frame in
                 NSNumber(value: min(1, max(0, frame.progress)))
             }
-            let ease = TextOverlayRenderer.easing(item.easing)
+            let ease: CAMediaTimingFunctionName = item.pathMode == .curved
+                ? .linear : TextOverlayRenderer.easing(item.easing)
             let smooth = Array(
                 repeating: CAMediaTimingFunction(name: ease),
                 count: max(0, timing.count - 1)
