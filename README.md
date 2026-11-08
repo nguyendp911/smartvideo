@@ -377,3 +377,30 @@ Bản v3.3.0 bổ sung xử lý giọng thuyết minh offline, tương tự nhó
 - Kết quả Apple Speech có thể nhận sai từ riêng, giọng địa phương, lời trong bài hát và nhiều người nói chồng nhau. Không tự xác nhận chính xác 100%.
 - Bản v3.5 là Auto Captions theo cụm từ, **chưa có karaoke animation theo từng từ**, dịch phụ đề đa ngôn ngữ hay khử giọng trước khi nhận diện.
 - Build bằng GitHub Actions chỉ xác nhận biên dịch; chưa được thử trên iPhone 12 Pro Max thực tế. File IPA chưa được Apple ký.
+
+
+## ViePN Smart Video v3.6.0 – Long-form Auto Captions + Karaoke per Word
+
+### Nhận diện lời nói dài hơn
+- Tab **Phụ đề → Auto Captions** có tùy chọn **Nhận diện toàn bộ (tối đa 10 phút)** (bật mặc định). Nếu tắt, chỉ quét 52 giây đầu.
+- Nhạc/thuyết minh hoặc video nguồn được chia thành các file M4A **52 giây** rồi nhận diện lần lượt với Apple Speech. Từng M4A tạm được xóa sau khi nhận diện; không ghi đè media gốc.
+- Hỗ trợ **Clip video đang chọn** và **Thuyết minh**. Với video, giữ mốc thời gian theo điểm trim, speed và vị trí trên timeline. Với thuyết minh, dựa vào voiceoverOffset. Mọi câu và từ đều được chuyển sang **thời gian tuyệt đối trên timeline**.
+- Nguyên tắc quyền riêng tư không thay đổi: **mặc định xử lý offline**; nếu thiết bị không hỗ trợ offline, app báo lỗi, không tự động gửi audio ra mạng. Muốn dùng dịch vụ Apple cần tự bật lựa chọn cho phép (âm thanh có thể được gửi lên máy chủ Apple). Giới hạn 10 phút là **tổng lượng audio nguồn tối đa trong một lượt**, không phải bảo đảm dịch vụ Apple sẽ nhận diện thành công mọi đoạn.
+- Phân tích nhiều đoạn có thể mất thời gian. Các đoạn cắt ở ranh giới 52 giây đôi khi làm mất/nhận sai một từ; người dùng cần sửa và nghe lại.
+
+### Karaoke word timing trong preview & MP4
+- Mỗi SubtitleCue có thể chứa words: [SubtitleWord], mỗi từ có start, end, text riêng. Dự án cũ không có words vẫn mở như bình thường; trường này là tùy chọn khi decode.
+- Tab **Phụ đề → Kiểu phụ đề** bật **Karaoke · sáng từng từ theo giọng nói**. Chọn **Sáng chữ**, **Nảy chữ** hoặc **Phát sáng**, màu chữ active dạng HEX.
+- Preview thay đổi màu theo con trỏ và từ đang được đọc. Khi xuất MP4, Core Animation hiển thị chữ gốc và một lớp màu vàng/được tùy chỉnh đúng mốc từng từ; chuyển động **Pop** nảy nhẹ từ đang đọc. Nếu câu quá dài hoặc không đủ thông tin word timing, fallback về phụ đề thông thường.
+- Bên dưới mỗi câu có **Chỉnh karaoke từng từ** để sửa chữ và dời mốc từng từ ±0,05 giây. Dời cả câu 0,5 giây cũng dời các mốc từ theo, tránh sai đồng bộ.
+- Nếu người dùng sửa trực tiếp cả câu nhưng không cập nhật dữ liệu từng từ, app **tạm tắt karaoke của câu đó** để không hiển thị sai lời. Có thể đồng bộ lại khi số từ không thay đổi, hoặc sửa trong bảng từ.
+- Xuất SRT vẫn chứa các mốc **cấp câu**, không nhúng thời gian từng từ. Các mốc từ chỉ được lưu trong dự án JSON và được burn vào MP4 khi bật Karaoke.
+
+### Thử nghiệm đề xuất
+1. Thêm clip 70–120 giây có giọng nói rõ hoặc thu giọng thuyết minh dài, chọn đúng nguồn trong Auto Captions.
+2. Bật nhận diện toàn bộ, chọn tiếng Việt (offline nếu máy hỗ trợ), nhấn Nhận diện và quan sát tiến độ đoạn 1/3, 2/3...
+3. Trong Kiểu phụ đề bật Karaoke → Nảy chữ → chọn HEX màu active.
+4. Rà lời từng câu, mở bảng từng từ nếu cần. Xem thử timeline ở 720p rồi xuất MP4 ngắn để kiểm tra nhịp highlight.
+5. Lưu, đóng và mở lại dự án, kiểm tra words được giữ và các phụ đề cũ không bị mất.
+
+**Giới hạn**: Apple Speech không bảo đảm độ chính xác tuyệt đối, đặc biệt với giọng vùng miền, nền nhạc lớn và nhiều người nói. Cách highlight dùng Core Animation trên MP4, không phải mô hình karaoke optical flow. Build thành công là kiểm tra biên dịch; cần test trên iPhone 12 Pro Max trước khi làm dự án dài.
