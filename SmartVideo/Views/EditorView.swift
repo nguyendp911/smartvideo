@@ -260,12 +260,23 @@ struct EditorView: View {
                         .padding(6)
                 }
 
+                if !model.vfxPresets.isEmpty {
+                    VFXPreviewOverlay(presets: model.vfxPresets,
+                                      intensity: model.vfxIntensity)
+                        .frame(width: canvasWidth, height: canvasHeight)
+                        .allowsHitTesting(false)
+                }
+
                 // Preview independent image overlays only during their
                 // active time range. Drag to reposition start keyframe.
                 ForEach(model.imageOverlays) { overlay in
                     if playheadSecond >= overlay.start && playheadSecond <= overlay.end,
                        let index = model.imageOverlays.firstIndex(where: { $0.id == overlay.id }),
                        let image = UIImage(contentsOfFile: overlay.fileURL.path) {
+                        let fraction = min(1, max(0,
+                            (playheadSecond - overlay.start) / max(0.1, overlay.duration)))
+                        let currentX = overlay.startX + (overlay.endX - overlay.startX) * fraction
+                        let currentY = overlay.startY + (overlay.endY - overlay.startY) * fraction
                         Image(uiImage: image)
                             .resizable()
                             .scaledToFit()
@@ -273,8 +284,8 @@ struct EditorView: View {
                             .opacity(overlay.opacity)
                             .rotationEffect(.degrees(overlay.rotationDegrees))
                             .position(
-                                x: canvasWidth * CGFloat(overlay.startX),
-                                y: canvasHeight * CGFloat(overlay.startY)
+                                x: canvasWidth * CGFloat(currentX),
+                                y: canvasHeight * CGFloat(currentY)
                             )
                             .overlay {
                                 if activeTool == .overlay &&
@@ -283,8 +294,8 @@ struct EditorView: View {
                                         .stroke(.cyan, lineWidth: 1)
                                         .frame(width: canvasWidth * CGFloat(overlay.scale))
                                         .position(
-                                            x: canvasWidth * CGFloat(overlay.startX),
-                                            y: canvasHeight * CGFloat(overlay.startY)
+                                            x: canvasWidth * CGFloat(currentX),
+                                            y: canvasHeight * CGFloat(currentY)
                                         )
                                 }
                             }
@@ -294,23 +305,26 @@ struct EditorView: View {
                                     .onChanged { value in
                                         guard activeTool == .overlay else { return }
                                         selectedOverlayID = overlay.id
+                                        let nextX = min(0.95, max(0.05,
+                                            Double(value.location.x / canvasWidth)))
+                                        let nextY = min(0.95, max(0.05,
+                                            Double(value.location.y / canvasHeight)))
+                                        // Move both keyframes by the same delta,
+                                        // preserving the configured motion path.
+                                        let deltaX = nextX - currentX
+                                        let deltaY = nextY - currentY
                                         model.imageOverlays[index].startX =
-                                            min(0.95, max(0.05,
-                                                Double(value.location.x / canvasWidth)))
+                                            min(0.95, max(0.05, overlay.startX + deltaX))
                                         model.imageOverlays[index].startY =
-                                            min(0.95, max(0.05,
-                                                Double(value.location.y / canvasHeight)))
+                                            min(0.95, max(0.05, overlay.startY + deltaY))
+                                        model.imageOverlays[index].endX =
+                                            min(0.95, max(0.05, overlay.endX + deltaX))
+                                        model.imageOverlays[index].endY =
+                                            min(0.95, max(0.05, overlay.endY + deltaY))
                                     }
                             )
                             .allowsHitTesting(activeTool == .overlay)
                     }
-                }
-
-                if !model.vfxPresets.isEmpty {
-                    VFXPreviewOverlay(presets: model.vfxPresets,
-                                      intensity: model.vfxIntensity)
-                        .frame(width: canvasWidth, height: canvasHeight)
-                        .allowsHitTesting(false)
                 }
 
                 if !previewCaption.isEmpty {
