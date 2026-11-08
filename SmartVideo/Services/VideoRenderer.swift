@@ -18,6 +18,7 @@ final class VideoRenderer {
         imageOverlays: [ImageOverlayClip],
         videoOverlays: [VideoOverlayClip],
         textOverlays: [TextOverlayClip],
+        soundEffects: [SoundEffectClip],
         transition: VideoTransition,
         transitionSeconds: Double,
         vfxPresets: [VFXPreset],
@@ -230,6 +231,12 @@ final class VideoRenderer {
             }
             mixParameters.append(musicParameters)
         }
+
+        // Independently mix SFX at chosen global timeline positions.
+        let effectParameters = try await SoundEffectsMixer.add(
+            soundEffects, to: composition, timelineDuration: cursor
+        )
+        mixParameters.append(contentsOf: effectParameters)
 
         let mix: AVMutableAudioMix?
         if mixParameters.isEmpty {

@@ -11,6 +11,7 @@ struct SmartVideoProject: Codable {
     var imageOverlays: [ImageOverlayClip]
     var videoOverlays: [VideoOverlayClip]
     var textOverlays: [TextOverlayClip]
+    var soundEffects: [SoundEffectClip]
     var subtitles: [SubtitleCue]
     var transition: String
     var transitionSeconds: Double
@@ -42,6 +43,7 @@ struct SmartVideoProject: Codable {
     init(id: UUID, name: String, savedAt: Date, clips: [TimelineClip],
          imageOverlays: [ImageOverlayClip],
          videoOverlays: [VideoOverlayClip], textOverlays: [TextOverlayClip],
+         soundEffects: [SoundEffectClip],
          subtitles: [SubtitleCue],
          transition: String, transitionSeconds: Double, canvas: String,
          contentMode: String, quality: String, musicFileName: String?,
@@ -59,6 +61,7 @@ struct SmartVideoProject: Codable {
         self.imageOverlays = imageOverlays
         self.videoOverlays = videoOverlays
         self.textOverlays = textOverlays
+        self.soundEffects = soundEffects
         self.subtitles = subtitles
         self.transition = transition
         self.transitionSeconds = transitionSeconds
@@ -90,7 +93,7 @@ struct SmartVideoProject: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, savedAt, clips, imageOverlays, videoOverlays,
-             textOverlays, subtitles, transition,
+             textOverlays, soundEffects, subtitles, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
              voiceFileName, musicVolume, musicStartSeconds,
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
@@ -112,6 +115,8 @@ struct SmartVideoProject: Codable {
                                                    forKey: .videoOverlays) ?? []
         textOverlays = try values.decodeIfPresent([TextOverlayClip].self,
                                                   forKey: .textOverlays) ?? []
+        soundEffects = try values.decodeIfPresent([SoundEffectClip].self,
+                                                  forKey: .soundEffects) ?? []
         subtitles = try values.decode([SubtitleCue].self, forKey: .subtitles)
         transition = try values.decode(String.self, forKey: .transition)
         transitionSeconds = try values.decode(Double.self, forKey: .transitionSeconds)

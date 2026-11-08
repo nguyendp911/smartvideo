@@ -9,6 +9,8 @@ final class EditorViewModel: ObservableObject {
     @Published var imageOverlays: [ImageOverlayClip] = []
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
+    @Published var soundEffects: [SoundEffectClip] = []
+    @Published var isImportingSoundEffects = false
     @Published var timelineSecond: Double = 0
     @Published var timelineZoom: Double = 1.0
     @Published var projectName: String = "Dự án mới"
@@ -504,6 +506,112 @@ final class EditorViewModel: ObservableObject {
         textOverlays.removeAll { $0.id == id }
     }
 
+    // MARK: - Independent sound-effect tracks
+
+    func importSoundEffect(from sourceURL: URL) {
+        guard !isImportingSoundEffects else { return }
+        guard !clips.isEmpty, soundEffects.count < 12 else {
+            errorText = clips.isEmpty ?
+                "Cần nhập clip video/ảnh trước khi chèn âm thanh." :
+                "Dự án giới hạn tối đa 12 track hiệu ứng âm thanh."
+            return
+        }
+        isImportingSoundEffects = true
+        do {
+            let local = try copyScoped(sourceURL, fallbackExtension: "m4a")
+            Task {
+                defer { isImportingSoundEffects = false }
+                do {
+                    let asset = AVURLAsset(url: local)
+                    guard !(try await asset.loadTracks(
+                        withMediaType: .audio
+                    )).isEmpty else {
+                        throw SmartVideoError.invalidMedia(
+                            "Không tìm thấy âm thanh trong file."
+                        )
+                    }
+                    let duration = try await asset.load(.duration).seconds
+                    guard duration.isFinite && duration >= 0.1 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Tệp âm thanh có thời lượng không hợp lệ."
+                        )
+                    }
+                    soundEffects.append(SoundEffectClip.create(
+                        url: local, audioDuration: duration,
+                        timelineStart: timelineSecond, timelineEnd: totalDuration
+                    ))
+                } catch {
+                    try? FileManager.default.removeItem(at: local)
+                    errorText = "Không nhập được SFX: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            isImportingSoundEffects = false
+            errorText = "Không đọc được tệp SFX: \(error.localizedDescription)"
+        }
+    }
+
+    func addBuiltInSound(_ preset: BuiltInSoundEffect) {
+        guard !clips.isEmpty, soundEffects.count < 12 else {
+            errorText = clips.isEmpty ?
+                "Hãy thêm video hoặc ảnh trước khi sử dụng SFX." :
+                "Tối đa 12 track SFX."
+            return
+        }
+        let at = timelineSecond
+        let total = totalDuration
+        Task {
+            do {
+                let url = try await Task.detached(priority: .userInitiated) {
+                    try BuiltInSoundEffects.create(preset)
+                }.value
+                if soundEffects.count < 12 {
+                    let asset = AVURLAsset(url: url)
+                    let duration = try await asset.load(.duration).seconds
+                    guard duration.isFinite && duration > 0 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Không tạo được âm thanh mẫu."
+                        )
+                    }
+                    soundEffects.append(SoundEffectClip.create(
+                        url: url, audioDuration: duration,
+                        timelineStart: at, timelineEnd: total
+                    ))
+                }
+            } catch {
+                errorText = "Không tạo được SFX: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func removeSoundEffect(_ id: UUID) {
+        soundEffects.removeAll { $0.id == id }
+    }
+
+    func moveSoundEffectToPlayhead(_ id: UUID) {
+        guard let index = soundEffects.firstIndex(where: { $0.id == id }) else {
+            return
+        }
+        soundEffects[index].start = min(
+            max(0, timelineSecond), max(0, totalDuration - 0.1)
+        )
+    }
+
+    @discardableResult
+    func duplicateSoundEffect(_ id: UUID) -> UUID? {
+        guard soundEffects.count < 12,
+              let index = soundEffects.firstIndex(where: { $0.id == id }) else {
+            return nil
+        }
+        var duplicate = soundEffects[index]
+        duplicate.id = UUID()
+        duplicate.start = min(
+            max(0, soundEffects[index].end), max(0, totalDuration - 0.1)
+        )
+        soundEffects.insert(duplicate, at: index + 1)
+        return duplicate.id
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {
@@ -521,6 +629,7 @@ final class EditorViewModel: ObservableObject {
                 id: projectID, name: name, savedAt: Date(),
                 clips: clips, imageOverlays: imageOverlays,
                 videoOverlays: videoOverlays, textOverlays: textOverlays,
+                soundEffects: soundEffects,
                 subtitles: subtitles,
                 transition: transition.rawValue,
                 transitionSeconds: transitionSeconds,
@@ -565,7 +674,10 @@ final class EditorViewModel: ObservableObject {
             let overlayFiles = p.imageOverlays.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
-            let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles +
+            let sfxFiles = p.soundEffects.map {
+                MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
+            }
+            let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles + sfxFiles +
                 [restoredMusic, restoredVoice].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
                 throw SmartVideoError.invalidMedia(
@@ -589,6 +701,13 @@ final class EditorViewModel: ObservableObject {
                 return overlay
             }
             textOverlays = p.textOverlays
+            soundEffects = p.soundEffects.map {
+                var effect = $0
+                effect.fileURL = MediaStorage.mediaDirectory.appendingPathComponent(
+                    $0.fileURL.lastPathComponent
+                )
+                return effect
+            }
             subtitles = p.subtitles
             transition = VideoTransition.allCases.first {
                 $0.rawValue == p.transition
@@ -655,6 +774,7 @@ final class EditorViewModel: ObservableObject {
         imageOverlays = []
         videoOverlays = []
         textOverlays = []
+        soundEffects = []
         subtitles = []
         musicURL = nil
         voiceoverURL = nil
@@ -815,6 +935,7 @@ final class EditorViewModel: ObservableObject {
         let workImageOverlays = imageOverlays
         let workVideoOverlays = videoOverlays
         let workTextOverlays = textOverlays
+        let workSoundEffects = soundEffects
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
@@ -850,6 +971,7 @@ final class EditorViewModel: ObservableObject {
                         imageOverlays: workImageOverlays,
                         videoOverlays: workVideoOverlays,
                         textOverlays: workTextOverlays,
+                        soundEffects: workSoundEffects,
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
