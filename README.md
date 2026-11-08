@@ -545,3 +545,8 @@ Mỗi preset là một **công thức chỉnh sửa được** chứ không ph�
 - Không bảo đảm mọi link TikTok/Facebook hoạt động: nền tảng có thể thay đổi, video riêng tư/bị hạn chế không được hỗ trợ. Điều kiện quyền nội dung và tải của tác giả phải được tôn trọng.
 - Backend là thành phần riêng, **không được host tự động bởi GitHub Actions**. Nếu chưa có VPS/server HTTPS, tính năng dán link TikTok/Facebook sẽ báo cần cấu hình chứ không tải giả.
 - Hiện chưa có Share Extension nhận link trực tiếp từ nút Chia sẻ TikTok/Facebook; hãy dùng **Sao chép liên kết → Dán** trong Kho.
+
+### Không cần VPS: nhập video đã lưu từ nền tảng
+- Trong TikTok/Facebook, nếu chủ nội dung cho phép, dùng **Save video** chính thức để tải về Ảnh trên iPhone.
+- Vào **ViePN Smart Video → Kho video → Nhập video đã lưu từ Ảnh**. Chọn video trong PhotosPicker; app kiểm tra thời lượng/track rồi chuyển nó vào **DownloadLibrary**, nơi vẫn có xem, đổi tên, đưa vào timeline, chia sẻ và xóa.
+- Cách này hoàn toàn chạy trên iPhone và **không cần máy chủ**. Nút **Tải về Kho video** khi dán link bài đăng TikTok/Facebook vẫn cần Video Resolver HTTPS; hai cách nhập là độc lập.
