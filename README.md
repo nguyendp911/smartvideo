@@ -515,3 +515,33 @@ Mỗi preset là một **công thức chỉnh sửa được** chứ không ph�
 2. Chọn Neo Cinema, Golden Hour hoặc Midnight; thử chỉnh 25%, 65%, 100%. Bật/tắt So sánh trước / sau.
 3. Mở Preset Pro → Áp dụng toàn dự án, chỉnh cường độ màu chung, xem MP4 preview 720p và so với bản 1080p.
 4. Kiểm tra video gốc còn tiếng, PIP và subtitles vẫn chạy, rồi lưu/khôi phục dự án để kiểm tra các cường độ còn nguyên.
+
+
+## ViePN Smart Video v4.1.0 – Social Video Downloader & Local Vault
+
+### Tải video và kho độc lập
+- Tab **Kho video** (có trong Công cụ) nhận link TikTok, Facebook Reels hoặc URL HTTPS của một tệp MP4/MOV trực tiếp. Có nút **Dán** lấy link từ Clipboard.
+- Với **MP4/MOV HTTPS trực tiếp**, app dùng URLSession tải file, kiểm tra HTTP, kích thước ≤ 300 MB, AVAsset có track video và duration hợp lệ. Không thể chỉ đổi đuôi một trang HTML thành MP4.
+- Với **link bài đăng TikTok/Facebook**, app gọi máy chủ **Video Resolver** riêng qua HTTPS + X-API-Key để lấy MP4. Phần backend FastAPI/yt-dlp/ffmpeg và Dockerfile trong backend/video_resolver. Bạn cần chạy server và nhập domain/token; app không tự chạy Python/yt-dlp trên iPhone và **chưa có server công khai được triển khai**.
+- Dịch vụ tham chiếu chỉ xử lý video công khai mà người tải sở hữu/được phép, không dùng cookie, không đăng nhập vào tài khoản riêng tư, không vượt DRM, không gỡ watermark. Giới hạn server 15 phút và 250 MB; video không hợp lệ, giới hạn truy cập hoặc mạng bị chặn sẽ báo lỗi.
+- Thư viện video lưu tại Documents/DownloadLibrary kèm JSON chỉ mục: ngày tải, URL nguồn, thời lượng, tên và dung lượng; video không lưu trên server lâu dài. Token máy chủ lưu trong **iOS Keychain**; không lưu trong project, UserDefaults hay GitHub.
+- Kho có bộ lọc theo nguồn, thumbnail, xem bằng AVPlayer, đổi tên, lưu vào Photos, Share Sheet và xác nhận xóa.
+- Bấm **Chỉnh sửa** trên một mục tải để **sao chép** vào Documents/Media và thêm clip video lên timeline, rồi áp preset, phụ đề hoặc VFX. Xóa video khỏi Kho không xóa file đã đưa vào dự án.
+
+### Triển khai Video Resolver
+1. Thuê/chuẩn bị VPS hoặc Cloud Run có Docker và ffmpeg; xem backend/video_resolver/README.md.
+2. Đặt VIEPN_DOWNLOAD_TOKEN dài ≥ 20 ký tự, không công khai. Chạy container, cấu hình proxy HTTPS và rate-limit.
+3. Trong ứng dụng mở **Kho video → Thiết lập máy chủ**, nhập https://domain-cua-ban, token, bấm **Lưu khóa bảo mật**.
+4. Dán link video công khai bạn được phép tải, đánh dấu xác nhận quyền sử dụng, bấm **Tải về Kho video**.
+5. Sau khi xuất hiện trong Kho, bấm **Chỉnh sửa** hoặc **Lưu Ảnh**. Với video có tính năng Save video chính thức của nền tảng, có thể lưu bằng nền tảng rồi nhập từ Photos mà không cần server.
+
+### Kiểm tra
+- Dùng 1 URL MP4 HTTPS hợp lệ, kiểm tra tải trực tiếp không cần server, thumbnail, AVPlayer, chia sẻ, đổi tên, xóa.
+- Chạy Video Resolver có HTTPS và token riêng: kiểm tra link TikTok/Facebook được phép, link lỗi, token sai, server tắt, response HTML/JSON, video quá 300 MB.
+- Đưa video từ Kho vào timeline, lưu dự án, xóa bản Kho, mở lại dự án và xác minh clip vẫn có video.
+- Chưa thử nghiệm downloader end-to-end trên iPhone thật hay VPS thực. CI GitHub kiểm tra biên dịch Swift, cú pháp backend Python và tạo IPA chưa ký.
+
+### Giới hạn minh bạch
+- Không bảo đảm mọi link TikTok/Facebook hoạt động: nền tảng có thể thay đổi, video riêng tư/bị hạn chế không được hỗ trợ. Điều kiện quyền nội dung và tải của tác giả phải được tôn trọng.
+- Backend là thành phần riêng, **không được host tự động bởi GitHub Actions**. Nếu chưa có VPS/server HTTPS, tính năng dán link TikTok/Facebook sẽ báo cần cấu hình chứ không tải giả.
+- Hiện chưa có Share Extension nhận link trực tiếp từ nút Chia sẻ TikTok/Facebook; hãy dùng **Sao chép liên kết → Dán** trong Kho.
