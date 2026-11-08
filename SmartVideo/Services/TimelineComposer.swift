@@ -291,8 +291,8 @@ final class TimelineComposer {
             )
             let span = CMTimeRange(start: start, duration: chosen)
             if overlay.startX != overlay.endX || overlay.startY != overlay.endY {
-                entry.setTransformRamp(fromStartTransform: firstTransform,
-                                       toEndTransform: lastTransform,
+                entry.setTransformRamp(fromStart: firstTransform,
+                                       toEnd: lastTransform,
                                        timeRange: span)
             } else {
                 entry.setTransform(firstTransform, at: start)
