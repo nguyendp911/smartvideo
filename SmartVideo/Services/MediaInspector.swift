@@ -102,13 +102,15 @@ enum MediaInspector {
                 width = Int(CMVideoFormatDescriptionGetDimensions(description).width)
                 height = Int(CMVideoFormatDescriptionGetDimensions(description).height)
                 let extensions = CMFormatDescriptionGetExtensions(description) as NSDictionary?
-                let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? CFString
-                let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? CFString
-                let hdrTransfers = [kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
-                                    kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG]
+                let transfer = extensions?[kCMFormatDescriptionExtension_TransferFunction as String] as? String
+                let primaries = extensions?[kCMFormatDescriptionExtension_ColorPrimaries as String] as? String
+                let hdrTransfers: [String] = [
+                    kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ as String,
+                    kCMFormatDescriptionTransferFunction_ITU_R_2100_HLG as String
+                ]
                 hdr = transfer.map { hdrTransfers.contains($0) }
                 if hdr == nil, let primaries {
-                    hdr = primaries == kCMFormatDescriptionColorPrimaries_ITU_R_2020
+                    hdr = primaries == (kCMFormatDescriptionColorPrimaries_ITU_R_2020 as String)
                 }
             }
             let nominal = try? await track.load(.nominalFrameRate)
