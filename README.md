@@ -178,3 +178,30 @@ Phiên bản này được chỉnh sửa dựa trên video mẫu SmartVideo-CFC7
 5. Khi nhiều clip có vùng nội dung khác nhau, bộ phát hiện hiện dựa trên **clip đầu tiên**; vùng VFX chưa thay đổi tự động theo từng clip. Mọi tính năng mới cần kiểm thử trên thiết bị thật.
 
 Chạy trực tiếp bằng Core Animation/AVFoundation. Không có mô hình AI tổng hợp VFX hoặc asset VFX độc quyền bên thứ ba.
+
+
+## ViePN Smart Video v2.7.0 – Voice Studio, Silence Removal and Metadata
+
+### Thư viện giọng & sắc thái thuyết minh
+- Tab **Giọng** → chọn giọng có sẵn trong hệ thống iOS. Ưu tiên liệt kê tiếng Việt trước, sau đó tiếng Anh. Số lượng giọng phụ thuộc giọng đã cài trên iPhone (không tự hứa có đủ giọng nam/nữ). Có **Nghe thử** trực tiếp.
+- 6 sắc thái điều chỉnh tốc độ, cao độ, khoảng nghỉ: **Tự nhiên, Ấm áp, Sôi nổi, Kể chuyện, Chậm rãi, Bản tin**. Đây là preset điều khiển TTS Apple, **không phải mô hình AI tạo cảm xúc thật**.
+- Thanh tinh chỉnh tốc độ 75%–130%, cao độ 75%–125%; tạo file CAF giọng đọc và dùng làm track thuyết minh. Có thể **Tạo phụ đề từ lời thuyết minh**, với thời gian chia đều sơ bộ (chưa tự đồng bộ lời nói).
+- Thu micro hoặc nhập tệp âm thanh sẵn có vẫn hoạt động; thuyết minh có thời điểm bắt đầu và âm lượng riêng.
+
+### Xóa khoảng lặng
+- Trong tab **Giọng**, khi đã có tệp thuyết minh, bấm **Xóa khoảng lặng**. Phần mềm đọc PCM, đo RMS trong khung 80ms, phát hiện lời nói theo ngưỡng dBFS, gộp các cụm gần nhau và chừa 120ms đệm ở đầu/cuối. Cắt những khoảng lặng lớn hơn mức cấu hình; xuất file **M4A mới**, không ghi đè bản gốc.
+- Điều chỉnh **ngưỡng phát hiện lời nói** (-55 tới -24 dBFS) và **khoảng lặng tối thiểu** (0,25 tới 1,2 giây). Nên nghe lại bản cắt để phát hiện mất âm đầu hoặc dấu câu.
+- Thao tác xóa khoảng lặng làm thay đổi độ dài bản thuyết minh; **không tự căn lại subtitle**, có thể cần chỉnh sửa mốc thời gian phụ đề.
+
+### Metadata do người dùng nhập
+- Tab **Metadata** → bật "Gắn metadata do tôi nhập" → điền tiêu đề, tác giả, mô tả, bản quyền, từ khóa, thể loại, ghi chú, năm. Khi xuất MP4, app tạo metadata common-key thông qua AVFoundation.
+- Tùy chọn **lọc metadata nguồn** hoạt động độc lập với metadata mới. Các ứng dụng và codec khác nhau có thể chỉ nhận một phần trường metadata tùy chuẩn container. Thông tin kỹ thuật như codec, bitrate, kích thước và thời lượng vẫn được hệ điều hành ghi lại.
+
+### Kỹ thuật dựng thêm
+- Chỉnh riêng thời lượng **fade-in nhạc 0–3 giây** và **fade-out 0–5 giây**.
+- Giảm nhạc nền tự động trong khoảng thời gian có giọng đọc.
+- Sửa **Giữ tiếng gốc của các clip**: tắt thì timeline thực sự bỏ track tiếng gốc khi kết xuất.
+- Thanh công cụ gồm menu **Công cụ** trên cùng để vào trực tiếp mỗi chức năng; không cần vuốt qua toàn bộ các tab.
+
+### Trạng thái kiểm thử
+GitHub Actions kiểm tra compile Swift và tạo IPA iPhone unsigned. Chưa thực hiện kiểm thử âm thanh/metadata/thời gian TTS end-to-end trên iPhone 12 Pro Max. Nếu MP4 không hiển thị trường metadata trong ứng dụng ngoài, hãy kiểm tra metadata bằng công cụ phân tích container; đây không đồng nghĩa với trường đã được giữ trong mọi định dạng chia sẻ.
