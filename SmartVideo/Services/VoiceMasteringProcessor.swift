@@ -121,6 +121,7 @@ enum VoiceMasteringProcessor {
             var gate = 1.0
             var gain = 1.0
             var framesProcessed: Int64 = 0
+            var samples = [Double](repeating: 0, count: channels)
 
             while source.framePosition < source.length {
                 try Task.checkCancellation()
@@ -131,7 +132,6 @@ enum VoiceMasteringProcessor {
                 guard frames > 0, let channelData = buffer.floatChannelData else { break }
 
                 for frame in 0..<frames {
-                    var samples = [Double](repeating: 0, count: channels)
                     var detector = 0.0
                     for channel in 0..<channels {
                         var filter = chains[channel]
