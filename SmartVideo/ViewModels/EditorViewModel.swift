@@ -1239,6 +1239,7 @@ final class EditorViewModel: ObservableObject {
 
     private func renderProject(previewOnly: Bool) {
         guard !clips.isEmpty, !isExporting, !isRenderingPreview else { return }
+        let previousPreview = renderedPreviewURL
         if previewOnly {
             isRenderingPreview = true
             renderedPreviewURL = nil
@@ -1318,7 +1319,7 @@ final class EditorViewModel: ObservableObject {
                     )
                 }.value
                 if previewOnly {
-                    if let prior = renderedPreviewURL, prior != url {
+                    if let prior = previousPreview, prior != url {
                         try? FileManager.default.removeItem(at: prior)
                     }
                     renderedPreviewURL = url
