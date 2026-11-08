@@ -66,6 +66,14 @@ final class EditorViewModel: ObservableObject {
     @Published var subtitleX: Double = 0.5
     @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
+    @Published var originalMusicURL: URL?
+    @Published var musicMasteringSettings = VoiceMasteringSettings(
+        bassDB: 0, midDB: 0, trebleDB: 0, compressorThreshold: -20,
+        compressorRatio: 1.0, noiseGateEnabled: false,
+        noiseGateThreshold: -46, outputGainDB: 0
+    )
+    @Published var isProcessingMusic = false
+    @Published var musicProcessingMessage = ""
     @Published var voiceoverURL: URL?
     @Published var originalVoiceoverURL: URL?
     @Published var masteringSettings = VoiceMasteringSettings()
@@ -110,6 +118,8 @@ final class EditorViewModel: ObservableObject {
     @Published var contentMode: CanvasContentMode = .fit
     @Published var isImporting = false
     @Published var isExporting = false
+    @Published var isRenderingPreview = false
+    @Published var renderedPreviewURL: URL?
     @Published var exportedURL: URL?
     @Published var errorText: String?
     @Published var didSaveToPhotos = false
@@ -189,6 +199,8 @@ final class EditorViewModel: ObservableObject {
             musicHighlights = []
             exportedMusicHighlightURL = nil
                     musicURL = localURL
+                    originalMusicURL = nil
+                    musicProcessingMessage = ""
                 } catch {
                     try? FileManager.default.removeItem(at: localURL)
                     errorText = "Không nhập được nhạc: \(error.localizedDescription)"
@@ -501,6 +513,113 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    func normalizeNarration() {
+        guard !isMasteringVoice, let current = voiceoverURL else {
+            if voiceoverURL == nil {
+                errorText = "Hãy chọn bản thuyết minh để chuẩn hóa."
+            }
+            return
+        }
+        let source = current
+        isMasteringVoice = true
+        masteringMessage = ""
+        Task {
+            defer { isMasteringVoice = false }
+            do {
+                let result = try await Task.detached(priority: .userInitiated) {
+                    try AudioLoudnessNormalizer.normalize(
+                        sourceURL: source, targetDBFS: -20
+                    )
+                }.value
+                guard voiceoverURL == source else {
+                    try? FileManager.default.removeItem(at: result.outputURL)
+                    return
+                }
+                originalVoiceoverURL = originalVoiceoverURL ?? source
+                voiceoverURL = result.outputURL
+                masteringMessage = String(
+                    format: "Chuẩn hóa giọng: %.1f → %.1f dBFS RMS (gain %+.1f dB).",
+                    result.inputRMSDBFS, result.outputRMSDBFS, result.appliedGainDB
+                )
+            } catch {
+                errorText = "Không chuẩn hóa được thuyết minh: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func applyMusicMastering() {
+        guard !isProcessingMusic, let current = musicURL else {
+            if musicURL == nil { errorText = "Chọn nhạc nền trước." }
+            return
+        }
+        isProcessingMusic = true
+        musicProcessingMessage = ""
+        var settings = musicMasteringSettings
+        settings.noiseGateEnabled = false
+        let source = originalMusicURL ?? current
+        Task {
+            defer { isProcessingMusic = false }
+            do {
+                let url = try await Task.detached(priority: .userInitiated) {
+                    try VoiceMasteringProcessor.process(
+                        sourceURL: source, settings: settings
+                    )
+                }.value
+                guard musicURL == current else {
+                    try? FileManager.default.removeItem(at: url)
+                    return
+                }
+                originalMusicURL = source
+                musicURL = url
+                musicProcessingMessage = "Đã áp dụng EQ/compressor vào nhạc nền. Giữ nguyên bản gốc."
+            } catch {
+                errorText = "Không xử lý được nhạc: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func normalizeMusic() {
+        guard !isProcessingMusic, let current = musicURL else {
+            if musicURL == nil { errorText = "Chọn nhạc nền trước." }
+            return
+        }
+        isProcessingMusic = true
+        musicProcessingMessage = ""
+        let source = current
+        Task {
+            defer { isProcessingMusic = false }
+            do {
+                let report = try await Task.detached(priority: .userInitiated) {
+                    try AudioLoudnessNormalizer.normalize(
+                        sourceURL: source, targetDBFS: -18
+                    )
+                }.value
+                guard musicURL == source else {
+                    try? FileManager.default.removeItem(at: report.outputURL)
+                    return
+                }
+                originalMusicURL = originalMusicURL ?? source
+                musicURL = report.outputURL
+                musicProcessingMessage = String(
+                    format: "Chuẩn hóa nhạc: %.1f → %.1f dBFS RMS (gain %+.1f dB).",
+                    report.inputRMSDBFS, report.outputRMSDBFS,
+                    report.appliedGainDB
+                )
+            } catch {
+                errorText = "Không chuẩn hóa được nhạc: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func restoreOriginalMusic() {
+        guard !isProcessingMusic, let original = originalMusicURL else {
+            return
+        }
+        musicURL = original
+        originalMusicURL = nil
+        musicProcessingMessage = "Đã khôi phục nhạc gốc."
+    }
+
     func restoreOriginalNarration() {
         guard !isMasteringVoice, let original = originalVoiceoverURL else {
             return
@@ -796,6 +915,8 @@ final class EditorViewModel: ObservableObject {
                 musicFileName: musicURL?.lastPathComponent,
                 voiceFileName: voiceoverURL?.lastPathComponent,
                 originalVoiceFileName: originalVoiceoverURL?.lastPathComponent,
+                originalMusicFileName: originalMusicURL?.lastPathComponent,
+                musicMasteringSettings: musicMasteringSettings,
                 voiceMasteringSettings: masteringSettings,
                 musicVolume: musicVolume,
                 musicStartSeconds: musicStartSeconds,
@@ -827,6 +948,7 @@ final class EditorViewModel: ObservableObject {
             let p = try ProjectStore.load(id)
             let restoredClips = p.clips.map(ProjectStore.clipInMedia)
             let restoredMusic = ProjectStore.audioInMedia(p.musicFileName)
+            let restoredOriginalMusic = ProjectStore.audioInMedia(p.originalMusicFileName)
             let restoredVoice = ProjectStore.audioInMedia(p.voiceFileName)
             let restoredOriginalVoice = ProjectStore.audioInMedia(p.originalVoiceFileName)
             let pipFiles = p.videoOverlays.map {
@@ -839,7 +961,8 @@ final class EditorViewModel: ObservableObject {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
             let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles + sfxFiles +
-                [restoredMusic, restoredVoice, restoredOriginalVoice].compactMap { $0 }
+                [restoredMusic, restoredVoice, restoredOriginalVoice,
+                 restoredOriginalMusic].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
                 throw SmartVideoError.invalidMedia(
                     "Thiếu ảnh, video hoặc âm thanh gốc. Dự án cần các file trong Media của ứng dụng."
@@ -887,6 +1010,10 @@ final class EditorViewModel: ObservableObject {
                 $0.rawValue == p.quality
             } ?? .fullHD
             musicURL = restoredMusic
+            originalMusicURL = restoredOriginalMusic
+            musicMasteringSettings = p.musicMasteringSettings
+            musicProcessingMessage = ""
+            renderedPreviewURL = nil
             voiceoverURL = restoredVoice
             originalVoiceoverURL = restoredOriginalVoice
             masteringSettings = p.voiceMasteringSettings
@@ -946,6 +1073,14 @@ final class EditorViewModel: ObservableObject {
         detectedTempoBPM = 0
         subtitles = []
         musicURL = nil
+        originalMusicURL = nil
+        musicMasteringSettings = VoiceMasteringSettings(
+            bassDB: 0, midDB: 0, trebleDB: 0, compressorThreshold: -20,
+            compressorRatio: 1, noiseGateEnabled: false,
+            noiseGateThreshold: -46, outputGainDB: 0
+        )
+        musicProcessingMessage = ""
+        renderedPreviewURL = nil
         voiceoverURL = nil
         originalVoiceoverURL = nil
         masteringSettings = VoiceMasteringSettings()
@@ -1097,11 +1232,20 @@ final class EditorViewModel: ObservableObject {
         clips.insert(moved, at: max(0, min(insertion, clips.count)))
     }
 
-    func export() {
-        guard !clips.isEmpty, !isExporting else { return }
-        isExporting = true
-        exportedURL = nil
-        didSaveToPhotos = false
+    func export() { renderProject(previewOnly: false) }
+
+    func renderSynchronizedPreview() { renderProject(previewOnly: true) }
+
+    private func renderProject(previewOnly: Bool) {
+        guard !clips.isEmpty, !isExporting, !isRenderingPreview else { return }
+        if previewOnly {
+            isRenderingPreview = true
+            renderedPreviewURL = nil
+        } else {
+            isExporting = true
+            exportedURL = nil
+            didSaveToPhotos = false
+        }
 
         let workClips = clips
         let workImageOverlays = imageOverlays
@@ -1131,7 +1275,7 @@ final class EditorViewModel: ObservableObject {
         let workSubtitleX = subtitleX
         let workSubtitleY = subtitleY
         let workKeepOriginal = keepOriginalAudio
-        let workQuality = quality
+        let workQuality: RenderQuality = previewOnly ? .hd : quality
         let workCanvas = canvas
         let workMode = contentMode
 
@@ -1172,11 +1316,20 @@ final class EditorViewModel: ObservableObject {
                         musicFadeOut: workFadeOut
                     )
                 }.value
-                exportedURL = url
+                if previewOnly {
+                    if let prior = renderedPreviewURL, prior != url {
+                        try? FileManager.default.removeItem(at: prior)
+                    }
+                    renderedPreviewURL = url
+                } else {
+                    exportedURL = url
+                }
             } catch {
-                errorText = error.localizedDescription
+                errorText = (previewOnly ? "Preview thất bại: " : "Xuất video thất bại: ") +
+                    error.localizedDescription
             }
-            isExporting = false
+            if previewOnly { isRenderingPreview = false }
+            else { isExporting = false }
         }
     }
 
