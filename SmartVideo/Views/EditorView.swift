@@ -11,6 +11,8 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case audio = "Âm thanh"
     case effects = "Hiệu ứng"
     case ai = "AI"
+    case narration = "Giọng"
+    case metadata = "Metadata"
 
     var id: String { rawValue }
     var symbol: String {
@@ -22,6 +24,8 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .audio: return "waveform"
         case .effects: return "wand.and.stars"
         case .ai: return "sparkles"
+        case .narration: return "mic.circle"
+        case .metadata: return "tag"
         }
     }
 }
@@ -355,26 +359,33 @@ struct EditorView: View {
     }
 
     private var toolPicker: some View {
-        HStack(spacing: 5) {
-            ForEach(EditorTool.allCases) { tool in
-                Button {
-                    activeTool = tool
-                    previewPlayer?.pause()
-                    isPlaying = false
-                } label: {
-                    VStack(spacing: 4) {
-                        Image(systemName: tool.symbol).font(.system(size: 16))
-                        Text(tool.rawValue).font(.system(size: 11, weight: .medium))
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(EditorTool.allCases) { tool in
+                    Button {
+                        activeTool = tool
+                        previewPlayer?.pause()
+                        isPlaying = false
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tool.symbol)
+                                .font(.system(size: 15))
+                            Text(tool.rawValue)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundStyle(activeTool == tool ? .black : .white)
+                        .frame(width: 82, height: 49)
+                        .background(
+                            activeTool == tool ? accent : Color.white.opacity(0.09),
+                            in: RoundedRectangle(cornerRadius: 10)
+                        )
                     }
-                    .foregroundStyle(activeTool == tool ? .black : .white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                    .background(activeTool == tool ? accent : Color.white.opacity(0.09),
-                                in: RoundedRectangle(cornerRadius: 10))
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.horizontal, 1)
         }
+        .frame(height: 54)
     }
 
     @ViewBuilder
@@ -387,6 +398,11 @@ struct EditorView: View {
         case .audio: audioPanel
         case .effects: effectsPanel
         case .ai: highlightPanel
+        case .narration: NarrationStudioPanel(model: model, recorder: recorder) {
+            activeFilePicker = .voice
+            showDocumentImporter = true
+        }
+        case .metadata: MetadataPanel(model: model)
         }
     }
 
@@ -1160,7 +1176,25 @@ struct EditorView: View {
                 }
                 .font(.caption)
                 .buttonStyle(.bordered)
-                Text("Tự dừng đúng cuối video, fade-out 1.2 giây và giảm nhạc trong lúc thuyết minh.")
+                HStack {
+                    Text("Nhạc mở đầu mượt")
+                    Spacer()
+                    Text(String(format: "%.1fs", model.musicFadeIn))
+                }
+                .font(.caption)
+                Slider(value: $model.musicFadeIn, in: 0...3, step: 0.1)
+                    .tint(accent)
+
+                HStack {
+                    Text("Nhạc kết thúc mượt")
+                    Spacer()
+                    Text(String(format: "%.1fs", model.musicFadeOut))
+                }
+                .font(.caption)
+                Slider(value: $model.musicFadeOut, in: 0...5, step: 0.1)
+                    .tint(accent)
+
+                Text("Tùy chỉnh fade-in / fade-out khi xuất và tự giảm nhạc trong lúc có giọng đọc.")
                     .font(.caption2).foregroundStyle(.secondary)
             }
 
