@@ -301,3 +301,20 @@ Bản này nối tiếp v3.1.0, tập trung vào các thao tác phối âm nhanh
 5. Mở **Dự án** → Lưu → Mở lại và kiểm tra các đoạn SFX vẫn nằm ở mốc đã căn.
 
 **Giới hạn**: Nhịp ước lượng có thể sai nửa/nhân đôi BPM ở nhạc phức tạp. Bộ nghe thử âm thanh mới không thay thế phần preview video tổng hợp đầy đủ, và chưa có EQ/compressor hay thay đổi pitch cho mỗi SFX. Việc build thành công chỉ chứng minh mã nguồn tương thích ở bước biên dịch; cần chạy thực tế trên iPhone 12 Pro Max.
+
+
+## ViePN Smart Video v3.3.0 – Voice Mastering Pro
+
+Bản v3.3.0 bổ sung xử lý giọng thuyết minh offline, tương tự nhóm công cụ audio mastering của trình dựng chuyên nghiệp. Toàn bộ tính năng mới chạy trong app, **không sử dụng AI sinh giọng hay dịch vụ đám mây**.
+
+- Tab **Giọng → Voice Mastering Pro** với 5 preset: **Nguyên bản, Podcast, Ấm áp, Trong sáng, Radio**.
+- **EQ 3 dải** có slider ±12 dB: low shelf 155 Hz, mid peak 1450 Hz, high shelf xấp xỉ 4900 Hz (tự giới hạn với file sample rate thấp).
+- **Compressor**: chỉnh ngưỡng từ -36 tới -8 dBFS và tỷ lệ 1:1 đến 6:1. Áp dụng attack 12ms / release 170ms; giảm mức động học thay vì chỉ tăng giảm âm lượng chung.
+- **Noise gate**: tùy chọn cổng giảm tiếng nền rất nhỏ, ngưỡng -60 đến -30 dBFS, lên/xuống gain có smoothing để hạn chế cắt âm đột ngột. Không tương đương khử tiếng ồn bằng AI hoặc voice isolation.
+- **Output gain**: -6 tới +8 dB; giới hạn peak ~-0.35 dBFS để tránh clipping số, tuy nhiên không phải chuẩn hóa LUFS theo chuẩn phát hành.
+- **Xử lý thực sự vào bản xuất**: bấm **Áp dụng vào giọng đọc** để tạo một file CAF PCM mới trong `Documents/Media`. File này thay cho `voiceoverURL` và được pipeline xuất MP4 trộn vào dự án. File gốc được giữ, có nút **Khôi phục**.
+- **A/B Audition**: **Nghe bản gốc** / **Nghe bản xử lý**, không phải chỉ nghe preset trong giao diện. Thay preset hoặc thay slider cần bấm **Áp dụng vào giọng đọc** lại để thay đổi đầu ra.
+- **Lưu dự án**: lưu tham số mastering và filename bản thu gốc để tiếp tục mở lại, nghe so sánh và khôi phục. Dự án cũ trước v3.3 thiếu các trường này vẫn mở bình thường với giá trị mặc định.
+- **Giới hạn định dạng**: tập trung giọng mono/stereo, iOS AVAudioFile PCM 8–192kHz, tệp dài tối đa 15 phút để tránh xuất file PCM quá lớn. Một số định dạng audio codec lạ có thể không giải mã được.
+- **Lưu ý hệ thống**: file CAF chưa nén có thể chiếm nhiều bộ nhớ lưu trữ. App giữ các phiên bản đã xử lý trong Media để không làm hỏng dự án đã lưu; trước khi xóa app hãy sao lưu toàn bộ media, không chỉ JSON.
+- **Kiểm thử**: GitHub Actions xác nhận biên dịch iPhone/Simulator và đóng gói IPA chưa ký. Chưa kiểm thử tốc độ, crash hoặc chất lượng audio end-to-end trên iPhone 12 Pro Max thật. Nên xuất thử một MP4 10–20 giây, so sánh âm thanh và mới áp dụng trên clip dài.
