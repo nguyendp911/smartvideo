@@ -7,6 +7,7 @@ import UIKit
 struct StudioLookPhotoPreview: View {
     let fileURL: URL
     let look: ImageLook
+    let intensity: Double
     let contentMode: CanvasContentMode
 
     @State private var gradedImage: UIImage?
@@ -25,7 +26,8 @@ struct StudioLookPhotoPreview: View {
                 Color.black
             }
         }
-        .task(id: fileURL.path + "|" + look.rawValue) {
+        .task(id: fileURL.path + "|" + look.rawValue +
+              "|" + String(format: "%.2f", intensity)) {
             gradedImage = nil
             guard let input = CIImage(
                 contentsOf: fileURL,
@@ -37,7 +39,9 @@ struct StudioLookPhotoPreview: View {
             let prepared = input.transformed(by: CGAffineTransform(
                 scaleX: previewScale, y: previewScale
             ))
-            let filtered = StudioColorGrader.apply(prepared, look: look)
+            let filtered = StudioColorGrader.apply(
+                prepared, look: look, intensity: intensity
+            )
             let context = CIContext(options: [.cacheIntermediates: false])
             guard let result = context.createCGImage(
                 filtered, from: filtered.extent.integral

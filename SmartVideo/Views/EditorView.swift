@@ -143,6 +143,12 @@ struct EditorView: View {
         .onChange(of: selectedClipID) { _ in
             updatePreview()
         }
+        .onChange(of: selectedClip?.imageLook) { _ in
+            refreshColorPreview()
+        }
+        .onChange(of: selectedClip?.lookIntensity) { _ in
+            refreshColorPreview()
+        }
         .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
             guard isPlaying, let player = previewPlayer else { return }
             if let clip = selectedClip {
@@ -271,6 +277,7 @@ struct EditorView: View {
                         StudioLookPhotoPreview(
                             fileURL: clip.fileURL,
                             look: clip.imageLook,
+                            intensity: clip.lookIntensity,
                             contentMode: model.contentMode
                         )
                             .frame(width: canvasWidth, height: canvasHeight)
@@ -973,14 +980,37 @@ struct EditorView: View {
                         .font(.caption.bold())
                     imageMotionGrid(clip: clip)
 
-                    Text("Màu sắc ảnh")
-                        .font(.caption.bold())
-                    imageLookGrid(clip: clip)
-
-                    Text("Hiệu ứng chuyển động và màu được xử lý bằng Core Image khi xuất MP4. Màu áp dụng cho ảnh tĩnh, chưa áp dụng cho clip video.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
+
+                Text("Bộ lọc màu Core Image · Ảnh & Video")
+                    .font(.caption.bold())
+                imageLookGrid(clip: clip)
+
+                HStack {
+                    Text("Cường độ màu")
+                    Spacer()
+                    Text("\(Int(clip.lookIntensity * 100))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.cyan)
+                }
+                .font(.caption)
+                Slider(value: Binding(
+                    get: {
+                        model.clips.first(where: { $0.id == clip.id })?
+                            .lookIntensity ?? 1
+                    },
+                    set: { value in
+                        if let index = model.clips.firstIndex(where: {
+                            $0.id == clip.id
+                        }) {
+                            model.clips[index].lookIntensity = value
+                        }
+                    }
+                ), in: 0...1, step: 0.05)
+                    .tint(.cyan)
+                Text("Màu áp trực tiếp lên từng khung hình của video khi xuất MP4. Giữ tiếng gốc; xử lý footage dài có thể tốn thời gian.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             } else {
                 Text("Hãy chọn một ảnh hoặc video trên timeline để chỉnh tốc độ, hiệu ứng và màu.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -1732,6 +1762,22 @@ struct EditorView: View {
             min(model.clips[index].duration + amount, model.clips[index].availableDuration))
     }
 
+    private func refreshColorPreview() {
+        guard let clip = selectedClip, clip.kind == .video else { return }
+        let clock = max(0, localSecond)
+        previewPlayer?.pause()
+        isPlaying = false
+        let item = VideoFrameGrader.makePreviewItem(for: clip)
+        let player = AVPlayer(playerItem: item)
+        previewPlayer = player
+        player.seek(
+            to: CMTime(seconds: clip.startTime +
+                       clock * max(0.25, clip.playbackSpeed),
+                       preferredTimescale: 600),
+            toleranceBefore: .zero, toleranceAfter: .zero
+        )
+    }
+
     private func updatePreview() {
         previewPlayer?.pause()
         isPlaying = false
@@ -1740,7 +1786,8 @@ struct EditorView: View {
             previewPlayer = nil
             return
         }
-        let player = AVPlayer(url: clip.fileURL)
+        let player = AVPlayer(playerItem:
+            VideoFrameGrader.makePreviewItem(for: clip))
         player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))
         previewPlayer = player
     }
