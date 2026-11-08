@@ -67,6 +67,10 @@ final class EditorViewModel: ObservableObject {
     @Published var subtitleY: Double = 0.83
     @Published var musicURL: URL?
     @Published var voiceoverURL: URL?
+    @Published var originalVoiceoverURL: URL?
+    @Published var masteringSettings = VoiceMasteringSettings()
+    @Published var isMasteringVoice = false
+    @Published var masteringMessage = ""
     @Published var musicVolume: Float = 0.38
     @Published var musicStartSeconds: Double = 0
     @Published var musicDuration: Double = 0
@@ -233,6 +237,8 @@ final class EditorViewModel: ObservableObject {
                         )
                     }
                     voiceoverURL = localURL
+                    originalVoiceoverURL = nil
+                    masteringMessage = ""
                 } catch {
                     try? FileManager.default.removeItem(at: localURL)
                     errorText = "Không nhập được thuyết minh: \(error.localizedDescription)"
@@ -423,6 +429,8 @@ final class EditorViewModel: ObservableObject {
                     pitchAdjustment: narratorPitch
                 )
                 voiceoverURL = url
+                originalVoiceoverURL = nil
+                masteringMessage = ""
             } catch {
                 errorText = "Không tạo được giọng thuyết minh: \(error.localizedDescription)"
             }
@@ -446,12 +454,60 @@ final class EditorViewModel: ObservableObject {
                 // Don't replace audio if a different take was selected.
                 if voiceoverURL == source {
                     voiceoverURL = cleaned.url
+                    originalVoiceoverURL = nil
+                    masteringMessage = ""
                     lastSilenceRemoved = cleaned.removedDuration
                 }
             } catch {
                 errorText = "Không xóa được khoảng lặng: \(error.localizedDescription)"
             }
         }
+    }
+
+    func applyVoiceMastering() {
+        guard !isMasteringVoice, !isRemovingSilence,
+              let current = voiceoverURL else {
+            if voiceoverURL == nil {
+                errorText = "Hãy thu, nhập hoặc tạo giọng thuyết minh trước."
+            }
+            return
+        }
+        let source = originalVoiceoverURL ?? current
+        let settings = masteringSettings
+        isMasteringVoice = true
+        masteringMessage = ""
+        Task {
+            defer { isMasteringVoice = false }
+            do {
+                let target = try await Task.detached(priority: .userInitiated) {
+                    try VoiceMasteringProcessor.process(
+                        sourceURL: source, settings: settings
+                    )
+                }.value
+                // Avoid switching the narration if the user imported a
+                // different take while processing was still running.
+                guard voiceoverURL == current else {
+                    try? FileManager.default.removeItem(at: target)
+                    return
+                }
+                originalVoiceoverURL = source
+                voiceoverURL = target
+                masteringMessage = "Đã xử lý EQ + compressor" +
+                    (settings.noiseGateEnabled ? " + noise gate" : "") +
+                    ". Bản gốc vẫn được giữ."
+            } catch {
+                errorText = "Không xử lý được giọng đọc: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func restoreOriginalNarration() {
+        guard !isMasteringVoice, let original = originalVoiceoverURL else {
+            return
+        }
+        voiceoverURL = original
+        originalVoiceoverURL = nil
+        masteringMessage = "Đã khôi phục bản thuyết minh gốc."
     }
 
     func createSubtitlesFromNarrationText() {
@@ -739,6 +795,8 @@ final class EditorViewModel: ObservableObject {
                 quality: quality.rawValue,
                 musicFileName: musicURL?.lastPathComponent,
                 voiceFileName: voiceoverURL?.lastPathComponent,
+                originalVoiceFileName: originalVoiceoverURL?.lastPathComponent,
+                voiceMasteringSettings: masteringSettings,
                 musicVolume: musicVolume,
                 musicStartSeconds: musicStartSeconds,
                 musicHighlightDuration: musicHighlightDuration,
@@ -770,6 +828,7 @@ final class EditorViewModel: ObservableObject {
             let restoredClips = p.clips.map(ProjectStore.clipInMedia)
             let restoredMusic = ProjectStore.audioInMedia(p.musicFileName)
             let restoredVoice = ProjectStore.audioInMedia(p.voiceFileName)
+            let restoredOriginalVoice = ProjectStore.audioInMedia(p.originalVoiceFileName)
             let pipFiles = p.videoOverlays.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
@@ -780,7 +839,7 @@ final class EditorViewModel: ObservableObject {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
             let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles + sfxFiles +
-                [restoredMusic, restoredVoice].compactMap { $0 }
+                [restoredMusic, restoredVoice, restoredOriginalVoice].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
                 throw SmartVideoError.invalidMedia(
                     "Thiếu ảnh, video hoặc âm thanh gốc. Dự án cần các file trong Media của ứng dụng."
@@ -829,6 +888,9 @@ final class EditorViewModel: ObservableObject {
             } ?? .fullHD
             musicURL = restoredMusic
             voiceoverURL = restoredVoice
+            originalVoiceoverURL = restoredOriginalVoice
+            masteringSettings = p.voiceMasteringSettings
+            masteringMessage = ""
             musicVolume = p.musicVolume
             musicStartSeconds = p.musicStartSeconds
             musicHighlightDuration = p.musicHighlightDuration
@@ -885,6 +947,9 @@ final class EditorViewModel: ObservableObject {
         subtitles = []
         musicURL = nil
         voiceoverURL = nil
+        originalVoiceoverURL = nil
+        masteringSettings = VoiceMasteringSettings()
+        masteringMessage = ""
         musicDuration = 0
         timelineSecond = 0
         lastSaveMessage = "Đã tạo dự án trống"
