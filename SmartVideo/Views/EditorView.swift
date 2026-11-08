@@ -19,6 +19,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case title = "Chữ"
     case sfx = "Âm FX"
     case vault = "Kho video"
+    case inspector = "Media Inspector"
 
     var id: String { rawValue }
     var symbol: String {
@@ -38,6 +39,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .title: return "textformat"
         case .sfx: return "waveform"
         case .vault: return "square.and.arrow.down.on.square"
+        case .inspector: return "waveform.path.ecg"
         }
     }
 }
@@ -804,6 +806,7 @@ struct EditorView: View {
             activeFilePicker = .soundEffect
             showDocumentImporter = true
         }
+        case .inspector: MediaInspectorPanel(clip: selectedClip)
         case .vault: VideoLibraryPanel(model: model) { id in
             selectedClipID = id
             activeTool = .clip
