@@ -101,7 +101,7 @@ enum MediaInspector {
                 codec = FourCharCodeText.string(mediaSubtype)
                 width = Int(CMVideoFormatDescriptionGetDimensions(description).width)
                 height = Int(CMVideoFormatDescriptionGetDimensions(description).height)
-                let extensions = CMFormatDescriptionGetExtensions(description) as NSDictionary
+                let extensions = (CMFormatDescriptionGetExtensions(description) ?? [:]) as NSDictionary
                 let transfer = extensions[kCMFormatDescriptionExtension_TransferFunction] as? String
                 let primaries = extensions[kCMFormatDescriptionExtension_ColorPrimaries] as? String
                 let hdrTransfers = [kCMFormatDescriptionTransferFunction_SMPTE_ST_2084_PQ,
