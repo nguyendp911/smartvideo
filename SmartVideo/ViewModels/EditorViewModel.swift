@@ -1487,6 +1487,17 @@ final class EditorViewModel: ObservableObject {
     /// This modifies project settings only and never touches original media.
     // MARK: - Curated professional preset studio
 
+    var projectGradeIntensity: Double {
+        clips.first?.lookIntensity ?? 1
+    }
+
+    func setProjectGradeIntensity(_ value: Double) {
+        let strength = min(1, max(0, value))
+        for index in clips.indices {
+            clips[index].lookIntensity = strength
+        }
+    }
+
     func applyStudioPreset(_ preset: StudioPreset) {
         guard !clips.isEmpty else {
             errorText = "Hãy nhập ít nhất một clip ảnh hoặc video trước khi áp dụng preset."
@@ -1501,9 +1512,12 @@ final class EditorViewModel: ObservableObject {
         )
         // All settings are applied in memory and saved with the normal project.
         // Source images, videos, speech and music remain untouched.
-        for index in clips.indices where clips[index].kind == .image {
+        for index in clips.indices {
             clips[index].imageLook = preset.imageLook
-            clips[index].imageMotion = preset.motion
+            clips[index].lookIntensity = 1
+            if clips[index].kind == .image {
+                clips[index].imageMotion = preset.motion
+            }
         }
         vfxPresets = Set(preset.effects)
         vfxIntensity = preset.intensity
@@ -1514,8 +1528,8 @@ final class EditorViewModel: ObservableObject {
         transitionSeconds = 0.42
         subtitleAppearance = preset.subtitleStyle.settings
         appliedStudioPresetID = preset.id
-        studioPresetMessage = "Đã áp dụng \(preset.title). " +
-            "Màu Core Image dành cho clip ảnh; clip video dùng VFX và chuyển cảnh."
+        studioPresetMessage = "Đã áp dụng \(preset.title) cho ảnh và video. " +
+            "Màu được render vào từng khung video khi xuất MP4."
     }
 
     func undoStudioPreset() {
