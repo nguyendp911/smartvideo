@@ -16,6 +16,8 @@ final class VideoRenderer {
     func render(
         clips: [TimelineClip],
         imageOverlays: [ImageOverlayClip],
+        videoOverlays: [VideoOverlayClip],
+        textOverlays: [TextOverlayClip],
         transition: VideoTransition,
         transitionSeconds: Double,
         vfxPresets: [VFXPreset],
@@ -84,6 +86,7 @@ final class VideoRenderer {
         let timeline = try await TimelineComposer().compose(
             clips: clips,
             sourceURLs: sourceURLs,
+            videoOverlays: videoOverlays,
             renderSize: size,
             contentMode: contentMode,
             transition: transition,
@@ -244,6 +247,7 @@ final class VideoRenderer {
         SubtitleOverlay.attach(
             to: videoComposition, size: size, cues: subtitles,
             imageOverlays: imageOverlays,
+            textOverlays: textOverlays,
             positionX: subtitleX, positionY: subtitleY,
             vfxPresets: vfxPresets, vfxIntensity: vfxIntensity,
             duration: cursor.seconds, effectBounds: effectBounds,

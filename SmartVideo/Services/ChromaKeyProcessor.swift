@@ -41,9 +41,7 @@ enum ChromaKeyProcessor {
                 }
             }
         }
-        let data = values.withUnsafeBufferPointer { pointer in
-            Data(buffer: pointer)
-        }
+        let data = values.withUnsafeBytes { raw in Data(raw) }
         let keyed = input.applyingFilter("CIColorCube", parameters: [
             "inputCubeDimension": dim,
             "inputCubeData": data

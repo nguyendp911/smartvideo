@@ -15,8 +15,16 @@ enum ImageOverlayRenderer {
         let videoHeight = canvas.height
 
         for item in overlays {
-            guard let image = UIImage(contentsOfFile: item.fileURL.path),
-                  let cgImage = image.cgImage else { continue }
+            guard let originalImage = UIImage(contentsOfFile: item.fileURL.path) else {
+                continue
+            }
+            let image = ChromaKeyProcessor.render(
+                originalImage, enabled: item.chromaEnabled,
+                color: item.chromaColor,
+                tolerance: item.chromaTolerance,
+                softness: item.chromaSoftness
+            ) ?? originalImage
+            guard let cgImage = image.cgImage else { continue }
 
             let begin = max(0, min(timelineDuration, item.start))
             let end = min(timelineDuration, max(begin, item.end))
@@ -59,6 +67,8 @@ enum ImageOverlayRenderer {
                 move.toValue = NSValue(cgPoint: endPoint)
                 move.beginTime = AVCoreAnimationBeginTimeAtZero + begin
                 move.duration = end - begin
+                move.timingFunction = CAMediaTimingFunction(
+                    name: TextOverlayRenderer.easing(item.easing))
                 move.fillMode = .forwards
                 move.isRemovedOnCompletion = false
                 layer.add(move, forKey: "viepn-overlay-move-\(item.id)")
