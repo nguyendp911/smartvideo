@@ -280,24 +280,62 @@ final class TimelineComposer {
 
             let natural = try await source.load(.naturalSize)
             let orientation = try await source.load(.preferredTransform)
-            let entry = AVMutableVideoCompositionLayerInstruction(assetTrack: outputTrack)
-            let firstTransform = pipTransform(
-                sourceSize: natural, preferred: orientation, canvas: renderSize,
-                x: overlay.startX, y: overlay.startY, width: overlay.width
+            let entry = AVMutableVideoCompositionLayerInstruction(
+                assetTrack: outputTrack
             )
-            let lastTransform = pipTransform(
-                sourceSize: natural, preferred: orientation, canvas: renderSize,
-                x: overlay.endX, y: overlay.endY, width: overlay.width
+
+            // AVFoundation accepts linear ramps. Sampling the shared easing
+            // / Catmull-Rom trajectory into short transform and opacity ramps
+            // makes the exported video agree with the timeline preview.
+            let keyframes = OverlayKeyframeSampler.frames(for: overlay)
+            let durationSeconds = max(0.05, overlay.duration)
+            let visibleSeconds = chosen.seconds
+            let samplePoints = OverlayKeyframeSampler.samples(
+                frames: keyframes, easing: overlay.easing,
+                path: overlay.pathMode, stepsPerSegment: 8
             )
-            let span = CMTimeRange(start: start, duration: chosen)
-            if overlay.startX != overlay.endX || overlay.startY != overlay.endY {
-                entry.setTransformRamp(fromStart: firstTransform,
-                                       toEnd: lastTransform,
-                                       timeRange: span)
-            } else {
-                entry.setTransform(firstTransform, at: start)
+            if samplePoints.count >= 2 {
+                for i in 0..<(samplePoints.count - 1) {
+                    try Task.checkCancellation()
+                    let a = samplePoints[i]
+                    let b = samplePoints[i + 1]
+                    let localFrom = a.progress * durationSeconds
+                    let localTo = min(visibleSeconds,
+                                      b.progress * durationSeconds)
+                    guard localFrom < visibleSeconds,
+                          localTo - localFrom >= 0.001 else { continue }
+                    let left = a
+                    let right = localTo < b.progress * durationSeconds - 0.0001
+                        ? OverlayKeyframeSampler.sample(
+                            overlay, atProgress: localTo / durationSeconds
+                          ) : b
+                    let beginTransform = pipTransform(
+                        sourceSize: natural, preferred: orientation,
+                        canvas: renderSize, x: left.x, y: left.y,
+                        width: left.scale, rotationDegrees: left.rotationDegrees
+                    )
+                    let endTransform = pipTransform(
+                        sourceSize: natural, preferred: orientation,
+                        canvas: renderSize, x: right.x, y: right.y,
+                        width: right.scale, rotationDegrees: right.rotationDegrees
+                    )
+                    let range = CMTimeRange(
+                        start: CMTime(seconds: start.seconds + localFrom,
+                                      preferredTimescale: 600),
+                        duration: CMTime(seconds: localTo - localFrom,
+                                         preferredTimescale: 600)
+                    )
+                    entry.setTransformRamp(
+                        fromStart: beginTransform, toEnd: endTransform,
+                        timeRange: range
+                    )
+                    entry.setOpacityRamp(
+                        fromStartOpacity: Float(left.opacity),
+                        toEndOpacity: Float(right.opacity),
+                        timeRange: range
+                    )
+                }
             }
-            entry.setOpacity(Float(max(0, min(1, overlay.opacity))), at: start)
             videoSpans.append(VideoLayerSpan(
                 start: start, end: CMTimeAdd(start, chosen), instruction: entry
             ))
@@ -363,7 +401,8 @@ final class TimelineComposer {
         sourceSize: CGSize,
         preferred: CGAffineTransform,
         canvas: CGSize,
-        x: Double, y: Double, width: Double
+        x: Double, y: Double, width: Double,
+        rotationDegrees: Double = 0
     ) -> CGAffineTransform {
         let source = CGRect(origin: .zero, size: sourceSize)
             .applying(preferred).standardized
@@ -379,8 +418,14 @@ final class TimelineComposer {
             ))
             .concatenating(CGAffineTransform(scaleX: factor, y: factor))
             .concatenating(CGAffineTransform(
-                translationX: centerX - desiredWidth / 2,
-                y: centerY - desiredHeight / 2
+                translationX: -desiredWidth / 2,
+                y: -desiredHeight / 2
+            ))
+            .concatenating(CGAffineTransform(
+                rotationAngle: CGFloat(rotationDegrees) * .pi / 180
+            ))
+            .concatenating(CGAffineTransform(
+                translationX: centerX, y: centerY
             ))
     }
 
