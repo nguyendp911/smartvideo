@@ -17,6 +17,9 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
 
+      - name: Validate optional Python video downloader
+        run: python3 -m py_compile backend/video_resolver/main.py
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
