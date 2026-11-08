@@ -303,59 +303,60 @@ struct EditorView: View {
                         .allowsHitTesting(false)
                 }
 
-                // Preview independent image overlays only during their
-                // active time range. Drag to reposition start keyframe.
+                // Draw interpolated multi-point image keyframes at the
+                // current playhead. Drag translates the whole motion path.
                 ForEach(model.imageOverlays) { overlay in
-                    if playheadSecond >= overlay.start && playheadSecond <= overlay.end,
-                       let index = model.imageOverlays.firstIndex(where: { $0.id == overlay.id }),
+                    if playheadSecond >= overlay.start &&
+                       playheadSecond <= overlay.end &&
                        FileManager.default.fileExists(atPath: overlay.fileURL.path) {
-                        let fraction = min(1, max(0,
-                            (playheadSecond - overlay.start) / max(0.1, overlay.duration)))
-                        let currentX = overlay.startX + (overlay.endX - overlay.startX) * fraction
-                        let currentY = overlay.startY + (overlay.endY - overlay.startY) * fraction
+                        let progress = min(1, max(0,
+                            (playheadSecond - overlay.start) /
+                            max(0.1, overlay.duration)
+                        ))
+                        let current = OverlayKeyframeSampler.sample(
+                            overlay, atProgress: progress
+                        )
                         KeyedOverlayImage(overlay: overlay)
-                            .frame(width: canvasWidth * CGFloat(overlay.scale))
-                            .opacity(overlay.opacity)
-                            .rotationEffect(.degrees(overlay.rotationDegrees))
+                            .frame(width: canvasWidth * CGFloat(current.scale))
+                            .opacity(current.opacity)
+                            .rotationEffect(.degrees(current.rotationDegrees))
                             .position(
-                                x: canvasWidth * CGFloat(currentX),
-                                y: canvasHeight * CGFloat(currentY)
+                                x: canvasWidth * CGFloat(current.x),
+                                y: canvasHeight * CGFloat(current.y)
                             )
                             .overlay {
                                 if activeTool == .overlay &&
                                     selectedOverlayID == overlay.id {
                                     RoundedRectangle(cornerRadius: 4)
-                                        .stroke(.cyan, lineWidth: 1)
-                                        .frame(width: canvasWidth * CGFloat(overlay.scale))
+                                        .stroke(.cyan, lineWidth: 1.5)
+                                        .frame(width: canvasWidth *
+                                            CGFloat(current.scale))
                                         .position(
-                                            x: canvasWidth * CGFloat(currentX),
-                                            y: canvasHeight * CGFloat(currentY)
+                                            x: canvasWidth * CGFloat(current.x),
+                                            y: canvasHeight * CGFloat(current.y)
                                         )
                                 }
                             }
                             .gesture(
-                                DragGesture(minimumDistance: 0,
-                                            coordinateSpace: .named("captionCanvas"))
-                                    .onChanged { value in
-                                        guard activeTool == .overlay else { return }
-                                        selectedOverlayID = overlay.id
-                                        let nextX = min(0.95, max(0.05,
-                                            Double(value.location.x / canvasWidth)))
-                                        let nextY = min(0.95, max(0.05,
-                                            Double(value.location.y / canvasHeight)))
-                                        // Move both keyframes by the same delta,
-                                        // preserving the configured motion path.
-                                        let deltaX = nextX - currentX
-                                        let deltaY = nextY - currentY
-                                        model.imageOverlays[index].startX =
-                                            min(0.95, max(0.05, overlay.startX + deltaX))
-                                        model.imageOverlays[index].startY =
-                                            min(0.95, max(0.05, overlay.startY + deltaY))
-                                        model.imageOverlays[index].endX =
-                                            min(0.95, max(0.05, overlay.endX + deltaX))
-                                        model.imageOverlays[index].endY =
-                                            min(0.95, max(0.05, overlay.endY + deltaY))
+                                DragGesture(
+                                    minimumDistance: 0,
+                                    coordinateSpace: .named("captionCanvas")
+                                ).onChanged { value in
+                                    guard activeTool == .overlay,
+                                          canvasWidth > 0, canvasHeight > 0 else {
+                                        return
                                     }
+                                    selectedOverlayID = overlay.id
+                                    let targetX = min(0.97, max(0.03,
+                                        Double(value.location.x / canvasWidth)))
+                                    let targetY = min(0.97, max(0.03,
+                                        Double(value.location.y / canvasHeight)))
+                                    model.translateImageOverlay(
+                                        overlay.id,
+                                        dx: targetX - current.x,
+                                        dy: targetY - current.y
+                                    )
+                                }
                             )
                             .allowsHitTesting(activeTool == .overlay)
                     }
@@ -721,7 +722,8 @@ struct EditorView: View {
         case .metadata: MetadataPanel(model: model)
         case .overlay: OverlayStudioPanel(model: model,
                                            selectedOverlayID: $selectedOverlayID,
-                                           pickedOverlay: $pickedOverlay)
+                                           pickedOverlay: $pickedOverlay,
+                                           onScrub: { scrubTimeline(to: $0) })
         case .pip: VideoPIPStudioPanel(model: model,
                                        selectedID: $selectedPIPID,
                                        pickerItem: $pickedPIP)
