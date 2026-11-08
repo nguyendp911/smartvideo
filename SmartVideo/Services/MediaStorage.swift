@@ -12,6 +12,12 @@ enum MediaStorage {
         directory(named: "Exports")
     }
 
+    /// Dedicated local video downloads. Editing projects copy footage from
+    /// here into Media, so deleting a vault entry never breaks saved edits.
+    static var downloadsDirectory: URL {
+        directory(named: "DownloadLibrary")
+    }
+
     static var temporaryDirectory: URL {
         directory(named: "RenderTemp")
     }

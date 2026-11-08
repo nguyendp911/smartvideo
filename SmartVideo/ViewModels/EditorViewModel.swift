@@ -195,6 +195,50 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    /// Copies a downloaded social video into the editable project's Media
+    /// folder; vault entries can then be deleted without losing this clip.
+    func importFromDownloadLibrary(_ video: SavedSocialVideo) async -> UUID? {
+        guard FileManager.default.fileExists(atPath: video.fileURL.path) else {
+            errorText = "Video trong Kho đã bị mất. Hãy tải lại."
+            return nil
+        }
+        do {
+            let local = try MediaStorage.copyToMedia(
+                video.fileURL, fallbackExtension: "mp4"
+            )
+            do {
+                let asset = AVURLAsset(url: local)
+                guard !(try await asset.loadTracks(
+                    withMediaType: .video
+                )).isEmpty else {
+                    throw SmartVideoError.invalidMedia(
+                        "Tệp này không có track video hợp lệ."
+                    )
+                }
+                let duration = try await asset.load(.duration).seconds
+                guard duration.isFinite && duration > 0 else {
+                    throw SmartVideoError.invalidMedia(
+                        "Không đọc được thời lượng video."
+                    )
+                }
+                checkpoint()
+                let clip = TimelineClip(
+                    kind: .video, fileURL: local,
+                    duration: duration, originalDuration: duration
+                )
+                clips.append(clip)
+                timelineSecond = timelineStart(of: clips.count - 1)
+                return clip.id
+            } catch {
+                try? FileManager.default.removeItem(at: local)
+                throw error
+            }
+        } catch {
+            errorText = "Không đưa vào timeline được: \(error.localizedDescription)"
+            return nil
+        }
+    }
+
     func importMusic(from sourceURL: URL) {
         guard !isImportingAudio else { return }
         isImportingAudio = true
