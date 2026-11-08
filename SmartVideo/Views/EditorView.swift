@@ -169,6 +169,21 @@ struct EditorView: View {
                 Text("Studio · Offline").font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
+            Menu {
+                ForEach(EditorTool.allCases) { tool in
+                    Button {
+                        activeTool = tool
+                        previewPlayer?.pause()
+                        isPlaying = false
+                    } label: {
+                        Label(tool.rawValue, systemImage: tool.symbol)
+                    }
+                }
+            } label: {
+                Label("Công cụ", systemImage: "square.grid.2x2")
+                    .font(.caption.bold())
+            }
+            .buttonStyle(.bordered)
             PhotosPicker(selection: $pickerItems, maxSelectionCount: 30,
                          matching: .any(of: [.images, .videos])) {
                 Label("Thêm", systemImage: "plus.circle.fill")
