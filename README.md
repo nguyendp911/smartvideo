@@ -4,6 +4,19 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.3.0 – Manual Color Controls
+
+- Thêm chỉnh màu **theo từng clip**: phơi sáng −2 đến +2 EV, tương phản 0,5–1,5, bão hòa 0–2 và cân bằng ấm/lạnh.
+- Áp dụng lên ảnh và video trong preview lẫn MP4 xuất bằng cùng pipeline Core Image. Các giá trị được lưu trong project; dự án cũ tự nhận mức trung tính.
+- Có nút **Đặt lại** cho clip và so sánh trước/sau. File nguồn không bị ghi đè.
+
+### Đối chiếu nhóm tính năng với CapCut
+
+ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan, tốc độ clip, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
+
+Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, speed curve tùy chỉnh/optical-flow slow motion và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
+
+
 ## ViePN Smart Video v4.2.0 – Media Inspector
 
 - Thêm công cụ **Media Inspector** cho clip đang chọn: đọc codec, kích thước, thời lượng, FPS metadata, bitrate ước tính, thông tin audio, dung lượng và dấu hiệu HDR.
@@ -21,9 +34,9 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 - **Cắt MP3 theo video:** chọn vị trí bắt đầu, dò phần im lặng đầu bài để đề xuất điểm vào, tự lặp khi nhạc ngắn, tự dừng ở cuối video và giảm âm lượng khi có giọng đọc, fade 1.2 giây ở cuối.
 - Xuất **MP4 H.264**, 720p / 1080p, 30 FPS; lưu vào Photos hoặc chia sẻ qua ứng dụng khác.
 
-### Phạm vi chức năng chưa có
+### Giới hạn chức năng
 
-Hiệu ứng crossfade, filter LUT, nhận diện nhịp beat chuyên sâu, tự phát sinh lời phụ đề bằng AI/STT, tổng hợp giọng nói TTS từ văn bản, timeline đa track kéo thả, undo, lưu project, và render nền khi khóa màn hình **chưa được thực hiện**. Tính năng chọn nhạc tự động chỉ phân tích âm lượng để bỏ đoạn im lặng, **không phải AI chọn đoạn nhạc hay**.
+Chưa có import LUT 3D .cube, xóa nền video bằng AI, motion tracking hoặc speed curve tùy chỉnh. Nhận diện highlight nhạc/video dùng heuristic âm thanh và Vision, không hiểu nội dung như người dựng phim. Các clip nguồn và track phủ có những khả năng chỉnh sửa riêng; editor chưa cung cấp một timeline đa track kéo thả hoàn chỉnh như NLE desktop.
 
 ### Giới hạn thực tế
 
