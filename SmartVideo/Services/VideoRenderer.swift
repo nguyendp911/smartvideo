@@ -76,11 +76,13 @@ final class VideoRenderer {
                     imageMotion: clip.imageMotion,
                     imageLook: clip.imageLook,
                     lookIntensity: clip.lookIntensity,
+                    colorAdjustments: clip.colorAdjustments,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical
                 )
                 sourceURLs.append(temporary)
-            } else if clip.imageLook != .original && clip.lookIntensity > 0.001 {
+            } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+                      !clip.colorAdjustments.isNeutral {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
                 try await VideoFrameGrader.renderTrimmed(
@@ -327,6 +329,7 @@ final class VideoRenderer {
         imageMotion: ImageMotion,
         imageLook: ImageLook,
         lookIntensity: Double,
+        colorAdjustments: ColorAdjustments,
         flipHorizontal: Bool,
         flipVertical: Bool
     ) async throws {
@@ -351,7 +354,8 @@ final class VideoRenderer {
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
         let styled = StudioColorGrader.apply(
-            fitted, look: imageLook, intensity: lookIntensity
+            fitted, look: imageLook, intensity: lookIntensity,
+            adjustments: colorAdjustments
         )
         let staticFrame = styled.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()

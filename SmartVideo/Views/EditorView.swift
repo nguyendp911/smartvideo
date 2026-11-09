@@ -158,6 +158,9 @@ struct EditorView: View {
         .onChange(of: selectedClip?.lookIntensity) { _ in
             refreshColorPreview()
         }
+        .onChange(of: selectedClip?.colorAdjustments) { _ in
+            refreshColorPreview()
+        }
         .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
             guard isPlaying, let player = previewPlayer else { return }
             if let clip = selectedClip {
@@ -287,6 +290,7 @@ struct EditorView: View {
                             fileURL: clip.fileURL,
                             look: clip.imageLook,
                             intensity: compareOriginalFootage ? 0 : clip.lookIntensity,
+                            adjustments: compareOriginalFootage ? .neutral : clip.colorAdjustments,
                             contentMode: model.contentMode
                         )
                             .frame(width: canvasWidth, height: canvasHeight)
@@ -1024,6 +1028,8 @@ struct EditorView: View {
                     }
                 ), in: 0...1, step: 0.05)
                     .tint(.cyan)
+                manualColorControls(clip: clip)
+
                 Toggle("So sánh trước / sau · chỉ thay đổi preview",
                        isOn: $compareOriginalFootage)
                     .font(.caption)
@@ -1077,6 +1083,79 @@ struct EditorView: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    private func manualColorControls(clip: TimelineClip) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text("Chỉnh màu thủ công")
+                    .font(.caption.bold())
+                Spacer()
+                Button("Đặt lại") {
+                    guard let index = model.clips.firstIndex(where: {
+                        $0.id == clip.id
+                    }) else { return }
+                    model.clips[index].colorAdjustments = .neutral
+                }
+                .font(.caption2)
+                .disabled(clip.colorAdjustments.isNeutral)
+            }
+
+            colorSlider("Phơi sáng", value: colorAdjustmentBinding(
+                clip.id, keyPath: \.exposureEV
+            ), range: -2...2, display: String(
+                format: "%+.1f EV", clip.colorAdjustments.exposureEV
+            ))
+            colorSlider("Tương phản", value: colorAdjustmentBinding(
+                clip.id, keyPath: \.contrast
+            ), range: 0.5...1.5, display: String(
+                format: "%.2f", clip.colorAdjustments.contrast
+            ))
+            colorSlider("Bão hòa", value: colorAdjustmentBinding(
+                clip.id, keyPath: \.saturation
+            ), range: 0...2, display: String(
+                format: "%.2f", clip.colorAdjustments.saturation
+            ))
+            colorSlider("Ấm / lạnh", value: colorAdjustmentBinding(
+                clip.id, keyPath: \.warmth
+            ), range: -1...1, display: clip.colorAdjustments.warmth < -0.01
+                ? "Lạnh" : clip.colorAdjustments.warmth > 0.01 ? "Ấm" : "0")
+        }
+        .padding(8)
+        .background(Color.white.opacity(0.035),
+                    in: RoundedRectangle(cornerRadius: 9))
+    }
+
+    private func colorSlider(_ title: String, value: Binding<Double>,
+                             range: ClosedRange<Double>,
+                             display: String) -> some View {
+        VStack(spacing: 2) {
+            HStack {
+                Text(title)
+                Spacer()
+                Text(display).monospacedDigit().foregroundStyle(.cyan)
+            }
+            .font(.caption2)
+            Slider(value: value, in: range)
+                .tint(.cyan)
+        }
+    }
+
+    private func colorAdjustmentBinding(
+        _ id: UUID, keyPath: WritableKeyPath<ColorAdjustments, Double>
+    ) -> Binding<Double> {
+        Binding(
+            get: {
+                model.clips.first(where: { $0.id == id })?
+                    .colorAdjustments[keyPath: keyPath] ?? 0
+            },
+            set: { value in
+                guard let index = model.clips.firstIndex(where: {
+                    $0.id == id
+                }) else { return }
+                model.clips[index].colorAdjustments[keyPath: keyPath] = value
+            }
+        )
     }
 
     private func updateSpeed(_ id: UUID, to speed: Double) {
@@ -1788,7 +1867,10 @@ struct EditorView: View {
         previewPlayer?.pause()
         isPlaying = false
         var previewClip = clip
-        if compareOriginalFootage { previewClip.lookIntensity = 0 }
+        if compareOriginalFootage {
+            previewClip.lookIntensity = 0
+            previewClip.colorAdjustments = .neutral
+        }
         let item = VideoFrameGrader.makePreviewItem(for: previewClip)
         let player = AVPlayer(playerItem: item)
         previewPlayer = player
@@ -1809,7 +1891,10 @@ struct EditorView: View {
             return
         }
         var previewClip = clip
-        if compareOriginalFootage { previewClip.lookIntensity = 0 }
+        if compareOriginalFootage {
+            previewClip.lookIntensity = 0
+            previewClip.colorAdjustments = .neutral
+        }
         let player = AVPlayer(playerItem:
             VideoFrameGrader.makePreviewItem(for: previewClip))
         player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))

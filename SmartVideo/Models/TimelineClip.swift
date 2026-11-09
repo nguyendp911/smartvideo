@@ -48,6 +48,49 @@ enum ImageLook: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+struct ColorAdjustments: Codable, Hashable {
+    var exposureEV: Double = 0
+    var contrast: Double = 1
+    var saturation: Double = 1
+    /// -1 cools the image, +1 warms it.
+    var warmth: Double = 0
+
+    static let neutral = ColorAdjustments()
+
+    var isNeutral: Bool {
+        abs(exposureEV) < 0.001 && abs(contrast - 1) < 0.001 &&
+        abs(saturation - 1) < 0.001 && abs(warmth) < 0.001
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case exposureEV, contrast, saturation, warmth
+    }
+
+    init(exposureEV: Double = 0, contrast: Double = 1,
+         saturation: Double = 1, warmth: Double = 0) {
+        self.exposureEV = Self.clamp(exposureEV, -2...2, fallback: 0)
+        self.contrast = Self.clamp(contrast, 0.5...1.5, fallback: 1)
+        self.saturation = Self.clamp(saturation, 0...2, fallback: 1)
+        self.warmth = Self.clamp(warmth, -1...1, fallback: 0)
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            exposureEV: try c.decodeIfPresent(Double.self, forKey: .exposureEV) ?? 0,
+            contrast: try c.decodeIfPresent(Double.self, forKey: .contrast) ?? 1,
+            saturation: try c.decodeIfPresent(Double.self, forKey: .saturation) ?? 1,
+            warmth: try c.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+        )
+    }
+
+    private static func clamp(_ value: Double, _ range: ClosedRange<Double>,
+                             fallback: Double) -> Double {
+        min(range.upperBound, max(range.lowerBound,
+            value.isFinite ? value : fallback))
+    }
+}
+
 struct TimelineClip: Identifiable, Hashable, Codable {
     var id: UUID = UUID()
     var kind: ClipKind
@@ -61,6 +104,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var imageLook: ImageLook = .original
     /// Strength of the selected grade (zero leaves the source unchanged).
     var lookIntensity: Double = 1.0
+    var colorAdjustments: ColorAdjustments = .neutral
     var flipHorizontal: Bool = false
     var flipVertical: Bool = false
 
@@ -70,6 +114,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          imageMotion: ImageMotion = .none,
          imageLook: ImageLook = .original,
          lookIntensity: Double = 1.0,
+         colorAdjustments: ColorAdjustments = .neutral,
          flipHorizontal: Bool = false, flipVertical: Bool = false) {
         self.id = id
         self.kind = kind
@@ -81,13 +126,14 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.imageMotion = imageMotion
         self.imageLook = imageLook
         self.lookIntensity = min(1, max(0, lookIntensity))
+        self.colorAdjustments = colorAdjustments
         self.flipHorizontal = flipHorizontal
         self.flipVertical = flipVertical
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
-        case playbackSpeed, imageMotion, imageLook, lookIntensity
+        case playbackSpeed, imageMotion, imageLook, lookIntensity, colorAdjustments
         case flipHorizontal, flipVertical
     }
 
@@ -109,6 +155,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         let rawStrength = try c.decodeIfPresent(Double.self,
                                                 forKey: .lookIntensity) ?? 1
         lookIntensity = min(1, max(0, rawStrength.isFinite ? rawStrength : 1))
+        colorAdjustments = try c.decodeIfPresent(ColorAdjustments.self,
+                                                 forKey: .colorAdjustments) ?? .neutral
         flipHorizontal = try c.decodeIfPresent(Bool.self,
                                                forKey: .flipHorizontal) ?? false
         flipVertical = try c.decodeIfPresent(Bool.self,
