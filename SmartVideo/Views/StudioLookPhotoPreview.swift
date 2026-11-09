@@ -8,7 +8,7 @@ struct StudioLookPhotoPreview: View {
     let fileURL: URL
     let look: ImageLook
     let intensity: Double
-    let adjustments: ColorAdjustments = .neutral
+    let adjustments: ColorAdjustments
     let contentMode: CanvasContentMode
 
     @State private var gradedImage: UIImage?
