@@ -5,15 +5,50 @@ import CoreImage
 /// are applied to still-image clips in the actual MP4 writer.
 enum StudioColorGrader {
     static func apply(_ image: CIImage, look: ImageLook,
-                      intensity: Double = 1.0) -> CIImage {
+                      intensity: Double = 1.0,
+                      adjustments: ColorAdjustments = .neutral) -> CIImage {
         let amount = min(1, max(0, intensity.isFinite ? intensity : 1))
-        guard amount > 0.0001, look != .original else { return image }
-        let graded = fullStrength(image, look: look)
-        if amount >= 0.9999 { return graded }
-        return image.applyingFilter("CIDissolveTransition", parameters: [
-            kCIInputTargetImageKey: graded,
-            kCIInputTimeKey: amount
-        ]).cropped(to: image.extent)
+        let base: CIImage
+        if amount <= 0.0001 || look == .original {
+            base = image
+        } else {
+            let graded = fullStrength(image, look: look)
+            base = amount >= 0.9999 ? graded :
+                image.applyingFilter("CIDissolveTransition", parameters: [
+                    kCIInputTargetImageKey: graded,
+                    kCIInputTimeKey: amount
+                ]).cropped(to: image.extent)
+        }
+        return applyManualAdjustments(base, adjustments: adjustments)
+    }
+
+    private static func applyManualAdjustments(
+        _ image: CIImage, adjustments: ColorAdjustments
+    ) -> CIImage {
+        var result = image
+        if abs(adjustments.exposureEV) > 0.001 {
+            result = result.applyingFilter("CIExposureAdjust", parameters: [
+                kCIInputEVKey: adjustments.exposureEV
+            ])
+        }
+        if abs(adjustments.contrast - 1) > 0.001 ||
+           abs(adjustments.saturation - 1) > 0.001 {
+            result = result.applyingFilter("CIColorControls", parameters: [
+                kCIInputContrastKey: adjustments.contrast,
+                kCIInputSaturationKey: adjustments.saturation,
+                kCIInputBrightnessKey: 0
+            ])
+        }
+        if abs(adjustments.warmth) > 0.001 {
+            let amount = adjustments.warmth * 0.08
+            result = result.applyingFilter("CIColorMatrix", parameters: [
+                "inputRVector": CIVector(x: 1 + amount, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 1, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 1 - amount, w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
+            ])
+        }
+        return result.cropped(to: image.extent)
     }
 
     private static func fullStrength(_ image: CIImage,
