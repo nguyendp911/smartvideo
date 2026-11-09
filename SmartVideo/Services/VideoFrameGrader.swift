@@ -28,8 +28,9 @@ enum VideoFrameGrader {
     static func makePreviewItem(for clip: TimelineClip) -> AVPlayerItem {
         let asset = AVURLAsset(url: clip.fileURL)
         let item = AVPlayerItem(asset: asset)
-        if clip.kind == .video && (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-           !clip.colorAdjustments.isNeutral {
+        if clip.kind == .video &&
+           ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+            !clip.colorAdjustments.isNeutral) {
             item.videoComposition = makeComposition(
                 asset: asset, look: clip.imageLook,
                 intensity: clip.lookIntensity,
