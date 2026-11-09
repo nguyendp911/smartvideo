@@ -11,13 +11,15 @@ import CoreImage
 /// can still keep/crossfade original audio when the user enables it.
 enum VideoFrameGrader {
     static func makeComposition(
-        asset: AVAsset, look: ImageLook, intensity: Double
+        asset: AVAsset, look: ImageLook, intensity: Double,
+        adjustments: ColorAdjustments = .neutral
     ) -> AVVideoComposition {
         let context = CIContext(options: [.cacheIntermediates: false])
         return AVVideoComposition(asset: asset) { request in
             let source = request.sourceImage
             let graded = StudioColorGrader.apply(
-                source, look: look, intensity: intensity
+                source, look: look, intensity: intensity,
+                adjustments: adjustments
             ).cropped(to: source.extent)
             request.finish(with: graded, context: context)
         }
@@ -26,11 +28,12 @@ enum VideoFrameGrader {
     static func makePreviewItem(for clip: TimelineClip) -> AVPlayerItem {
         let asset = AVURLAsset(url: clip.fileURL)
         let item = AVPlayerItem(asset: asset)
-        if clip.kind == .video && clip.imageLook != .original &&
-           clip.lookIntensity > 0.001 {
+        if clip.kind == .video && (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+           !clip.colorAdjustments.isNeutral {
             item.videoComposition = makeComposition(
                 asset: asset, look: clip.imageLook,
-                intensity: clip.lookIntensity
+                intensity: clip.lookIntensity,
+                adjustments: clip.colorAdjustments
             )
         }
         return item
@@ -41,8 +44,9 @@ enum VideoFrameGrader {
     static func renderTrimmed(
         clip: TimelineClip, outputURL: URL
     ) async throws {
-        guard clip.kind == .video, clip.imageLook != .original,
-              clip.lookIntensity > 0.001 else {
+        guard clip.kind == .video,
+              (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+                !clip.colorAdjustments.isNeutral else {
             throw SmartVideoError.invalidMedia(
                 "Không có bộ màu video cần xử lý."
             )
@@ -76,7 +80,8 @@ enum VideoFrameGrader {
         exporter.outputFileType = .mov
         exporter.videoComposition = makeComposition(
             asset: asset, look: clip.imageLook,
-            intensity: clip.lookIntensity
+            intensity: clip.lookIntensity,
+            adjustments: clip.colorAdjustments
         )
         exporter.timeRange = CMTimeRange(
             start: CMTime(seconds: start, preferredTimescale: 600),
