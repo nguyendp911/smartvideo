@@ -81,6 +81,44 @@ final class VideoRenderer {
                     flipVertical: clip.flipVertical
                 )
                 sourceURLs.append(temporary)
+            } else if !clip.speedCurve.isEmpty {
+                // Retime the trimmed source first (including its audio).
+                // The compositing stage can then treat it as a normal 1x
+                // clip, preserving all its existing transitions and PIP.
+                let rampURL = MediaStorage.newTemporaryVideoURL()
+                generatedImageVideos.append(rampURL)
+                try await SpeedCurveProcessor.render(
+                    clip: clip, outputURL: rampURL
+                )
+                let rampAsset = AVURLAsset(url: rampURL)
+                let rampDuration = try await rampAsset.load(.duration).seconds
+                guard rampDuration.isFinite, rampDuration > 0 else {
+                    throw SmartVideoError.invalidMedia(
+                        "Không đọc được thời lượng của Speed Curve."
+                    )
+                }
+                var prepared = clip
+                prepared.fileURL = rampURL
+                prepared.startTime = 0
+                prepared.duration = rampDuration
+                prepared.originalDuration = rampDuration
+                prepared.playbackSpeed = 1
+                prepared.speedCurve = []
+
+                if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+                    !clip.colorAdjustments.isNeutral {
+                    // Existing Core Image grading is run AFTER the retime.
+                    // Do not discard the grade or apply it twice.
+                    let gradeURL = MediaStorage.newTemporaryVideoURL()
+                    generatedImageVideos.append(gradeURL)
+                    try await VideoFrameGrader.renderTrimmed(
+                        clip: prepared, outputURL: gradeURL
+                    )
+                    sourceURLs.append(gradeURL)
+                } else {
+                    sourceURLs.append(rampURL)
+                }
+                workingClips[index] = prepared
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                       !clip.colorAdjustments.isNeutral {
                 let temporary = MediaStorage.newTemporaryVideoURL()
