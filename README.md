@@ -18,7 +18,14 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 - Khi có nhiều mặt, chọn mặt gần vị trí sticker trước đó. Nếu không phát hiện đủ khuôn mặt, thông báo lỗi, không tạo keyframe giả.
 - Không phải object tracking tổng quát hay bám mặt ở FPS cao. Nên dùng clip đủ sáng và quay mặt rõ nét.
 
+### Thư viện preset cục bộ v4.6
+- Mở **Preset Pro** để chọn giữa **30 công thức dựng** (trước đây có 24). Sáu công thức thêm mới: **Laptop Review, Sale Flash, Lesson Explainer, Travel Recap, Daily Story, Portrait Hero**.
+- Các mẫu này thực sự áp màu, chuyển cảnh, VFX, chuyển động và title theo engine hiện tại; không chỉ là nút trang trí.
+- Không phải kho template online tải từ CapCut. Dự án vẫn chưa có dịch vụ đồng bộ/tải asset bản quyền trên Internet.
+
 Build 31 (v4.6.0). GitHub Actions kiểm tra biên dịch Simulator và IPA unsigned, nhưng không thể thay thế QA render trên iPhone 12 Pro Max.
+
+> Các mục mô tả phiên bản cũ bên dưới được giữ làm lịch sử phát triển; đọc phần **v4.6** để biết tính năng hiện có.
 
 ## ViePN Smart Video v4.5.0 – Speed Curve
 
@@ -47,7 +54,7 @@ Build 31 (v4.6.0). GitHub Actions kiểm tra biên dịch Simulator và IPA unsi
 
 ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan và mờ qua đen/trắng, freeze frame, tốc độ clip 0,25×–4×, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
 
-Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, optical-flow slow motion và speed curve dạng đường cong tự do (bản 4.5 đã có 5 nút speed curve) và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
+Các hạng mục lớn còn thiếu so với CapCut gồm object tracking tổng quát, optical-flow slow motion, đường cong tốc độ Bézier và thư viện template/asset trực tuyến. Bản 4.6 đã thêm Vision tách nền **người**, bám **khuôn mặt**, và 30 preset cục bộ; không nên nhầm với các tính năng AI thương mại đầy đủ.
 
 
 ## ViePN Smart Video v4.2.0 – Media Inspector
