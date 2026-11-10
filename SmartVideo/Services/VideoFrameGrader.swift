@@ -19,14 +19,15 @@ enum VideoFrameGrader {
         return AVVideoComposition(asset: asset) { request in
             let source = request.sourceImage
             do {
-                let cutout = try PersonCutoutProcessor.apply(
-                    source, mode: personBackground, quality: .fast
-                )
                 let graded = StudioColorGrader.apply(
-                    cutout, look: look, intensity: intensity,
+                    source, look: look, intensity: intensity,
                     adjustments: adjustments
                 ).cropped(to: source.extent)
-                request.finish(with: graded, context: context)
+                let output = try PersonCutoutProcessor.apply(
+                    source, mode: personBackground, quality: .fast,
+                    foreground: graded
+                )
+                request.finish(with: output, context: context)
             } catch {
                 // Export fails explicitly instead of silently returning
                 // the original footage without a requested AI cutout.
