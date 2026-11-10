@@ -89,6 +89,7 @@ enum SpeedCurveProcessor {
         return output
     }
 
+    @MainActor
     static func previewItem(for clip: TimelineClip) async throws
         -> AVPlayerItem {
         let asset = try await composition(for: clip)
