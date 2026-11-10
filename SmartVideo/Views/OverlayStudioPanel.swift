@@ -103,14 +103,34 @@ struct OverlayStudioPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .tint(.cyan)
-                    .disabled(model.isTrackingFace)
+                    .disabled(model.isTrackingFace || model.isTrackingObject)
                     if model.isTrackingFace { ProgressView().controlSize(.small) }
                     if let message = model.faceTrackingMessage {
                         Text(message)
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
-                    Text("Đặt lớp ảnh phủ nằm trọn trên một clip có khuôn mặt. Vision lấy tối đa 14 mẫu để tạo đường di chuyển; có thể chỉnh từng keyframe sau đó. Không theo dõi vật thể bất kỳ.")
+                    Text("Bám mặt: đặt ảnh phủ nằm trọn trên một clip có người. Vision lấy mẫu và tạo keyframe, có thể sửa tay.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        Task { await model.autoTrackObject(overlayID: item.id) }
+                    } label: {
+                        Label(model.isTrackingObject ?
+                              "Đang bám vật thể…" :
+                              "AI bám vật thể đã chọn",
+                              systemImage: "viewfinder")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isTrackingFace || model.isTrackingObject)
+                    if model.isTrackingObject { ProgressView().controlSize(.small) }
+                    if let message = model.objectTrackingMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Bám vật thể: đặt tâm sticker lên vật thể ở đầu đoạn rồi chạy. Vision bám vùng ảnh đó (tối đa 14 mẫu), có thể mất dấu khi che khuất hoặc di chuyển nhanh. Nếu thất bại, hãy thử đoạn ngắn hơn.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
