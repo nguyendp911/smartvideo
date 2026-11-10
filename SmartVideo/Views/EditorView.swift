@@ -1014,8 +1014,11 @@ struct EditorView: View {
                     HStack {
                         Text("Tốc độ")
                         Spacer()
-                        Text(String(format: "%.2fx · %.1f giây", clip.playbackSpeed,
-                                    clip.renderedDuration))
+                        Text(clip.speedCurve.isEmpty
+                            ? String(format: "%.2fx · %.1f giây",
+                                     clip.playbackSpeed, clip.renderedDuration)
+                            : String(format: "Speed Curve · %.1f giây",
+                                     clip.renderedDuration))
                             .monospacedDigit()
                     }
                     .font(.caption)
@@ -1027,9 +1030,11 @@ struct EditorView: View {
                             .font(.caption.bold())
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 9)
-                            .foregroundStyle(abs(clip.playbackSpeed - speed) < 0.01 ?
+                            .foregroundStyle(clip.speedCurve.isEmpty &&
+                                abs(clip.playbackSpeed - speed) < 0.01 ?
                                              .black : .white)
                             .background(
+                                clip.speedCurve.isEmpty &&
                                 abs(clip.playbackSpeed - speed) < 0.01 ?
                                     accent : Color.white.opacity(0.08),
                                 in: RoundedRectangle(cornerRadius: 8)
@@ -1046,8 +1051,11 @@ struct EditorView: View {
                     ), in: 0.25...4, step: 0.05)
                     .tint(.cyan)
                     .accessibilityLabel("Tốc độ video")
-                    Text("Tốc độ không làm méo khung hình; giọng gốc có thể đổi cao độ ở một số codec.")
+                    Text("Chọn tốc độ cố định sẽ tắt Speed Curve. Âm thanh gốc có thể thay đổi cao độ.")
                         .font(.caption2).foregroundStyle(.secondary)
+
+                    Divider()
+                    SpeedCurveStudioPanel(model: model, clip: clip)
                 } else {
                     Text("Chuyển động ảnh kiểu Ken Burns")
                         .font(.caption.bold())
@@ -1215,6 +1223,7 @@ struct EditorView: View {
         guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
         let safeSpeed = min(4, max(0.25, speed))
         model.clips[index].playbackSpeed = safeSpeed
+        model.clips[index].speedCurve = []
         if isPlaying, let player = previewPlayer {
             player.rate = Float(safeSpeed)
         }
