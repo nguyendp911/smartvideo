@@ -165,7 +165,31 @@ struct StudioPreset: Identifiable {
         .init(id: "food-glow", title: "Food Glow", subtitle: "Món ăn ấm áp, sắc tươi", category: .commerce,
               imageLook: .golden, motion: .zoomIn, effects: [.lightLeak],
               intensity: 0.12, transition: .dissolve, titleMotion: .punchIn,
-              textColor: "FFF0BD", subtitles: .minimal)
+              textColor: "FFF0BD", subtitles: .minimal),
+        .init(id: "laptop-review", title: "Laptop Review", subtitle: "Review laptop và thiết bị công nghệ", category: .commerce,
+              imageLook: .clean, motion: .panRight, effects: [.vignette],
+              intensity: 0.10, transition: .dipWhite, titleMotion: .slideUp,
+              textColor: "FFFFFF", subtitles: .highContrast),
+        .init(id: "product-discount", title: "Sale Flash", subtitle: "Giới thiệu ưu đãi sản phẩm ngắn", category: .commerce,
+              imageLook: .neon, motion: .zoomIn, effects: [.flash, .lightStreak],
+              intensity: 0.16, transition: .cut, titleMotion: .punchIn,
+              textColor: "FFE75E", subtitles: .yellow),
+        .init(id: "lesson-explainer", title: "Lesson Explainer", subtitle: "Video hướng dẫn và bài học rõ nét", category: .editorial,
+              imageLook: .clean, motion: .none, effects: [],
+              intensity: 0.05, transition: .dipWhite, titleMotion: .slideUp,
+              textColor: "FFFFFF", subtitles: .highContrast),
+        .init(id: "travel-recap", title: "Travel Recap", subtitle: "Tổng kết du lịch và chuyển cảnh mềm", category: .lifestyle,
+              imageLook: .golden, motion: .panLeft, effects: [.lightLeak, .dust],
+              intensity: 0.16, transition: .dissolve, titleMotion: .fade,
+              textColor: "FFF2DB", subtitles: .classic),
+        .init(id: "daily-story", title: "Daily Story", subtitle: "Câu chuyện đời thường dọc 9:16", category: .creator,
+              imageLook: .pastel, motion: .zoomIn, effects: [.bokeh],
+              intensity: 0.12, transition: .dipWhite, titleMotion: .fade,
+              textColor: "FFFFFF", subtitles: .minimal),
+        .init(id: "dramatic-portrait", title: "Portrait Hero", subtitle: "Chân dung với ánh sáng tương phản", category: .cinematic,
+              imageLook: .moody, motion: .zoomIn, effects: [.vignette, .grain],
+              intensity: 0.16, transition: .dipBlack, titleMotion: .punchIn,
+              textColor: "F5F0E8", subtitles: .classic)
     ]
 
     static func find(_ id: String?) -> StudioPreset? {

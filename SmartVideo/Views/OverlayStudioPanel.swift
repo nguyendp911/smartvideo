@@ -92,6 +92,49 @@ struct OverlayStudioPanel: View {
                        in: 0.2...max(0.3, total - item.start), step: 0.1)
                     .tint(.cyan)
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        Task { await model.autoTrackFace(overlayID: item.id) }
+                    } label: {
+                        Label(model.isTrackingFace ?
+                              "Đang dò khuôn mặt…" :
+                              "AI bám khuôn mặt (tạo keyframe)",
+                              systemImage: "face.dashed")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .disabled(model.isTrackingFace || model.isTrackingObject)
+                    if model.isTrackingFace { ProgressView().controlSize(.small) }
+                    if let message = model.faceTrackingMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Bám mặt: đặt ảnh phủ nằm trọn trên một clip có người. Vision lấy mẫu và tạo keyframe, có thể sửa tay.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        Task { await model.autoTrackObject(overlayID: item.id) }
+                    } label: {
+                        Label(model.isTrackingObject ?
+                              "Đang bám vật thể…" :
+                              "AI bám vật thể đã chọn",
+                              systemImage: "viewfinder")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(model.isTrackingFace || model.isTrackingObject)
+                    if model.isTrackingObject { ProgressView().controlSize(.small) }
+                    if let message = model.objectTrackingMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Bám vật thể: đặt tâm sticker lên vật thể ở đầu đoạn rồi chạy. Vision bám vùng ảnh đó (tối đa 14 mẫu), có thể mất dấu khi che khuất hoặc di chuyển nhanh. Nếu thất bại, hãy thử đoạn ngắn hơn.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 OverlayKeyframeStudio(
                     model: model, overlayID: item.id,
                     onScrub: onScrub

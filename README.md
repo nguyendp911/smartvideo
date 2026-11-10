@@ -4,6 +4,30 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.6.0 – AI Person Cutout & Face Follow
+
+### Vision Person Cutout (cục bộ trên iPhone)
+- Trong **Hiệu ứng**, chọn clip ảnh/video rồi chọn **AI tách nền người**: giữ nguyên, xóa phông, nền đen, trắng hoặc xanh.
+- Video xử lý **từng frame bằng VNGeneratePersonSegmentationRequest** với mask và Core Image `CIBlendWithMask`. Bản xuất MP4 thật dùng cùng đoạn xử lý với preview. Bản ảnh tĩnh dùng Vision một lần rồi mã hóa các frame.
+- Hoạt động đồng thời với Speed Curve, grade màu, overlay và transitions nhờ pipeline MOV trung gian. Các dự án cũ vẫn mở được. Không tải file lên cloud.
+- Đây là **tách nền người** (không phải vật thể tùy ý). MP4 H.264 không lưu alpha nên ứng dụng chọn một nền màu hoặc nền làm mờ, không xuất nền trong suốt. Chất lượng tóc/viền có thể hạn chế tùy ánh sáng và máy; có thể render chậm.
+
+### Face Follow (theo dõi khuôn mặt dành cho overlay ảnh)
+- Trong **Overlay**, thêm một sticker/logo PNG, đặt thời gian của nó nằm trọn trên một video có người, chọn **AI bám khuôn mặt**.
+- Vision lấy mẫu khung hình và dò vị trí khuôn mặt, tối đa 14 khung được chuyển thành keyframe X/Y của overlay. Keyframe vẫn chỉnh tay được và được dùng trong cả preview/render theo pipeline cũ.
+- Khi có nhiều mặt, chọn mặt gần vị trí sticker trước đó. Nếu không phát hiện đủ khuôn mặt, thông báo lỗi, không tạo keyframe giả.
+- Ngoài bám mặt, phiên bản này còn có **AI bám vật thể** bằng `VNTrackObjectRequest`: đặt sticker trên vật thể tại đầu đoạn và chọn **AI bám vật thể đã chọn**. Vision theo dõi vùng ảnh qua nhiều mốc và ghi keyframe cho overlay.
+- Không hỗ trợ theo dõi khi vật thể bị che khuất lâu, di chuyển quá nhanh, hoặc qua nhiều clip; với clip dài, số mẫu được giới hạn. Không phải tracking 30 FPS hoặc tracking nhiều đối tượng đồng thời. Nên chỉnh lại keyframe khi cần.
+
+### Thư viện preset cục bộ v4.6
+- Mở **Preset Pro** để chọn giữa **30 công thức dựng** (trước đây có 24). Sáu công thức thêm mới: **Laptop Review, Sale Flash, Lesson Explainer, Travel Recap, Daily Story, Portrait Hero**.
+- Các mẫu này thực sự áp màu, chuyển cảnh, VFX, chuyển động và title theo engine hiện tại; không chỉ là nút trang trí.
+- Không phải kho template online tải từ CapCut. Dự án vẫn chưa có dịch vụ đồng bộ/tải asset bản quyền trên Internet.
+
+Build 31 (v4.6.0). GitHub Actions kiểm tra biên dịch Simulator và IPA unsigned, nhưng không thể thay thế QA render trên iPhone 12 Pro Max.
+
+> Các mục mô tả phiên bản cũ bên dưới được giữ làm lịch sử phát triển; đọc phần **v4.6** để biết tính năng hiện có.
+
 ## ViePN Smart Video v4.5.0 – Speed Curve
 
 - **Speed Curve có hiệu lực thực khi xuất MP4**: trong **Hiệu ứng → Speed Curve**, chọn **Montage**, **Hero**, **Flash** hoặc **Tùy chỉnh**. Có 5 nút điều khiển tốc độ theo vị trí nguồn video từ 0% đến 100%, trong khoảng **0,25×–4×**.
@@ -31,7 +55,7 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan và mờ qua đen/trắng, freeze frame, tốc độ clip 0,25×–4×, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
 
-Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, optical-flow slow motion và speed curve dạng đường cong tự do (bản 4.5 đã có 5 nút speed curve) và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
+Các hạng mục lớn còn thiếu so với CapCut gồm optical-flow slow motion, tracking nhiều đối tượng/đi xuyên clip, đường cong tốc độ Bézier và thư viện template/asset trực tuyến. Bản 4.6 đã có Vision tách nền **người**, bám **khuôn mặt/vật thể trong một clip**, và 30 preset cục bộ; chưa tương đương các tính năng AI thương mại đầy đủ.
 
 
 ## ViePN Smart Video v4.2.0 – Media Inspector

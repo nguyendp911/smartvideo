@@ -95,11 +95,13 @@ enum SpeedCurveProcessor {
         let asset = try await composition(for: clip)
         let item = AVPlayerItem(asset: asset)
         if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-            !clip.colorAdjustments.isNeutral {
+            !clip.colorAdjustments.isNeutral ||
+            clip.personBackground != .original {
             item.videoComposition = VideoFrameGrader.makeComposition(
                 asset: asset, look: clip.imageLook,
                 intensity: clip.lookIntensity,
-                adjustments: clip.colorAdjustments
+                adjustments: clip.colorAdjustments,
+                personBackground: clip.personBackground
             )
         }
         return item

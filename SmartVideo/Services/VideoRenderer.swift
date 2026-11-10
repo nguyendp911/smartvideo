@@ -77,6 +77,7 @@ final class VideoRenderer {
                     imageLook: clip.imageLook,
                     lookIntensity: clip.lookIntensity,
                     colorAdjustments: clip.colorAdjustments,
+                    personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical
                 )
@@ -106,7 +107,8 @@ final class VideoRenderer {
                 prepared.speedCurve = []
 
                 if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-                    !clip.colorAdjustments.isNeutral {
+                    !clip.colorAdjustments.isNeutral ||
+                    clip.personBackground != .original {
                     // Existing Core Image grading is run AFTER the retime.
                     // Do not discard the grade or apply it twice.
                     let gradeURL = MediaStorage.newTemporaryVideoURL()
@@ -120,7 +122,8 @@ final class VideoRenderer {
                 }
                 workingClips[index] = prepared
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-                      !clip.colorAdjustments.isNeutral {
+                      !clip.colorAdjustments.isNeutral ||
+                      clip.personBackground != .original {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
                 try await VideoFrameGrader.renderTrimmed(
@@ -368,6 +371,7 @@ final class VideoRenderer {
         imageLook: ImageLook,
         lookIntensity: Double,
         colorAdjustments: ColorAdjustments,
+        personBackground: PersonBackground,
         flipHorizontal: Bool,
         flipVertical: Bool
     ) async throws {
@@ -383,7 +387,17 @@ final class VideoRenderer {
         let x = size.width / extent.width
         let y = size.height / extent.height
         let scale = contentMode == .fill ? max(x, y) : min(x, y)
-        let fitted = image
+        // Grade the original pixels before applying an opaque matte, so
+        // pure green/white remains unchanged for subsequent chroma workflows.
+        // Vision is evaluated once per still, not once per output frame.
+        let gradedSource = StudioColorGrader.apply(
+            image, look: imageLook, intensity: lookIntensity,
+            adjustments: colorAdjustments
+        )
+        let cutout = try PersonCutoutProcessor.apply(
+            image, mode: personBackground, foreground: gradedSource
+        )
+        let fitted = cutout
             .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             .transformed(by: CGAffineTransform(
@@ -391,11 +405,7 @@ final class VideoRenderer {
                 y: (size.height - extent.height * scale) / 2
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
-        let styled = StudioColorGrader.apply(
-            fitted, look: imageLook, intensity: lookIntensity,
-            adjustments: colorAdjustments
-        )
-        let staticFrame = styled.composited(over: black)
+        let staticFrame = fitted.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: .mov)
@@ -482,7 +492,7 @@ final class VideoRenderer {
                 .scaledBy(x: zoom, y: zoom)
                 .translatedBy(x: -size.width / 2, y: -size.height / 2)
                 .translatedBy(x: shift / zoom, y: 0)
-                frameImage = styled.transformed(by: scale)
+                frameImage = fitted.transformed(by: scale)
                     .composited(over: black).cropped(to: canvasRect)
             }
             var finalFrame = frameImage

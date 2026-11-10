@@ -117,6 +117,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     /// Strength of the selected grade (zero leaves the source unchanged).
     var lookIntensity: Double = 1.0
     var colorAdjustments: ColorAdjustments = .neutral
+    var personBackground: PersonBackground = .original
     var flipHorizontal: Bool = false
     var flipVertical: Bool = false
 
@@ -128,6 +129,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          imageLook: ImageLook = .original,
          lookIntensity: Double = 1.0,
          colorAdjustments: ColorAdjustments = .neutral,
+         personBackground: PersonBackground = .original,
          flipHorizontal: Bool = false, flipVertical: Bool = false) {
         self.id = id
         self.kind = kind
@@ -141,6 +143,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.imageLook = imageLook
         self.lookIntensity = min(1, max(0, lookIntensity))
         self.colorAdjustments = colorAdjustments
+        self.personBackground = personBackground
         self.flipHorizontal = flipHorizontal
         self.flipVertical = flipVertical
     }
@@ -148,7 +151,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
         case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
-        case flipHorizontal, flipVertical
+        case flipHorizontal, flipVertical, personBackground
     }
 
     /// Existing projects from 2.x-3.9 never had a lookIntensity key.
@@ -174,6 +177,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         lookIntensity = min(1, max(0, rawStrength.isFinite ? rawStrength : 1))
         colorAdjustments = try c.decodeIfPresent(ColorAdjustments.self,
                                                  forKey: .colorAdjustments) ?? .neutral
+        personBackground = try c.decodeIfPresent(PersonBackground.self,
+                                                  forKey: .personBackground) ?? .original
         flipHorizontal = try c.decodeIfPresent(Bool.self,
                                                forKey: .flipHorizontal) ?? false
         flipVertical = try c.decodeIfPresent(Bool.self,
