@@ -20,6 +20,11 @@ jobs:
       - name: Validate optional Python video downloader
         run: python3 -m py_compile backend/video_resolver/main.py
 
+      - name: Validate nonlinear retime math
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/SpeedCurve.swift scripts/speed-curve-tests.swift -o /tmp/speed-curve-tests
+          /tmp/speed-curve-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
