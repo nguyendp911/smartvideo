@@ -12,16 +12,26 @@ import CoreImage
 enum VideoFrameGrader {
     static func makeComposition(
         asset: AVAsset, look: ImageLook, intensity: Double,
-        adjustments: ColorAdjustments = .neutral
+        adjustments: ColorAdjustments = .neutral,
+        personBackground: PersonBackground = .original
     ) -> AVVideoComposition {
         let context = CIContext(options: [.cacheIntermediates: false])
         return AVVideoComposition(asset: asset) { request in
             let source = request.sourceImage
-            let graded = StudioColorGrader.apply(
-                source, look: look, intensity: intensity,
-                adjustments: adjustments
-            ).cropped(to: source.extent)
-            request.finish(with: graded, context: context)
+            do {
+                let cutout = try PersonCutoutProcessor.apply(
+                    source, mode: personBackground
+                )
+                let graded = StudioColorGrader.apply(
+                    cutout, look: look, intensity: intensity,
+                    adjustments: adjustments
+                ).cropped(to: source.extent)
+                request.finish(with: graded, context: context)
+            } catch {
+                // Export fails explicitly instead of silently returning
+                // the original footage without a requested AI cutout.
+                request.finish(with: error)
+            }
         }
     }
 
@@ -30,11 +40,13 @@ enum VideoFrameGrader {
         let item = AVPlayerItem(asset: asset)
         if clip.kind == .video &&
            ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-            !clip.colorAdjustments.isNeutral) {
+            !clip.colorAdjustments.isNeutral ||
+            clip.personBackground != .original) {
             item.videoComposition = makeComposition(
                 asset: asset, look: clip.imageLook,
                 intensity: clip.lookIntensity,
-                adjustments: clip.colorAdjustments
+                adjustments: clip.colorAdjustments,
+                personBackground: clip.personBackground
             )
         }
         return item
@@ -46,8 +58,9 @@ enum VideoFrameGrader {
         clip: TimelineClip, outputURL: URL
     ) async throws {
         guard clip.kind == .video,
-              (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-                !clip.colorAdjustments.isNeutral else {
+              ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
+                !clip.colorAdjustments.isNeutral ||
+                clip.personBackground != .original) else {
             throw SmartVideoError.invalidMedia(
                 "Không có bộ màu video cần xử lý."
             )
@@ -82,7 +95,8 @@ enum VideoFrameGrader {
         exporter.videoComposition = makeComposition(
             asset: asset, look: clip.imageLook,
             intensity: clip.lookIntensity,
-            adjustments: clip.colorAdjustments
+            adjustments: clip.colorAdjustments,
+            personBackground: clip.personBackground
         )
         exporter.timeRange = CMTimeRange(
             start: CMTime(seconds: start, preferredTimescale: 600),
