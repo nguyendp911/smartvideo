@@ -932,9 +932,9 @@ final class EditorViewModel: ObservableObject {
             imageOverlays[index].startY = frames.first?.y ?? overlay.startY
             imageOverlays[index].endX = frames.last?.x ?? overlay.endX
             imageOverlays[index].endY = frames.last?.y ?? overlay.endY
-            faceTrackingMessage = "Đã tạo \\(frames.count) keyframe bám khuôn mặt."
+            faceTrackingMessage = "Đã tạo \(frames.count) keyframe bám khuôn mặt."
         } catch {
-            errorText = "Không theo dõi được khuôn mặt: \\(error.localizedDescription)"
+            errorText = "Không theo dõi được khuôn mặt: \(error.localizedDescription)"
             faceTrackingMessage = nil
         }
     }
