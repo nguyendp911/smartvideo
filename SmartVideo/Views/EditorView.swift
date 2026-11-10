@@ -54,6 +54,8 @@ struct EditorView: View {
     @State private var showDocumentImporter = false
     @State private var subtitleFileForShare: URL?
     @State private var previewPlayer: AVPlayer?
+    @State private var previewRequestID = UUID()
+    @State private var previewTask: Task<Void, Never>?
     @State private var localSecond = 0.0
     @State private var isPlaying = false
     @State private var showProjects = false
@@ -147,7 +149,7 @@ struct EditorView: View {
         }
         .onChange(of: selectedClipID) { _ in
             compareOriginalFootage = false
-            updatePreview()
+            updatePreview(preservingClock: true)
         }
         .onChange(of: compareOriginalFootage) { _ in
             refreshColorPreview()
@@ -161,10 +163,18 @@ struct EditorView: View {
         .onChange(of: selectedClip?.colorAdjustments) { _ in
             refreshColorPreview()
         }
+        .onChange(of: selectedClip?.speedCurve) { _ in
+            refreshColorPreview()
+        }
         .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
             guard isPlaying, let player = previewPlayer else { return }
             if let clip = selectedClip {
-                localSecond = max(0, (player.currentTime().seconds - clip.startTime) / max(0.25, clip.playbackSpeed))
+                if clip.speedCurve.isEmpty {
+                    localSecond = max(0, (player.currentTime().seconds -
+                        clip.startTime) / max(0.25, clip.playbackSpeed))
+                } else {
+                    localSecond = max(0, player.currentTime().seconds)
+                }
                 if let index = model.clips.firstIndex(where: { $0.id == clip.id }) {
                     model.timelineSecond = min(model.totalDuration,
                         model.timelineStart(of: index) + localSecond)
@@ -458,9 +468,13 @@ struct EditorView: View {
                             player.pause()
                             isPlaying = false
                         } else {
-                            let start = (selectedClip?.startTime ?? 0) + localSecond
+                            let curved = !(selectedClip?.speedCurve.isEmpty ?? true)
+                            let start = curved ? localSecond :
+                                (selectedClip?.startTime ?? 0) +
+                                localSecond * max(0.25, selectedClip?.playbackSpeed ?? 1)
                             player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
-                            player.playImmediately(atRate: Float(selectedClip?.playbackSpeed ?? 1))
+                            player.playImmediately(atRate: curved ? 1 :
+                                Float(selectedClip?.playbackSpeed ?? 1))
                             isPlaying = true
                         }
                     } label: {
@@ -734,11 +748,15 @@ struct EditorView: View {
         let clip = model.clips[position.index]
         if selectedClipID != clip.id {
             selectedClipID = clip.id
-            updatePreview()
+            localSecond = position.local
+            updatePreview(preservingClock: true)
+        } else {
+            localSecond = position.local
         }
-        localSecond = position.local
         if clip.kind == .video {
-            let seek = clip.startTime + position.local * clip.playbackSpeed
+            let seek = clip.speedCurve.isEmpty
+                ? clip.startTime + position.local * clip.playbackSpeed
+                : position.local
             previewPlayer?.seek(to: CMTime(seconds: seek, preferredTimescale: 600),
                                 toleranceBefore: .zero, toleranceAfter: .zero)
         }
@@ -1898,30 +1916,17 @@ struct EditorView: View {
     }
 
     private func refreshColorPreview() {
-        guard let clip = selectedClip, clip.kind == .video else { return }
-        let clock = max(0, localSecond)
-        previewPlayer?.pause()
-        isPlaying = false
-        var previewClip = clip
-        if compareOriginalFootage {
-            previewClip.lookIntensity = 0
-            previewClip.colorAdjustments = .neutral
-        }
-        let item = VideoFrameGrader.makePreviewItem(for: previewClip)
-        let player = AVPlayer(playerItem: item)
-        previewPlayer = player
-        player.seek(
-            to: CMTime(seconds: clip.startTime +
-                       clock * max(0.25, clip.playbackSpeed),
-                       preferredTimescale: 600),
-            toleranceBefore: .zero, toleranceAfter: .zero
-        )
+        updatePreview(preservingClock: true)
     }
 
-    private func updatePreview() {
+    private func updatePreview(preservingClock: Bool = false) {
+        previewTask?.cancel()
         previewPlayer?.pause()
         isPlaying = false
-        localSecond = 0
+        let clock = preservingClock ? max(0, localSecond) : 0
+        localSecond = clock
+        let requestID = UUID()
+        previewRequestID = requestID
         guard let clip = selectedClip, clip.kind == .video else {
             previewPlayer = nil
             return
@@ -1931,10 +1936,46 @@ struct EditorView: View {
             previewClip.lookIntensity = 0
             previewClip.colorAdjustments = .neutral
         }
-        let player = AVPlayer(playerItem:
-            VideoFrameGrader.makePreviewItem(for: previewClip))
-        player.seek(to: CMTime(seconds: clip.startTime, preferredTimescale: 600))
-        previewPlayer = player
+
+        if previewClip.speedCurve.isEmpty {
+            let player = AVPlayer(playerItem:
+                VideoFrameGrader.makePreviewItem(for: previewClip))
+            previewPlayer = player
+            player.seek(
+                to: CMTime(seconds: clip.startTime +
+                           clock * max(0.25, clip.playbackSpeed),
+                           preferredTimescale: 600)
+            )
+        } else {
+            // Build the same retimed AVComposition as the renderer.
+            // Debounce curve slider edits and discard outdated results.
+            previewPlayer = nil
+            previewTask = Task {
+                do {
+                    try await Task.sleep(nanoseconds: 180_000_000)
+                    try Task.checkCancellation()
+                    let item = try await SpeedCurveProcessor.previewItem(
+                        for: previewClip
+                    )
+                    guard !Task.isCancelled,
+                          previewRequestID == requestID,
+                          selectedClipID == clip.id else { return }
+                    let player = AVPlayer(playerItem: item)
+                    previewPlayer = player
+                    player.seek(to: CMTime(
+                        seconds: min(clock, clip.renderedDuration),
+                        preferredTimescale: 600
+                    ))
+                } catch is CancellationError {
+                    // A newer slider value or clip selection replaced this
+                    // request. This is not an editing error.
+                } catch {
+                    guard previewRequestID == requestID else { return }
+                    model.errorText = "Không tạo được preview Speed Curve: " +
+                        error.localizedDescription
+                }
+            }
+        }
     }
 }
 
