@@ -72,7 +72,7 @@ final class TimelineComposer {
         }
 
         var overlaps = Array(repeating: CMTime.zero, count: max(0, parts.count - 1))
-        if transition == .dissolve {
+        if transition != .cut {
             for index in overlaps.indices {
                 // Less than one quarter of each neighboring clip prevents
                 // a triple-overlap and keeps clip ordering deterministic.
@@ -222,15 +222,36 @@ final class TimelineComposer {
             if index < overlaps.count, CMTimeCompare(nextOverlap, .zero) > 0 {
                 let transitionStart = cleanEnd
                 let incoming = layer(at: index + 1, for: transitionStart)
-                incoming.setOpacityRamp(
-                    fromStartOpacity: 0, toEndOpacity: 1,
-                    timeRange: CMTimeRange(start: transitionStart, duration: nextOverlap)
-                )
                 let outgoing = layer(at: index, for: transitionStart)
                 let overlap = AVMutableVideoCompositionInstruction()
                 overlap.timeRange = CMTimeRange(start: transitionStart, duration: nextOverlap)
                 overlap.layerInstructions = [incoming, outgoing]
-                overlap.backgroundColor = UIColor.black.cgColor
+                if transition == .dissolve {
+                    // Cross dissolve: the top (incoming) layer fades over
+                    // the previous clip for the full overlap duration.
+                    incoming.setOpacityRamp(
+                        fromStartOpacity: 0, toEndOpacity: 1,
+                        timeRange: CMTimeRange(start: transitionStart, duration: nextOverlap)
+                    )
+                } else {
+                    // Dip transition: the outgoing clip vanishes into a
+                    // solid background, then the incoming clip appears.
+                    // Two half-length ramps avoid an accidental crossfade.
+                    let half = CMTimeMultiplyByFloat64(nextOverlap, multiplier: 0.5)
+                    let midpoint = CMTimeAdd(transitionStart, half)
+                    outgoing.setOpacityRamp(
+                        fromStartOpacity: 1, toEndOpacity: 0,
+                        timeRange: CMTimeRange(start: transitionStart, duration: half)
+                    )
+                    incoming.setOpacity(0, at: transitionStart)
+                    incoming.setOpacityRamp(
+                        fromStartOpacity: 0, toEndOpacity: 1,
+                        timeRange: CMTimeRange(start: midpoint,
+                                               duration: CMTimeSubtract(nextOverlap, half))
+                    )
+                }
+                overlap.backgroundColor = (transition == .dipWhite ?
+                    UIColor.white : UIColor.black).cgColor
                 instructions.append(overlap)
             }
         }
@@ -366,7 +387,7 @@ final class TimelineComposer {
                     piece.timeRange = CMTimeRange(
                         start: from, duration: CMTimeSubtract(to, from)
                     )
-                    piece.backgroundColor = UIColor.black.cgColor
+                    piece.backgroundColor = instruction.backgroundColor ?? UIColor.black.cgColor
                     let active = videoSpans.filter {
                         CMTimeCompare($0.start, from) <= 0 &&
                         CMTimeCompare($0.end, from) > 0

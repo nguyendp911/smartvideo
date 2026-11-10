@@ -864,6 +864,32 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
 
                 if clip.kind == .video {
+                    HStack(spacing: 8) {
+                        Button {
+                            previewPlayer?.pause()
+                            isPlaying = false
+                            Task {
+                                if let newID = await model.freezeFrame(
+                                    clipID: clip.id, atLocalSecond: localSecond
+                                ) {
+                                    selectedClipID = newID
+                                    activeTool = .clip
+                                    scrubTimeline(to: model.timelineSecond)
+                                }
+                            }
+                        } label: {
+                            Label("Đóng băng 1,5s", systemImage: "snowflake")
+                        }
+                        .disabled(model.isCreatingFreezeFrame)
+                        if model.isCreatingFreezeFrame {
+                            ProgressView().controlSize(.small)
+                            Text("Đang lấy khung hình…")
+                                .font(.caption2)
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+
                     HStack {
                         Text("Điểm vào")
                         Spacer()
@@ -942,7 +968,7 @@ struct EditorView: View {
                     .buttonStyle(.plain)
                 }
             }
-            if model.transition == .dissolve {
+            if model.transition != .cut {
                 HStack {
                     Text("Thời lượng hòa tan")
                     Spacer()
@@ -970,14 +996,14 @@ struct EditorView: View {
                     HStack {
                         Text("Tốc độ")
                         Spacer()
-                        Text(String(format: "%.1fx · %.1f giây", clip.playbackSpeed,
+                        Text(String(format: "%.2fx · %.1f giây", clip.playbackSpeed,
                                     clip.renderedDuration))
                             .monospacedDigit()
                     }
                     .font(.caption)
                     HStack(spacing: 6) {
-                        ForEach([0.5, 1.0, 1.5, 2.0], id: \.self) { speed in
-                            Button(String(format: "%.1fx", speed)) {
+                        ForEach([0.25, 0.5, 1.0, 2.0, 4.0], id: \.self) { speed in
+                            Button(String(format: "%gx", speed)) {
                                 updateSpeed(clip.id, to: speed)
                             }
                             .font(.caption.bold())
@@ -993,6 +1019,15 @@ struct EditorView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                    Slider(value: Binding(
+                        get: {
+                            model.clips.first(where: { $0.id == clip.id })?
+                                .playbackSpeed ?? 1
+                        },
+                        set: { updateSpeed(clip.id, to: $0) }
+                    ), in: 0.25...4, step: 0.05)
+                    .tint(.cyan)
+                    .accessibilityLabel("Tốc độ video")
                     Text("Tốc độ không làm méo khung hình; giọng gốc có thể đổi cao độ ở một số codec.")
                         .font(.caption2).foregroundStyle(.secondary)
                 } else {
@@ -1160,9 +1195,10 @@ struct EditorView: View {
 
     private func updateSpeed(_ id: UUID, to speed: Double) {
         guard let index = model.clips.firstIndex(where: { $0.id == id }) else { return }
-        model.clips[index].playbackSpeed = speed
+        let safeSpeed = min(4, max(0.25, speed))
+        model.clips[index].playbackSpeed = safeSpeed
         if isPlaying, let player = previewPlayer {
-            player.rate = Float(speed)
+            player.rate = Float(safeSpeed)
         }
     }
 
