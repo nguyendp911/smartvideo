@@ -1737,6 +1737,7 @@ final class EditorViewModel: ObservableObject {
                 imageLook: source.imageLook,
                 lookIntensity: source.lookIntensity,
                 colorAdjustments: source.colorAdjustments,
+                personBackground: source.personBackground,
                 flipHorizontal: source.flipHorizontal,
                 flipVertical: source.flipVertical
             )
