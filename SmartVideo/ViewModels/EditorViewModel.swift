@@ -1481,6 +1481,36 @@ final class EditorViewModel: ObservableObject {
         return (0, 0)
     }
 
+    /// Presets and custom points change rendered duration without altering
+    /// original media. A preset change is a single undoable operation.
+    func applySpeedCurve(_ preset: SpeedCurvePreset, to id: UUID) {
+        guard let index = clips.firstIndex(where: { $0.id == id }),
+              clips[index].kind == .video else { return }
+        checkpoint()
+        clips[index].speedCurve = SpeedCurveMath.normalized(preset.points)
+        if !clips[index].speedCurve.isEmpty {
+            clips[index].playbackSpeed = 1
+        }
+        timelineSecond = min(timelineSecond, totalDuration)
+    }
+
+    /// A five-node curve editor. Call beginSpeedCurveEdit() when a slider
+    /// gesture begins so one gesture corresponds to one undo checkpoint.
+    func beginSpeedCurveEdit() {
+        checkpoint()
+    }
+
+    func changeSpeedCurveNode(_ id: UUID, at index: Int, to speed: Double) {
+        guard let clipIndex = clips.firstIndex(where: { $0.id == id }),
+              clips[clipIndex].kind == .video,
+              clips[clipIndex].speedCurve.indices.contains(index),
+              speed.isFinite else { return }
+        clips[clipIndex].speedCurve[index].speed =
+            min(SpeedCurveMath.maxSpeed,
+                max(SpeedCurveMath.minSpeed, speed))
+        timelineSecond = min(timelineSecond, totalDuration)
+    }
+
     @discardableResult
     func splitClip(at second: Double) -> UUID? {
         guard let position = clipAtTimeline(second) else { return nil }
@@ -1499,10 +1529,27 @@ final class EditorViewModel: ObservableObject {
         var right = source
         right.id = UUID()
         if source.kind == .video {
-            let leftSourceSeconds = leftOutput * source.playbackSpeed
+            let leftSourceSeconds: Double
+            if source.speedCurve.isEmpty {
+                leftSourceSeconds = leftOutput * max(0.25, source.playbackSpeed)
+            } else {
+                leftSourceSeconds = SpeedCurveMath.sourceOffset(
+                    atOutputSecond: leftOutput, sourceDuration: source.duration,
+                    points: source.speedCurve
+                )
+            }
             left.duration = leftSourceSeconds
             right.startTime = source.startTime + leftSourceSeconds
             right.duration = max(0.1, source.duration - leftSourceSeconds)
+            if !source.speedCurve.isEmpty {
+                let splitAt = leftSourceSeconds / max(0.001, source.duration)
+                left.speedCurve = SpeedCurveMath.trimmed(
+                    source.speedCurve, from: 0, to: splitAt
+                )
+                right.speedCurve = SpeedCurveMath.trimmed(
+                    source.speedCurve, from: splitAt, to: 1
+                )
+            }
         } else {
             left.duration = leftOutput
             right.duration = max(0.1, source.duration - leftOutput)
@@ -1528,9 +1575,15 @@ final class EditorViewModel: ObservableObject {
         let startingProject = projectID
         let local = min(source.renderedDuration, max(0,
             second.isFinite ? second : 0))
+        let frameSourceOffset = source.speedCurve.isEmpty
+            ? local * max(0.25, source.playbackSpeed)
+            : SpeedCurveMath.sourceOffset(
+                atOutputSecond: local, sourceDuration: source.duration,
+                points: source.speedCurve
+            )
         let captureSecond = min(
             source.startTime + source.duration - 0.01,
-            source.startTime + local * max(0.25, source.playbackSpeed)
+            source.startTime + frameSourceOffset
         )
         isCreatingFreezeFrame = true
         defer { isCreatingFreezeFrame = false }
@@ -1580,13 +1633,22 @@ final class EditorViewModel: ObservableObject {
             let freezeIndex: Int
             if local >= 0.2 && source.renderedDuration - local >= 0.2 {
                 // Split by source time, preserving non-1x playback speed.
-                let leftSourceSeconds = local * max(0.25, source.playbackSpeed)
+                let leftSourceSeconds = frameSourceOffset
                 var left = source
                 var right = source
                 left.duration = leftSourceSeconds
                 right.id = UUID()
                 right.startTime = source.startTime + leftSourceSeconds
                 right.duration = source.duration - leftSourceSeconds
+                if !source.speedCurve.isEmpty {
+                    let splitAt = leftSourceSeconds / max(0.001, source.duration)
+                    left.speedCurve = SpeedCurveMath.trimmed(
+                        source.speedCurve, from: 0, to: splitAt
+                    )
+                    right.speedCurve = SpeedCurveMath.trimmed(
+                        source.speedCurve, from: splitAt, to: 1
+                    )
+                }
                 clips.replaceSubrange(index...index, with: [left, frozen, right])
                 freezeIndex = index + 1
             } else if local < 0.2 {
