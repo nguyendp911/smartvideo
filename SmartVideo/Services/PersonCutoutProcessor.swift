@@ -31,9 +31,10 @@ enum PersonCutoutProcessor {
     /// The same function is used by the live Core Image preview and export.
     static func apply(
         _ source: CIImage, mode: PersonBackground,
-        quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
+        quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced,
+        foreground: CIImage? = nil
     ) throws -> CIImage {
-        guard mode != .original else { return source }
+        guard mode != .original else { return foreground ?? source }
         let extent = source.extent
         guard extent.width > 0, extent.height > 0 else {
             throw SmartVideoError.invalidMedia("Khung hình không hợp lệ để tách nền.")
@@ -88,7 +89,7 @@ enum PersonCutoutProcessor {
             background = CIImage(color: CIColor(red: 0, green: 0.62,
                                                 blue: 0.12, alpha: 1)).cropped(to: extent)
         }
-        return source.applyingFilter("CIBlendWithMask", parameters: [
+        return (foreground ?? source).applyingFilter("CIBlendWithMask", parameters: [
             kCIInputBackgroundImageKey: background,
             kCIInputMaskImageKey: mask
         ]).cropped(to: extent)
