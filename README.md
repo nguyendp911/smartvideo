@@ -16,7 +16,8 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 - Trong **Overlay**, thêm một sticker/logo PNG, đặt thời gian của nó nằm trọn trên một video có người, chọn **AI bám khuôn mặt**.
 - Vision lấy mẫu khung hình và dò vị trí khuôn mặt, tối đa 14 khung được chuyển thành keyframe X/Y của overlay. Keyframe vẫn chỉnh tay được và được dùng trong cả preview/render theo pipeline cũ.
 - Khi có nhiều mặt, chọn mặt gần vị trí sticker trước đó. Nếu không phát hiện đủ khuôn mặt, thông báo lỗi, không tạo keyframe giả.
-- Không phải object tracking tổng quát hay bám mặt ở FPS cao. Nên dùng clip đủ sáng và quay mặt rõ nét.
+- Ngoài bám mặt, phiên bản này còn có **AI bám vật thể** bằng `VNTrackObjectRequest`: đặt sticker trên vật thể tại đầu đoạn và chọn **AI bám vật thể đã chọn**. Vision theo dõi vùng ảnh qua nhiều mốc và ghi keyframe cho overlay.
+- Không hỗ trợ theo dõi khi vật thể bị che khuất lâu, di chuyển quá nhanh, hoặc qua nhiều clip; với clip dài, số mẫu được giới hạn. Không phải tracking 30 FPS hoặc tracking nhiều đối tượng đồng thời. Nên chỉnh lại keyframe khi cần.
 
 ### Thư viện preset cục bộ v4.6
 - Mở **Preset Pro** để chọn giữa **30 công thức dựng** (trước đây có 24). Sáu công thức thêm mới: **Laptop Review, Sale Flash, Lesson Explainer, Travel Recap, Daily Story, Portrait Hero**.
@@ -54,7 +55,7 @@ Build 31 (v4.6.0). GitHub Actions kiểm tra biên dịch Simulator và IPA unsi
 
 ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan và mờ qua đen/trắng, freeze frame, tốc độ clip 0,25×–4×, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
 
-Các hạng mục lớn còn thiếu so với CapCut gồm object tracking tổng quát, optical-flow slow motion, đường cong tốc độ Bézier và thư viện template/asset trực tuyến. Bản 4.6 đã thêm Vision tách nền **người**, bám **khuôn mặt**, và 30 preset cục bộ; không nên nhầm với các tính năng AI thương mại đầy đủ.
+Các hạng mục lớn còn thiếu so với CapCut gồm optical-flow slow motion, tracking nhiều đối tượng/đi xuyên clip, đường cong tốc độ Bézier và thư viện template/asset trực tuyến. Bản 4.6 đã có Vision tách nền **người**, bám **khuôn mặt/vật thể trong một clip**, và 30 preset cục bộ; chưa tương đương các tính năng AI thương mại đầy đủ.
 
 
 ## ViePN Smart Video v4.2.0 – Media Inspector
