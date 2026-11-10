@@ -4,6 +4,15 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.5.0 – Speed Curve
+
+- **Speed Curve có hiệu lực thực khi xuất MP4**: trong **Hiệu ứng → Speed Curve**, chọn **Montage**, **Hero**, **Flash** hoặc **Tùy chỉnh**. Có 5 nút điều khiển tốc độ theo vị trí nguồn video từ 0% đến 100%, trong khoảng **0,25×–4×**.
+- Dữ liệu curve được lưu vào project, mở project cũ vẫn hoạt động với tốc độ cố định cũ. Thời lượng và vị trí clip được tính theo cùng các lát tốc độ khi dựng video. Tách clip/Freeze Frame dùng phép ánh xạ từ thời gian timeline về đúng khung hình nguồn.
+- Xem trước sử dụng AVMutableComposition được retime từ video nguồn; các chỉnh sửa slider tạo preview mới sau khoảng debounce ngắn, loại bỏ tác vụ cũ khi chọn clip khác.
+- Export tạo MOV trung gian từ khoảng video đã cắt, thay đổi tốc độ theo từng lát (đồng bộ audio nguồn nếu có), sau đó áp màu Core Image, chuyển cảnh, overlay và xuất MP4 trong pipeline hiện tại. File nguồn không bị sửa.
+- **Giới hạn:** Speed Curve sử dụng chia khoảng AVFoundation, không thực hiện optical flow hoặc bù khung hình AI. Audio có thể đổi cao độ; clip dài hoặc chất lượng cao cần thời gian và dung lượng trung gian nhiều hơn.
+- Phiên bản ứng dụng: **4.5.0 (build 30)**. Cần kiểm tra thực tế trên iPhone 12 Pro Max; GitHub Actions chỉ kiểm tra biên dịch và đóng gói.
+
 ## ViePN Smart Video v4.4.0 – Freeze Frame & Transitions
 
 - **Freeze Frame:** Trong **Đoạn**, chọn video, đưa con trỏ đến thời điểm cần giữ và chạm **Đóng băng 1,5s**. Ứng dụng trích khung hình gốc bằng AVFoundation, tách video tại vị trí hợp lệ và chèn một clip ảnh tĩnh có thể tăng/giảm thời lượng.
@@ -22,7 +31,7 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan và mờ qua đen/trắng, freeze frame, tốc độ clip 0,25×–4×, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
 
-Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, speed curve tùy chỉnh/optical-flow slow motion và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
+Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, optical-flow slow motion và speed curve dạng đường cong tự do (bản 4.5 đã có 5 nút speed curve) và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
 
 
 ## ViePN Smart Video v4.2.0 – Media Inspector
@@ -44,7 +53,7 @@ Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến củ
 
 ### Giới hạn chức năng
 
-Chưa có import LUT 3D .cube, xóa nền video bằng AI, motion tracking hoặc speed curve tùy chỉnh. Nhận diện highlight nhạc/video dùng heuristic âm thanh và Vision, không hiểu nội dung như người dựng phim. Các clip nguồn và track phủ có những khả năng chỉnh sửa riêng; editor chưa cung cấp một timeline đa track kéo thả hoàn chỉnh như NLE desktop.
+Chưa có import LUT 3D .cube, xóa nền video bằng AI, motion tracking hoặc optical-flow slow motion. Nhận diện highlight nhạc/video dùng heuristic âm thanh và Vision, không hiểu nội dung như người dựng phim. Các clip nguồn và track phủ có những khả năng chỉnh sửa riêng; editor chưa cung cấp một timeline đa track kéo thả hoàn chỉnh như NLE desktop.
 
 ### Giới hạn thực tế
 
