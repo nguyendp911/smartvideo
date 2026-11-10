@@ -163,6 +163,9 @@ struct EditorView: View {
         .onChange(of: selectedClip?.colorAdjustments) { _ in
             refreshColorPreview()
         }
+        .onChange(of: selectedClip?.personBackground) { _ in
+            refreshColorPreview()
+        }
         .onChange(of: selectedClip?.speedCurve) { _ in
             refreshColorPreview()
         }
@@ -301,6 +304,7 @@ struct EditorView: View {
                             look: clip.imageLook,
                             intensity: compareOriginalFootage ? 0 : clip.lookIntensity,
                             adjustments: compareOriginalFootage ? .neutral : clip.colorAdjustments,
+                            personBackground: compareOriginalFootage ? .original : clip.personBackground,
                             contentMode: model.contentMode
                         )
                             .frame(width: canvasWidth, height: canvasHeight)
@@ -1062,6 +1066,41 @@ struct EditorView: View {
                     imageMotionGrid(clip: clip)
 
                 }
+
+                Divider()
+                Text("AI tách nền người · Vision trên iPhone")
+                    .font(.subheadline.bold())
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(PersonBackground.allCases) { mode in
+                            Button {
+                                if let index = model.clips.firstIndex(
+                                    where: { $0.id == clip.id }
+                                ) {
+                                    model.clips[index].personBackground = mode
+                                }
+                            } label: {
+                                Label(mode.rawValue, systemImage: mode.symbol)
+                                    .font(.caption2.bold())
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 9)
+                                    .foregroundStyle(
+                                        clip.personBackground == mode ?
+                                            .black : .white
+                                    )
+                                    .background(
+                                        clip.personBackground == mode ?
+                                            accent : Color.white.opacity(0.08),
+                                        in: RoundedRectangle(cornerRadius: 8)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                Text("Tách người khỏi nền bằng Vision trên thiết bị; chọn nền mờ, đen, trắng hoặc xanh. Chỉ hỗ trợ chủ thể người. Clip dài có thể xuất chậm hơn; bản gốc được giữ nguyên.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
 
                 Text("Bộ lọc màu Core Image · Ảnh & Video")
                     .font(.caption.bold())
