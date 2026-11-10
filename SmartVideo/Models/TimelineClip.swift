@@ -9,9 +9,18 @@ enum ClipKind: String, Codable {
 enum VideoTransition: String, CaseIterable, Identifiable {
     case cut = "Cắt thẳng"
     case dissolve = "Hòa tan"
+    case dipBlack = "Mờ qua đen"
+    case dipWhite = "Mờ qua trắng"
 
     var id: String { rawValue }
-    var iconName: String { self == .cut ? "scissors" : "square.stack.3d.up" }
+    var iconName: String {
+        switch self {
+        case .cut: return "scissors"
+        case .dissolve: return "square.stack.3d.up"
+        case .dipBlack: return "moon.fill"
+        case .dipWhite: return "sun.max.fill"
+        }
+    }
 }
 
 enum ImageMotion: String, CaseIterable, Identifiable, Codable {
