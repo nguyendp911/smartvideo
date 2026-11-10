@@ -42,7 +42,7 @@ struct PresetStudioPanel: View {
         VStack(alignment: .leading, spacing: 11) {
             titleBar
 
-            Text("24 công thức phối VFX, màu ảnh, chuyển cảnh và chuyển động. Tự tạo, không cần tải asset bên ngoài.")
+            Text("\(StudioPreset.all.count) công thức phối VFX, màu ảnh, chuyển cảnh và chuyển động. Tự tạo, không cần tải asset bên ngoài.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
 
@@ -54,7 +54,7 @@ struct PresetStudioPanel: View {
             categoryFilter
 
             HStack {
-                Text("\(visiblePresets.count) / 24 preset")
+                Text("\(visiblePresets.count) / \(StudioPreset.all.count) preset")
                     .font(.caption.bold())
                 Spacer()
                 Toggle("Yêu thích", isOn: $favoritesOnly)
@@ -95,13 +95,13 @@ struct PresetStudioPanel: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("ViePN Preset Studio")
                     .font(.headline)
-                Text("PRO COLLECTION · 24 LOOKS")
+                Text("PRO COLLECTION · 30 LOOKS")
                     .font(.system(size: 10, weight: .semibold))
                     .tracking(1.0)
                     .foregroundStyle(.secondary)
             }
             Spacer()
-            Text("V4.0")
+            Text("V4.6")
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.cyan)
         }
