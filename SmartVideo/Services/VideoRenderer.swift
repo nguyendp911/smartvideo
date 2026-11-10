@@ -492,7 +492,7 @@ final class VideoRenderer {
                 .scaledBy(x: zoom, y: zoom)
                 .translatedBy(x: -size.width / 2, y: -size.height / 2)
                 .translatedBy(x: shift / zoom, y: 0)
-                frameImage = styled.transformed(by: scale)
+                frameImage = fitted.transformed(by: scale)
                     .composited(over: black).cropped(to: canvasRect)
             }
             var finalFrame = frameImage
