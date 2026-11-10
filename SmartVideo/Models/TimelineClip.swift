@@ -108,6 +108,9 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var startTime: Double = 0
     var originalDuration: Double
     var playbackSpeed: Double = 1.0
+    /// Empty means constant-speed playback. Non-empty means a sampled
+    /// nonlinear speed curve relative to the trimmed source duration.
+    var speedCurve: [SpeedCurvePoint] = []
     var imageMotion: ImageMotion = .none
     /// Reused by both photos and videos as the selected Core Image grade.
     var imageLook: ImageLook = .original
@@ -120,6 +123,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     init(id: UUID = UUID(), kind: ClipKind, fileURL: URL,
          duration: Double, startTime: Double = 0,
          originalDuration: Double, playbackSpeed: Double = 1.0,
+         speedCurve: [SpeedCurvePoint] = [],
          imageMotion: ImageMotion = .none,
          imageLook: ImageLook = .original,
          lookIntensity: Double = 1.0,
@@ -132,6 +136,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.startTime = startTime
         self.originalDuration = originalDuration
         self.playbackSpeed = playbackSpeed
+        self.speedCurve = SpeedCurveMath.normalized(speedCurve)
         self.imageMotion = imageMotion
         self.imageLook = imageLook
         self.lookIntensity = min(1, max(0, lookIntensity))
@@ -142,7 +147,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
 
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
-        case playbackSpeed, imageMotion, imageLook, lookIntensity, colorAdjustments
+        case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
         case flipHorizontal, flipVertical
     }
 
@@ -157,6 +162,9 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         originalDuration = try c.decode(Double.self, forKey: .originalDuration)
         playbackSpeed = try c.decodeIfPresent(Double.self,
                                               forKey: .playbackSpeed) ?? 1
+        speedCurve = SpeedCurveMath.normalized(
+            try c.decodeIfPresent([SpeedCurvePoint].self, forKey: .speedCurve) ?? []
+        )
         imageMotion = try c.decodeIfPresent(ImageMotion.self,
                                             forKey: .imageMotion) ?? .none
         imageLook = try c.decodeIfPresent(ImageLook.self,
@@ -173,7 +181,13 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     }
 
     var renderedDuration: Double {
-        kind == .video ? duration / max(0.25, playbackSpeed) : duration
+        guard kind == .video else { return duration }
+        if !speedCurve.isEmpty {
+            return SpeedCurveMath.outputDuration(
+                sourceDuration: duration, points: speedCurve
+            )
+        }
+        return duration / max(0.25, playbackSpeed)
     }
 
     var filename: String { fileURL.lastPathComponent }
