@@ -29,7 +29,10 @@ enum PersonBackground: String, CaseIterable, Codable, Identifiable {
 enum PersonCutoutProcessor {
     /// Returns image with an opaque background (MP4/H.264 has no alpha).
     /// The same function is used by the live Core Image preview and export.
-    static func apply(_ source: CIImage, mode: PersonBackground) throws -> CIImage {
+    static func apply(
+        _ source: CIImage, mode: PersonBackground,
+        quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
+    ) throws -> CIImage {
         guard mode != .original else { return source }
         let extent = source.extent
         guard extent.width > 0, extent.height > 0 else {
@@ -39,7 +42,7 @@ enum PersonCutoutProcessor {
         // Vision is evaluated on the unaltered source; Core Image grading is
         // applied afterward to preserve a consistent background replacement.
         let request = VNGeneratePersonSegmentationRequest()
-        request.qualityLevel = .balanced
+        request.qualityLevel = quality
         request.outputPixelFormat = kCVPixelFormatType_OneComponent8
         try VNImageRequestHandler(ciImage: source, options: [:])
             .perform([request])
