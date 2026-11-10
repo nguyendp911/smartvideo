@@ -864,6 +864,32 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
 
                 if clip.kind == .video {
+                    HStack(spacing: 8) {
+                        Button {
+                            previewPlayer?.pause()
+                            isPlaying = false
+                            Task {
+                                if let newID = await model.freezeFrame(
+                                    clipID: clip.id, atLocalSecond: localSecond
+                                ) {
+                                    selectedClipID = newID
+                                    activeTool = .clip
+                                    scrubTimeline(to: model.timelineSecond)
+                                }
+                            }
+                        } label: {
+                            Label("Đóng băng 1,5s", systemImage: "snowflake")
+                        }
+                        .disabled(model.isCreatingFreezeFrame)
+                        if model.isCreatingFreezeFrame {
+                            ProgressView().controlSize(.small)
+                            Text("Đang lấy khung hình…")
+                                .font(.caption2)
+                        }
+                    }
+                    .font(.caption)
+                    .buttonStyle(.bordered)
+
                     HStack {
                         Text("Điểm vào")
                         Spacer()
@@ -942,7 +968,7 @@ struct EditorView: View {
                     .buttonStyle(.plain)
                 }
             }
-            if model.transition == .dissolve {
+            if model.transition != .cut {
                 HStack {
                     Text("Thời lượng hòa tan")
                     Spacer()
