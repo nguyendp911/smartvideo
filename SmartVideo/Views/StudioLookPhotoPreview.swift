@@ -54,19 +54,19 @@ struct StudioLookPhotoPreview: View {
             let prepared = input.transformed(by: CGAffineTransform(
                 scaleX: previewScale, y: previewScale
             ))
-            let cutout: CIImage
+            let graded = StudioColorGrader.apply(
+                prepared, look: look, intensity: intensity,
+                adjustments: adjustments
+            )
+            let filtered: CIImage
             do {
-                cutout = try PersonCutoutProcessor.apply(
-                    prepared, mode: personBackground
+                filtered = try PersonCutoutProcessor.apply(
+                    prepared, mode: personBackground, foreground: graded
                 )
             } catch {
                 cutoutError = "Không thể tách nền: " + error.localizedDescription
                 return
             }
-            let filtered = StudioColorGrader.apply(
-                cutout, look: look, intensity: intensity,
-                adjustments: adjustments
-            )
             let context = CIContext(options: [.cacheIntermediates: false])
             guard let result = context.createCGImage(
                 filtered, from: filtered.extent.integral
