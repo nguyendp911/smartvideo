@@ -9,9 +9,11 @@ struct StudioLookPhotoPreview: View {
     let look: ImageLook
     let intensity: Double
     let adjustments: ColorAdjustments
+    let personBackground: PersonBackground
     let contentMode: CanvasContentMode
 
     @State private var gradedImage: UIImage?
+    @State private var cutoutError: String?
 
     var body: some View {
         Group {
@@ -19,6 +21,13 @@ struct StudioLookPhotoPreview: View {
                 Image(uiImage: gradedImage)
                     .resizable()
                     .aspectRatio(contentMode: contentMode == .fill ? .fill : .fit)
+            } else if personBackground != .original {
+                VStack(spacing: 6) {
+                    ProgressView()
+                    Text(cutoutError ?? "Đang tách nền người bằng Vision…")
+                        .font(.caption2)
+                        .multilineTextAlignment(.center)
+                }
             } else if let original = UIImage(contentsOfFile: fileURL.path) {
                 Image(uiImage: original)
                     .resizable()
@@ -28,11 +37,13 @@ struct StudioLookPhotoPreview: View {
             }
         }
         .task(id: fileURL.path + "|" + look.rawValue +
-              "|" + String(format: "%.2f", intensity) + "|" +
+              "|" + personBackground.rawValue + "|" +
+              String(format: "%.2f", intensity) + "|" +
               String(format: "%.2f|%.2f|%.2f|%.2f",
                      adjustments.exposureEV, adjustments.contrast,
                      adjustments.saturation, adjustments.warmth)) {
             gradedImage = nil
+            cutoutError = nil
             guard let input = CIImage(
                 contentsOf: fileURL,
                 options: [.applyOrientationProperty: true]
@@ -43,8 +54,17 @@ struct StudioLookPhotoPreview: View {
             let prepared = input.transformed(by: CGAffineTransform(
                 scaleX: previewScale, y: previewScale
             ))
+            let cutout: CIImage
+            do {
+                cutout = try PersonCutoutProcessor.apply(
+                    prepared, mode: personBackground
+                )
+            } catch {
+                cutoutError = "Không thể tách nền: " + error.localizedDescription
+                return
+            }
             let filtered = StudioColorGrader.apply(
-                prepared, look: look, intensity: intensity,
+                cutout, look: look, intensity: intensity,
                 adjustments: adjustments
             )
             let context = CIContext(options: [.cacheIntermediates: false])
