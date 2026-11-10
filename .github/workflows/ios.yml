@@ -1,5 +1,10 @@
 name: iOS Build
 
+# New commits supersede old PR runs; keep the newest build only.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
