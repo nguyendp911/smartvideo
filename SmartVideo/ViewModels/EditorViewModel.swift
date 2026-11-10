@@ -7,6 +7,8 @@ import AVFoundation
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
     @Published var imageOverlays: [ImageOverlayClip] = []
+    @Published var isTrackingFace = false
+    @Published var faceTrackingMessage: String?
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
@@ -880,6 +882,60 @@ final class EditorViewModel: ObservableObject {
             imageOverlays.append(overlay)
         } catch {
             errorText = "Không thêm được overlay: \(error.localizedDescription)"
+        }
+    }
+
+    /// Detect the primary face and turn its positions into real overlay
+    /// keyframes. Requires the entire overlay to fit one source video clip.
+    /// All computation is local through Vision/AVFoundation.
+    func autoTrackFace(overlayID: UUID) async {
+        guard !isTrackingFace else { return }
+        guard let overlay = imageOverlays.first(where: { $0.id == overlayID }),
+              let target = clipAtTimeline(overlay.start + 0.01),
+              clips.indices.contains(target.index) else {
+            errorText = "Hãy chọn một overlay ảnh nằm trên đoạn video."
+            return
+        }
+        let clip = clips[target.index]
+        let clipStart = timelineStart(of: target.index)
+        guard clip.kind == .video,
+              overlay.start >= clipStart - 0.001,
+              overlay.end <= clipStart + clip.renderedDuration + 0.01 else {
+            errorText = "Để tự bám mặt, đặt overlay nằm trọn trong một clip video."
+            return
+        }
+        let startingProject = projectID
+        isTrackingFace = true
+        faceTrackingMessage = "Đang dò khuôn mặt và tạo keyframe…"
+        defer { isTrackingFace = false }
+
+        do {
+            let frames = try await OverlayFaceTracker.generate(
+                clip: clip, overlay: overlay,
+                localStart: overlay.start - clipStart,
+                renderSize: canvas.size(for: .hd),
+                contentMode: contentMode
+            )
+            guard startingProject == projectID,
+                  clips.contains(where: { $0.id == clip.id && $0 == clip }),
+                  let index = imageOverlays.firstIndex(where: {
+                      $0.id == overlayID && $0 == overlay
+                  }) else {
+                throw SmartVideoError.invalidMedia(
+                    "Dự án đã thay đổi khi đang phân tích. Hãy thử lại."
+                )
+            }
+            imageOverlays[index].keyframes = frames
+            imageOverlays[index].easing = .linear
+            imageOverlays[index].pathMode = .straight
+            imageOverlays[index].startX = frames.first?.x ?? overlay.startX
+            imageOverlays[index].startY = frames.first?.y ?? overlay.startY
+            imageOverlays[index].endX = frames.last?.x ?? overlay.endX
+            imageOverlays[index].endY = frames.last?.y ?? overlay.endY
+            faceTrackingMessage = "Đã tạo \\(frames.count) keyframe bám khuôn mặt."
+        } catch {
+            errorText = "Không theo dõi được khuôn mặt: \\(error.localizedDescription)"
+            faceTrackingMessage = nil
         }
     }
 
