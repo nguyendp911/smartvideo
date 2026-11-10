@@ -4,6 +4,22 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.6.0 – AI Person Cutout & Face Follow
+
+### Vision Person Cutout (cục bộ trên iPhone)
+- Trong **Hiệu ứng**, chọn clip ảnh/video rồi chọn **AI tách nền người**: giữ nguyên, xóa phông, nền đen, trắng hoặc xanh.
+- Video xử lý **từng frame bằng VNGeneratePersonSegmentationRequest** với mask và Core Image `CIBlendWithMask`. Bản xuất MP4 thật dùng cùng đoạn xử lý với preview. Bản ảnh tĩnh dùng Vision một lần rồi mã hóa các frame.
+- Hoạt động đồng thời với Speed Curve, grade màu, overlay và transitions nhờ pipeline MOV trung gian. Các dự án cũ vẫn mở được. Không tải file lên cloud.
+- Đây là **tách nền người** (không phải vật thể tùy ý). MP4 H.264 không lưu alpha nên ứng dụng chọn một nền màu hoặc nền làm mờ, không xuất nền trong suốt. Chất lượng tóc/viền có thể hạn chế tùy ánh sáng và máy; có thể render chậm.
+
+### Face Follow (theo dõi khuôn mặt dành cho overlay ảnh)
+- Trong **Overlay**, thêm một sticker/logo PNG, đặt thời gian của nó nằm trọn trên một video có người, chọn **AI bám khuôn mặt**.
+- Vision lấy mẫu khung hình và dò vị trí khuôn mặt, tối đa 14 khung được chuyển thành keyframe X/Y của overlay. Keyframe vẫn chỉnh tay được và được dùng trong cả preview/render theo pipeline cũ.
+- Khi có nhiều mặt, chọn mặt gần vị trí sticker trước đó. Nếu không phát hiện đủ khuôn mặt, thông báo lỗi, không tạo keyframe giả.
+- Không phải object tracking tổng quát hay bám mặt ở FPS cao. Nên dùng clip đủ sáng và quay mặt rõ nét.
+
+Build 31 (v4.6.0). GitHub Actions kiểm tra biên dịch Simulator và IPA unsigned, nhưng không thể thay thế QA render trên iPhone 12 Pro Max.
+
 ## ViePN Smart Video v4.5.0 – Speed Curve
 
 - **Speed Curve có hiệu lực thực khi xuất MP4**: trong **Hiệu ứng → Speed Curve**, chọn **Montage**, **Hero**, **Flash** hoặc **Tùy chỉnh**. Có 5 nút điều khiển tốc độ theo vị trí nguồn video từ 0% đến 100%, trong khoảng **0,25×–4×**.
