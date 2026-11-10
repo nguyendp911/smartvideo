@@ -4,6 +4,14 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.4.0 – Freeze Frame & Transitions
+
+- **Freeze Frame:** Trong **Đoạn**, chọn video, đưa con trỏ đến thời điểm cần giữ và chạm **Đóng băng 1,5s**. Ứng dụng trích khung hình gốc bằng AVFoundation, tách video tại vị trí hợp lệ và chèn một clip ảnh tĩnh có thể tăng/giảm thời lượng.
+- Khung hình đóng băng giữ các thiết lập lật và màu của clip gốc; bản gốc không bị chỉnh sửa. Có thể **Hoàn tác/Làm lại**, lưu/mở project và xuất MP4 như các clip ảnh khác.
+- **Chuyển cảnh mới:** **Mờ qua đen** và **Mờ qua trắng**, bên cạnh cắt thẳng/hòa tan. Hiệu ứng được tính trên timeline và được render với hai nửa chuyển cảnh độc lập, không chỉ là hiệu ứng giao diện.
+- **Tốc độ thường:** bổ sung nút nhanh 0,25× / 0,5× / 1× / 2× / 4× và thanh kéo từng bước 0,05×. *Chưa phải Speed Curve tùy chỉnh hoặc optical-flow slow motion.*
+- Cập nhật số phiên bản lên 4.4.0 (build 29). Build bằng GitHub Actions (Simulator và IPA unsigned); vẫn cần kiểm thử trên iPhone trước khi phát hành.
+
 ## ViePN Smart Video v4.3.0 – Manual Color Controls
 
 - Thêm chỉnh màu **theo từng clip**: phơi sáng −2 đến +2 EV, tương phản 0,5–1,5, bão hòa 0–2 và cân bằng ấm/lạnh.
@@ -12,7 +20,7 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ### Đối chiếu nhóm tính năng với CapCut
 
-ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan, tốc độ clip, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
+ViePN Smart Video đã có dựng clip, tỷ lệ canvas, cắt/nối, chuyển cảnh hòa tan và mờ qua đen/trắng, freeze frame, tốc độ clip 0,25×–4×, preset/VFX, chỉnh màu preset, phụ đề tự nhận diện, thuyết minh/TTS, keyframe nhiều điểm cho overlay/chữ/PIP, kho media và xuất MP4. Bản 4.3 bổ sung chỉnh màu thủ công từng clip.
 
 Các hạng mục lớn còn thiếu so với nhóm công cụ phổ biến của CapCut gồm xóa nền video bằng AI, motion tracking, speed curve tùy chỉnh/optical-flow slow motion và thư viện template/asset trực tuyến. Đây là các hướng phát triển tiếp theo; bản hiện tại không quảng cáo đã có chúng.
 
