@@ -20,7 +20,7 @@ enum VideoFrameGrader {
             let source = request.sourceImage
             do {
                 let cutout = try PersonCutoutProcessor.apply(
-                    source, mode: personBackground
+                    source, mode: personBackground, quality: .fast
                 )
                 let graded = StudioColorGrader.apply(
                     cutout, look: look, intensity: intensity,
