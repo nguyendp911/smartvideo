@@ -77,6 +77,7 @@ final class VideoRenderer {
                     imageLook: clip.imageLook,
                     lookIntensity: clip.lookIntensity,
                     colorAdjustments: clip.colorAdjustments,
+                    personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical
                 )
@@ -106,7 +107,8 @@ final class VideoRenderer {
                 prepared.speedCurve = []
 
                 if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-                    !clip.colorAdjustments.isNeutral {
+                    !clip.colorAdjustments.isNeutral ||
+                    clip.personBackground != .original {
                     // Existing Core Image grading is run AFTER the retime.
                     // Do not discard the grade or apply it twice.
                     let gradeURL = MediaStorage.newTemporaryVideoURL()
@@ -120,7 +122,8 @@ final class VideoRenderer {
                 }
                 workingClips[index] = prepared
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
-                      !clip.colorAdjustments.isNeutral {
+                      !clip.colorAdjustments.isNeutral ||
+                      clip.personBackground != .original {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
                 try await VideoFrameGrader.renderTrimmed(
@@ -368,6 +371,7 @@ final class VideoRenderer {
         imageLook: ImageLook,
         lookIntensity: Double,
         colorAdjustments: ColorAdjustments,
+        personBackground: PersonBackground,
         flipHorizontal: Bool,
         flipVertical: Bool
     ) async throws {
@@ -383,7 +387,10 @@ final class VideoRenderer {
         let x = size.width / extent.width
         let y = size.height / extent.height
         let scale = contentMode == .fill ? max(x, y) : min(x, y)
-        let fitted = image
+        // Perform Vision once per still instead of once per output video frame.
+        // Every Ken Burns frame reuses this same cutout.
+        let cutout = try PersonCutoutProcessor.apply(image, mode: personBackground)
+        let fitted = cutout
             .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
             .transformed(by: CGAffineTransform(
