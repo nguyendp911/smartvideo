@@ -387,9 +387,16 @@ final class VideoRenderer {
         let x = size.width / extent.width
         let y = size.height / extent.height
         let scale = contentMode == .fill ? max(x, y) : min(x, y)
-        // Perform Vision once per still instead of once per output video frame.
-        // Every Ken Burns frame reuses this same cutout.
-        let cutout = try PersonCutoutProcessor.apply(image, mode: personBackground)
+        // Grade the original pixels before applying an opaque matte, so
+        // pure green/white remains unchanged for subsequent chroma workflows.
+        // Vision is evaluated once per still, not once per output frame.
+        let gradedSource = StudioColorGrader.apply(
+            image, look: imageLook, intensity: lookIntensity,
+            adjustments: colorAdjustments
+        )
+        let cutout = try PersonCutoutProcessor.apply(
+            image, mode: personBackground, foreground: gradedSource
+        )
         let fitted = cutout
             .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
             .transformed(by: CGAffineTransform(scaleX: scale, y: scale))
@@ -398,11 +405,7 @@ final class VideoRenderer {
                 y: (size.height - extent.height * scale) / 2
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
-        let styled = StudioColorGrader.apply(
-            fitted, look: imageLook, intensity: lookIntensity,
-            adjustments: colorAdjustments
-        )
-        let staticFrame = styled.composited(over: black)
+        let staticFrame = fitted.composited(over: black)
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: .mov)
