@@ -143,6 +143,7 @@ final class EditorViewModel: ObservableObject {
     @Published var canvas: CanvasFormat = .portrait
     @Published var contentMode: CanvasContentMode = .fit
     @Published var isImporting = false
+    @Published var isCreatingFreezeFrame = false
     @Published var isExporting = false
     @Published var isRenderingPreview = false
     @Published var renderedPreviewURL: URL?
@@ -152,7 +153,7 @@ final class EditorViewModel: ObservableObject {
 
     var totalDuration: Double {
         let raw = clips.reduce(0) { $0 + $1.renderedDuration }
-        guard transition == .dissolve, clips.count > 1 else { return raw }
+        guard transition != .cut, clips.count > 1 else { return raw }
         let overlaps = zip(clips, clips.dropFirst()).reduce(0.0) { total, pair in
             total + min(transitionSeconds,
                         pair.0.renderedDuration * 0.24,
@@ -1456,7 +1457,7 @@ final class EditorViewModel: ObservableObject {
         var cursor = 0.0
         for item in 0..<index {
             cursor += clips[item].renderedDuration
-            if transition == .dissolve {
+            if transition != .cut {
                 cursor -= min(transitionSeconds,
                     clips[item].renderedDuration * 0.24,
                     clips[item + 1].renderedDuration * 0.24)
@@ -1508,6 +1509,99 @@ final class EditorViewModel: ObservableObject {
         }
         clips.replaceSubrange(index...index, with: [left, right])
         return right.id
+    }
+
+    /// Extract an actual source frame, not a screenshot of the preview.
+    /// The generated image becomes an editable timeline clip, so project
+    /// persistence, export, undo/redo, and the existing still renderer work.
+    /// A freeze is silent by design and never modifies its source video.
+    @discardableResult
+    func freezeFrame(clipID: UUID, atLocalSecond second: Double,
+                     holdSeconds: Double = 1.5) async -> UUID? {
+        guard !isCreatingFreezeFrame,
+              let originalIndex = clips.firstIndex(where: { $0.id == clipID }),
+              clips[originalIndex].kind == .video else {
+            errorText = "Chọn một đoạn video để đóng băng khung hình."
+            return nil
+        }
+        let source = clips[originalIndex]
+        let startingProject = projectID
+        let local = min(source.renderedDuration, max(0,
+            second.isFinite ? second : 0))
+        let captureSecond = min(
+            source.startTime + source.duration - 0.01,
+            source.startTime + local * max(0.25, source.playbackSpeed)
+        )
+        isCreatingFreezeFrame = true
+        defer { isCreatingFreezeFrame = false }
+
+        do {
+            let asset = AVURLAsset(url: source.fileURL)
+            let generator = AVAssetImageGenerator(asset: asset)
+            generator.appliesPreferredTrackTransform = true
+            // Keep memory usage manageable for iPhone 12 Pro Max.
+            generator.maximumSize = CGSize(width: 1920, height: 1920)
+            generator.requestedTimeToleranceBefore = CMTime(seconds: 0.02,
+                                                             preferredTimescale: 600)
+            generator.requestedTimeToleranceAfter = CMTime(seconds: 0.02,
+                                                            preferredTimescale: 600)
+            let (frame, _) = try await generator.image(
+                at: CMTime(seconds: max(source.startTime, captureSecond),
+                           preferredTimescale: 600)
+            )
+            guard let jpeg = UIImage(cgImage: frame).jpegData(
+                compressionQuality: 0.96
+            ) else {
+                throw SmartVideoError.invalidMedia("Không thể mã hóa khung hình.")
+            }
+            let stillURL = try MediaStorage.storeImage(data: jpeg)
+
+            // The user may have switched projects or edited this clip while
+            // AVFoundation was extracting the frame. Never edit stale data.
+            guard startingProject == projectID,
+                  let index = clips.firstIndex(where: { $0.id == clipID }),
+                  clips[index] == source else {
+                try? FileManager.default.removeItem(at: stillURL)
+                throw SmartVideoError.invalidMedia(
+                    "Clip đã thay đổi. Vui lòng thực hiện lại."
+                )
+            }
+            checkpoint()
+            let hold = min(12, max(0.2, holdSeconds))
+            let frozen = TimelineClip(
+                kind: .image, fileURL: stillURL,
+                duration: hold, originalDuration: hold,
+                imageLook: source.imageLook,
+                lookIntensity: source.lookIntensity,
+                colorAdjustments: source.colorAdjustments,
+                flipHorizontal: source.flipHorizontal,
+                flipVertical: source.flipVertical
+            )
+            let freezeIndex: Int
+            if local >= 0.2 && source.renderedDuration - local >= 0.2 {
+                // Split by source time, preserving non-1x playback speed.
+                let leftSourceSeconds = local * max(0.25, source.playbackSpeed)
+                var left = source
+                var right = source
+                left.duration = leftSourceSeconds
+                right.id = UUID()
+                right.startTime = source.startTime + leftSourceSeconds
+                right.duration = source.duration - leftSourceSeconds
+                clips.replaceSubrange(index...index, with: [left, frozen, right])
+                freezeIndex = index + 1
+            } else if local < 0.2 {
+                clips.insert(frozen, at: index)
+                freezeIndex = index
+            } else {
+                clips.insert(frozen, at: index + 1)
+                freezeIndex = index + 1
+            }
+            timelineSecond = timelineStart(of: freezeIndex)
+            return frozen.id
+        } catch {
+            errorText = "Không thể đóng băng khung hình: \(error.localizedDescription)"
+            return nil
+        }
     }
 
     @discardableResult
