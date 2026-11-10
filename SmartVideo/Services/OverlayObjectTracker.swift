@@ -98,8 +98,8 @@ enum OverlayObjectTracker {
                 continue
             }
             guard let tracker else { continue }
-            try handler.perform([tracker], on: frame, options: [:])
-            guard let found = tracker.results?.first,
+            try handler.perform([tracker], on: frame)
+            guard let found = tracker.results?.first as? VNDetectedObjectObservation,
                   found.confidence >= 0.20 else {
                 throw SmartVideoError.invalidMedia(
                     "Vision mất dấu vật thể. Hãy chọn đoạn ngắn, rõ và đặt ảnh phủ đúng vị trí ban đầu."
