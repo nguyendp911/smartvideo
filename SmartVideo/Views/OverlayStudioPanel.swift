@@ -92,6 +92,29 @@ struct OverlayStudioPanel: View {
                        in: 0.2...max(0.3, total - item.start), step: 0.1)
                     .tint(.cyan)
 
+                VStack(alignment: .leading, spacing: 6) {
+                    Button {
+                        Task { await model.autoTrackFace(overlayID: item.id) }
+                    } label: {
+                        Label(model.isTrackingFace ?
+                              "Đang dò khuôn mặt…" :
+                              "AI bám khuôn mặt (tạo keyframe)",
+                              systemImage: "face.dashed")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.cyan)
+                    .disabled(model.isTrackingFace)
+                    if model.isTrackingFace { ProgressView().controlSize(.small) }
+                    if let message = model.faceTrackingMessage {
+                        Text(message)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Đặt lớp ảnh phủ nằm trọn trên một clip có khuôn mặt. Vision lấy tối đa 14 mẫu để tạo đường di chuyển; có thể chỉnh từng keyframe sau đó. Không theo dõi vật thể bất kỳ.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+
                 OverlayKeyframeStudio(
                     model: model, overlayID: item.id,
                     onScrub: onScrub
