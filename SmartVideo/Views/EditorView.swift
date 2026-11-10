@@ -1971,7 +1971,7 @@ struct EditorView: View {
                           selectedClipID == clip.id else { return }
                     let player = AVPlayer(playerItem: item)
                     previewPlayer = player
-                    player.seek(to: CMTime(
+                    await player.seek(to: CMTime(
                         seconds: min(clock, clip.renderedDuration),
                         preferredTimescale: 600
                     ))
