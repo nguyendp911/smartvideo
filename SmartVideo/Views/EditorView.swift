@@ -933,33 +933,43 @@ struct EditorView: View {
     }
 
     private var toolPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(EditorTool.allCases) { tool in
-                    Button {
-                        activeTool = tool
-                        previewPlayer?.pause()
-                        isPlaying = false
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: tool.symbol)
-                                .font(.system(size: 15))
-                            Text(tool.rawValue)
-                                .font(.system(size: 11, weight: .medium))
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(EditorTool.allCases) { tool in
+                        Button {
+                            activeTool = tool
+                            previewPlayer?.pause()
+                            isPlaying = false
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: tool.symbol)
+                                    .font(.system(size: 15))
+                                Text(tool.rawValue)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(activeTool == tool ? .black : .white)
+                            .frame(width: 78, height: 48)
+                            .background(
+                                activeTool == tool ? accent :
+                                    Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
                         }
-                        .foregroundStyle(activeTool == tool ? .black : .white)
-                        .frame(width: 82, height: 49)
-                        .background(
-                            activeTool == tool ? accent : Color.white.opacity(0.09),
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
+                        .buttonStyle(.plain)
+                        .id(tool.id)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 2)
+            }
+            .onChange(of: activeTool) { tool in
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(tool.id, anchor: .center)
                 }
             }
-            .padding(.horizontal, 1)
         }
-        .frame(height: 54)
+        .frame(height: 52)
     }
 
     @ViewBuilder
@@ -2063,40 +2073,37 @@ struct EditorView: View {
                 .font(.caption)
             }
 
-            Button {
-                previewPlayer?.pause()
-                isPlaying = false
-                model.renderSynchronizedPreview()
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Xem thử toàn bộ · 720p",
+            // One-row export dock frees about 45pt for the live controls.
+            // It stays outside the editing ScrollView and above the home bar.
+            HStack(spacing: 8) {
+                Button {
+                    previewPlayer?.pause()
+                    isPlaying = false
+                    model.renderSynchronizedPreview()
+                } label: {
+                    Label("Xem thử 720p",
                           systemImage: "play.rectangle.fill")
                         .font(.subheadline.bold())
-                    Spacer()
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-            }
-            .buttonStyle(.bordered)
-            .disabled(model.clips.isEmpty || model.isImporting ||
-                      model.isExporting || model.isRenderingPreview)
+                .buttonStyle(.bordered)
+                .disabled(model.clips.isEmpty || model.isImporting ||
+                          model.isExporting || model.isRenderingPreview)
 
-            Button {
-                previewPlayer?.pause()
-                isPlaying = false
-                model.export()
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Xuất video MP4 · \(model.quality.rawValue)", systemImage: "square.and.arrow.up.fill")
-                        .font(.headline)
-                    Spacer()
+                Button {
+                    previewPlayer?.pause()
+                    isPlaying = false
+                    model.export()
+                } label: {
+                    Label("Xuất MP4", systemImage: "square.and.arrow.up.fill")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .frame(height: 36)
+                .buttonStyle(.borderedProminent)
+                .tint(accent)
+                .disabled(model.clips.isEmpty || model.isImporting ||
+                          model.isExporting || model.isRenderingPreview)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(accent)
-            .disabled(model.clips.isEmpty || model.isImporting ||
-                      model.isExporting || model.isRenderingPreview)
         }
     }
 
