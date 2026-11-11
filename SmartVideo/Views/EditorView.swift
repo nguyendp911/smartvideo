@@ -47,6 +47,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
 struct EditorView: View {
     @StateObject private var model = EditorViewModel()
     @StateObject private var recorder = VoiceRecorder()
+    @StateObject private var audioMonitor = LiveAudioPreview()
     @State private var pickerItems: [PhotosPickerItem] = []
     @State private var selectedClipID: UUID?
     @State private var activeTool: EditorTool = .clip
@@ -75,6 +76,8 @@ struct EditorView: View {
     private var isTimelineExpanded = false
     @AppStorage("ViePN.Editor.LargePreview")
     private var prefersLargePreview = false
+    @AppStorage("ViePN.Editor.LiveAudioEnabled")
+    private var liveAudioEnabled = true
 
     private let accent = Color.cyan
 
@@ -203,13 +206,23 @@ struct EditorView: View {
         .onChange(of: selectedClip?.speedCurve) { _ in
             refreshColorPreview()
         }
+        .onChange(of: model.keepOriginalAudio) { _ in
+            previewPlayer?.isMuted = !model.keepOriginalAudio
+        }
+        .onChange(of: liveAudioEnabled) { enabled in
+            if !enabled { audioMonitor.pause() }
+        }
+        .onChange(of: model.projectID) { _ in
+            pauseContinuousPlayback()
+            audioMonitor.invalidate()
+        }
         .onReceive(Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()) { _ in
             updateContinuousPlaybackClock()
         }
         .onDisappear {
             previewTask?.cancel()
-            previewPlayer?.pause()
-            isPlaying = false
+            pauseContinuousPlayback()
+            audioMonitor.invalidate()
         }
         // One native fileImporter, with no nested UIKit sheet dismissal.
         .fileImporter(
@@ -291,8 +304,7 @@ struct EditorView: View {
                 ForEach(EditorTool.allCases) { tool in
                     Button {
                         activeTool = tool
-                        previewPlayer?.pause()
-                        isPlaying = false
+                        pauseContinuousPlayback()
                     } label: {
                         Label(tool.rawValue, systemImage: tool.symbol)
                     }
@@ -568,6 +580,17 @@ struct EditorView: View {
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.cyan)
                 Button {
+                    liveAudioEnabled.toggle()
+                } label: {
+                    Image(systemName: liveAudioEnabled ?
+                          "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .foregroundStyle(liveAudioEnabled ? accent : .gray)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(liveAudioEnabled ?
+                    "Tắt nghe thử nhạc giọng và FX" :
+                    "Bật nghe thử nhạc giọng và FX")
+                Button {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isTimelineExpanded = false
                     }
@@ -824,6 +847,18 @@ struct EditorView: View {
                     .accessibilityLabel("Làm lại")
 
                 Button {
+                    liveAudioEnabled.toggle()
+                } label: {
+                    Image(systemName: liveAudioEnabled ?
+                          "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .foregroundStyle(liveAudioEnabled ? accent : .gray)
+                        .frame(minWidth: 28, minHeight: 28)
+                }
+                .accessibilityLabel(liveAudioEnabled ?
+                    "Tắt nhạc, giọng đọc và âm FX khi xem nhanh" :
+                    "Bật nhạc, giọng đọc và âm FX khi xem nhanh")
+
+                Button {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isTimelineExpanded = true
                     }
@@ -978,8 +1013,7 @@ struct EditorView: View {
                     ForEach(EditorTool.allCases) { tool in
                         Button {
                             activeTool = tool
-                            previewPlayer?.pause()
-                            isPlaying = false
+                            pauseContinuousPlayback()
                         } label: {
                             VStack(spacing: 3) {
                                 Image(systemName: tool.symbol)
@@ -2071,6 +2105,14 @@ struct EditorView: View {
 
             Toggle("Giữ tiếng gốc của các clip", isOn: $model.keepOriginalAudio)
                 .font(.caption)
+            Text("Nghe thử theo timeline: dùng biểu tượng loa ở thanh timeline. Nhạc, thuyết minh và FX được phát cùng video khi nhấn Play; bản dựng 720p vẫn là chuẩn đối chiếu cuối.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let warning = audioMonitor.warning {
+                Text(warning)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(10)
     }
@@ -2116,8 +2158,7 @@ struct EditorView: View {
             // It stays outside the editing ScrollView and above the home bar.
             HStack(spacing: 8) {
                 Button {
-                    previewPlayer?.pause()
-                    isPlaying = false
+                    pauseContinuousPlayback()
                     model.renderSynchronizedPreview()
                 } label: {
                     Label("Xem thử 720p",
@@ -2130,8 +2171,7 @@ struct EditorView: View {
                           model.isExporting || model.isRenderingPreview)
 
                 Button {
-                    previewPlayer?.pause()
-                    isPlaying = false
+                    pauseContinuousPlayback()
                     model.export()
                 } label: {
                     Label("Xuất MP4", systemImage: "square.and.arrow.up.fill")
@@ -2179,6 +2219,7 @@ struct EditorView: View {
 
     private func pauseContinuousPlayback() {
         previewPlayer?.pause()
+        audioMonitor.pause()
         isPlaying = false
         autoResumeClipID = nil
         lastStillFrameTick = nil
@@ -2217,7 +2258,13 @@ struct EditorView: View {
         isPlaying = true
         lastStillFrameTick = Date()
 
-        guard clip.kind == .video else { return }
+        if clip.kind == .image {
+            audioMonitor.sync(
+                at: model.timelineSecond, model: model,
+                enabled: liveAudioEnabled, actuallyPlaying: true
+            )
+            return
+        }
         guard let player = previewPlayer else {
             // A nonlinear Speed Curve might still be preparing its item.
             // updatePreview resumes automatically once preparation finishes.
@@ -2248,7 +2295,10 @@ struct EditorView: View {
     private func updateContinuousPlaybackClock() {
         guard isPlaying, let clip = selectedClip,
               let index = model.clips.firstIndex(where: { $0.id == clip.id })
-        else { return }
+        else {
+            audioMonitor.pause()
+            return
+        }
 
         if clip.kind == .image {
             let now = Date()
@@ -2261,7 +2311,11 @@ struct EditorView: View {
             lastStillFrameTick = now
         } else {
             guard let player = previewPlayer,
-                  player.currentItem?.status == .readyToPlay else { return }
+                  player.currentItem?.status == .readyToPlay,
+                  player.rate > 0 else {
+                audioMonitor.pause()
+                return
+            }
             let sourceSecond = player.currentTime().seconds
             guard sourceSecond.isFinite else { return }
             let videoSecond = clip.speedCurve.isEmpty
@@ -2273,6 +2327,10 @@ struct EditorView: View {
 
         model.timelineSecond = min(model.totalDuration,
             model.timelineStart(of: index) + localSecond)
+        audioMonitor.sync(
+            at: model.timelineSecond, model: model,
+            enabled: liveAudioEnabled, actuallyPlaying: isPlaying
+        )
         let starts = model.clips.indices.map { model.timelineStart(of: $0) }
         if let next = ProjectPreviewTiming.nextClip(
             after: index,
@@ -2334,6 +2392,7 @@ struct EditorView: View {
                                resumePlayback: Bool = false) {
         previewTask?.cancel()
         previewPlayer?.pause()
+        audioMonitor.pause()
         isPlaying = resumePlayback
         lastStillFrameTick = resumePlayback ? Date() : nil
         let clock = preservingClock ? max(0, localSecond) : 0
@@ -2355,6 +2414,7 @@ struct EditorView: View {
             let player = AVPlayer(playerItem:
                 VideoFrameGrader.makePreviewItem(for: previewClip))
             previewPlayer = player
+            player.isMuted = !model.keepOriginalAudio
             let seekSecond = ProjectPreviewTiming.sourceTime(
                 localTime: clock, trimStart: clip.startTime,
                 playbackSpeed: clip.playbackSpeed, speedCurveEnabled: false
@@ -2388,6 +2448,7 @@ struct EditorView: View {
                           previewRequestID == requestID,
                           selectedClipID == clip.id else { return }
                     let player = AVPlayer(playerItem: item)
+                    player.isMuted = !model.keepOriginalAudio
                     previewPlayer = player
                     await player.seek(to: CMTime(
                         seconds: min(clock, clip.renderedDuration),
@@ -2405,6 +2466,7 @@ struct EditorView: View {
                 } catch {
                     guard previewRequestID == requestID else { return }
                     isPlaying = false
+                    audioMonitor.pause()
                     model.errorText = "Không tạo được preview Speed Curve: " +
                         error.localizedDescription
                 }
