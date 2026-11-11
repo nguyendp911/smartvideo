@@ -336,6 +336,9 @@ struct EditorView: View {
                             contentMode: model.contentMode
                         )
                             .frame(width: canvasWidth, height: canvasHeight)
+                            .scaleEffect(photoMotionScale(clip))
+                            .offset(x: photoMotionShift(clip,
+                                                        canvasWidth: canvasWidth))
                             .scaleEffect(x: clip.flipHorizontal ? -1 : 1,
                                          y: clip.flipVertical ? -1 : 1)
                             .clipped()
