@@ -35,6 +35,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/ProjectPreviewTiming.swift scripts/project-preview-tests.swift -o /tmp/project-preview-tests
           /tmp/project-preview-tests
 
+      - name: Validate live audio timing and envelopes
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/LiveAudioPreviewMath.swift scripts/live-audio-preview-tests.swift -o /tmp/live-audio-tests
+          /tmp/live-audio-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
