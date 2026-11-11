@@ -537,8 +537,8 @@ struct EditorView: View {
             }
             .overlay(alignment: .bottomLeading) {
                 if !model.clips.isEmpty {
-                    Text(isPlaying ? "▶ Dự án · \(model.clips.count) clip" :
-                         "Xem liên tục · \(model.clips.count) clip")
+                    Text(isPlaying ? "▶ Phát nhanh · \(model.clips.count) clip" :
+                         "Xem nhanh · \(model.clips.count) clip")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 7)
@@ -833,7 +833,17 @@ struct EditorView: View {
             .font(.caption)
             .buttonStyle(.plain)
 
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Button {
+                    stepPreviewClip(-1)
+                } label: {
+                    Image(systemName: "backward.end.fill")
+                        .frame(minWidth: 28, minHeight: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.clips.isEmpty)
+                .accessibilityLabel("Clip trước")
+
                 Slider(value: Binding(
                     get: { min(model.totalDuration,
                                max(0, model.timelineSecond)) },
@@ -841,6 +851,17 @@ struct EditorView: View {
                 ), in: 0...max(0.1, model.totalDuration), step: 0.04)
                     .tint(accent)
                     .accessibilityLabel("Tua video, xem trước luôn cố định")
+
+                Button {
+                    stepPreviewClip(1)
+                } label: {
+                    Image(systemName: "forward.end.fill")
+                        .frame(minWidth: 28, minHeight: 28)
+                }
+                .buttonStyle(.plain)
+                .disabled(model.clips.isEmpty)
+                .accessibilityLabel("Clip tiếp theo")
+
                 Button {
                     if let id = model.splitClip(at: model.timelineSecond) {
                         selectedClipID = id
@@ -907,9 +928,19 @@ struct EditorView: View {
     }
 
     private func selectClip(_ clip: TimelineClip, at index: Int) {
-        model.timelineSecond = model.timelineStart(of: index)
-        selectedClipID = clip.id
-        localSecond = 0
+        let time = model.timelineStart(of: index)
+        // Re-selecting the same clip must actually seek it to frame zero;
+        // selectedClipID.onChange would not fire for an identical UUID.
+        scrubTimeline(to: time)
+    }
+
+    private func stepPreviewClip(_ delta: Int) {
+        guard !model.clips.isEmpty else { return }
+        let current = model.clips.firstIndex(where: {
+            $0.id == selectedClipID
+        }) ?? 0
+        let target = min(model.clips.count - 1, max(0, current + delta))
+        scrubTimeline(to: model.timelineStart(of: target))
     }
 
     private func scrubTimeline(to time: Double) {
