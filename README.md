@@ -4,6 +4,19 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.7.0 – Studio có preview cố định
+
+### Khắc phục giao diện phải cuộn lên/xuống để xem video
+- **Video Preview cố định ở phía trên**: vùng xem trước không nằm trong ScrollView của các công cụ; khi cuộn các bộ lọc, chỉnh màu, âm thanh, phụ đề hoặc overlay, hình/video luôn hiện ở đầu màn hình.
+- **Timeline gọn mặc định**: dùng một thanh tua, các nút clip và thao tác Tách, Hoàn tác, Làm lại ngay dưới video. Bấm nút mũi tên để **mở timeline đầy đủ** khi cần kéo/sắp xếp clip, xem track FX/beat/keyframe. Bấm mũi tên hướng lên để thu lại. Trạng thái mở rộng được nhớ giữa các lần dùng.
+- **Kích thước preview điều chỉnh nhanh**: nút phóng to/thu nhỏ ở góc trên bên phải màn hình video. Tùy chọn được lưu để lần mở tiếp theo giữ bố cục quen thuộc.
+- **Thanh công cụ cuộn ngang tự định vị** mục đang chọn; bảng tham số cuộn dọc riêng, tự về đầu khi chuyển nhóm chức năng. Kéo bên dưới sẽ không đẩy preview lên khỏi màn hình.
+- **Thanh tác vụ ghim dưới cùng** chỉ còn một hàng nút *Xem thử 720p / Xuất MP4*, giữ các trạng thái đang render và nút Lưu/Chia sẻ video khi có kết quả. Mở rộng không gian chỉnh sửa trên iPhone.
+- Bố cục đo chiều cao từ màn hình thật và dành một khoảng cho bộ điều khiển bên dưới, hạn chế nút không chạm được trên iPhone cỡ nhỏ.
+- Phiên bản **4.7.0 (build 32)**; iOS 16+, bundle ID `com.nguyendp911.smartvideo` không đổi.
+
+> Bản build từ GitHub Actions là IPA chưa ký; chưa thể xem đó là kết quả kiểm thử thao tác thực tế trên iPhone 12 Pro Max. Tính năng xử lý video trên v4.6 được giữ nguyên.
+
 ## ViePN Smart Video v4.6.0 – AI Person Cutout & Face Follow
 
 ### Vision Person Cutout (cục bộ trên iPhone)
