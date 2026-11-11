@@ -4,6 +4,21 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.8.0 – Xem nhanh toàn timeline
+
+### Phát preview liên tục không cần xuất file
+- Trong Studio, **phần video cố định phía trên** nay có nút **Phát/Tạm dừng toàn dự án** cho **cả video lẫn ảnh tĩnh**, không còn chỉ chạy đoạn video đang chọn rồi tự dừng.
+- Hết clip hoặc đến mốc bắt đầu clip tiếp theo (kể cả timeline có chuyển cảnh chồng lấn), preview tự chọn clip tiếp theo. Thời gian và phụ đề hiển thị đồng bộ theo thời gian tổng.
+- Ảnh tĩnh chạy đúng thời lượng; khi đặt Ken Burns **Zoom in/out, Pan trái/phải**, khung preview phản ánh chuyển động cơ bản thay vì đứng im.
+- Preview video tuân thủ cắt, tốc độ cố định và các nút **Speed Curve** hiện có. Khi chuyển sang clip cần lập AVComposition, preview đợi tạo item rồi phát tiếp. Không tải video lên server.
+- Sau khi dừng ở cuối dự án, bấm Play để phát lại từ đầu. Tua, chuyển clip và nhấn Pause tắt chế độ phát tự động để người dùng giữ nguyên vị trí chỉnh.
+- Timeline thu gọn có **Clip trước / Clip tiếp** bên cạnh slider. Chọn lại cùng một clip sẽ thực sự tua về đầu, không giữ khung hình cũ.
+- Bộ timing độc lập có Swift regression test và được chạy trên GitHub Actions trước khi build app.
+
+**Giới hạn quan trọng:** Đây là **preview nhanh theo thứ tự các clip**: xem liên tục clip/ảnh, màu, phụ đề và overlay đang có, **không** tái tạo toàn bộ dissolve/dip giữa clip, trộn nhiều track nhạc/voice/SFX hay VFX chuyển động như MP4 cuối cùng. Chức năng **Xem thử 720p** vẫn là cách xem bản dựng đồng bộ đầy đủ. Trên một số video Speed Curve nặng, chuyển clip có thể chậm một chút. Kiểm thử trực tiếp trên iPhone vẫn cần thiết.
+
+Phiên bản **4.8.0 (build 33)**, bundle ID vẫn `com.nguyendp911.smartvideo`, iOS 16+.
+
 ## ViePN Smart Video v4.7.0 – Studio có preview cố định
 
 ### Khắc phục giao diện phải cuộn lên/xuống để xem video
