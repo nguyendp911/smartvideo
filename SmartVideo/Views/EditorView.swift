@@ -58,6 +58,8 @@ struct EditorView: View {
     @State private var previewTask: Task<Void, Never>?
     @State private var localSecond = 0.0
     @State private var isPlaying = false
+    @State private var autoResumeClipID: UUID?
+    @State private var lastStillFrameTick: Date?
     @State private var showProjects = false
     @State private var showRenderedPreview = false
     @State private var pickedOverlay: PhotosPickerItem?
@@ -177,9 +179,11 @@ struct EditorView: View {
                 selectedClipID = model.clips.first?.id
             }
         }
-        .onChange(of: selectedClipID) { _ in
+        .onChange(of: selectedClipID) { newID in
+            let resume = autoResumeClipID == newID
+            autoResumeClipID = nil
             compareOriginalFootage = false
-            updatePreview(preservingClock: true)
+            updatePreview(preservingClock: true, resumePlayback: resume)
         }
         .onChange(of: compareOriginalFootage) { _ in
             refreshColorPreview()
@@ -199,24 +203,13 @@ struct EditorView: View {
         .onChange(of: selectedClip?.speedCurve) { _ in
             refreshColorPreview()
         }
-        .onReceive(Timer.publish(every: 0.2, on: .main, in: .common).autoconnect()) { _ in
-            guard isPlaying, let player = previewPlayer else { return }
-            if let clip = selectedClip {
-                if clip.speedCurve.isEmpty {
-                    localSecond = max(0, (player.currentTime().seconds -
-                        clip.startTime) / max(0.25, clip.playbackSpeed))
-                } else {
-                    localSecond = max(0, player.currentTime().seconds)
-                }
-                if let index = model.clips.firstIndex(where: { $0.id == clip.id }) {
-                    model.timelineSecond = min(model.totalDuration,
-                        model.timelineStart(of: index) + localSecond)
-                }
-                if localSecond >= clip.renderedDuration {
-                    player.pause()
-                    isPlaying = false
-                }
-            }
+        .onReceive(Timer.publish(every: 0.08, on: .main, in: .common).autoconnect()) { _ in
+            updateContinuousPlaybackClock()
+        }
+        .onDisappear {
+            previewTask?.cancel()
+            previewPlayer?.pause()
+            isPlaying = false
         }
         // One native fileImporter, with no nested UIKit sheet dismissal.
         .fileImporter(
@@ -521,29 +514,36 @@ struct EditorView: View {
                 .padding(5)
             }
             .overlay(alignment: .bottomTrailing) {
-                if selectedClip?.kind == .video {
+                if selectedClip != nil {
                     Button {
-                        guard let player = previewPlayer else { return }
-                        if isPlaying {
-                            player.pause()
-                            isPlaying = false
-                        } else {
-                            let curved = !(selectedClip?.speedCurve.isEmpty ?? true)
-                            let start = curved ? localSecond :
-                                (selectedClip?.startTime ?? 0) +
-                                localSecond * max(0.25, selectedClip?.playbackSpeed ?? 1)
-                            player.seek(to: CMTime(seconds: start, preferredTimescale: 600))
-                            player.playImmediately(atRate: curved ? 1 :
-                                Float(selectedClip?.playbackSpeed ?? 1))
-                            isPlaying = true
-                        }
+                        toggleContinuousPlayback()
                     } label: {
-                        Image(systemName: isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 34))
+                        Image(systemName: isPlaying ?
+                              "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 36))
                             .foregroundStyle(.white)
                             .shadow(radius: 3)
+                            .frame(minWidth: 44, minHeight: 44)
                     }
-                    .padding(6)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(isPlaying ?
+                                        "Tạm dừng dự án" :
+                                        "Phát liên tục toàn dự án")
+                    .padding(5)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !model.clips.isEmpty {
+                    Text(isPlaying ? "▶ Dự án · \(model.clips.count) clip" :
+                         "Xem liên tục · \(model.clips.count) clip")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 5)
+                        .background(.black.opacity(0.65),
+                                    in: RoundedRectangle(cornerRadius: 6))
+                        .allowsHitTesting(false)
+                        .padding(7)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
