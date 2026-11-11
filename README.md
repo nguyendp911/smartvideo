@@ -4,6 +4,17 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v4.9.0 – Live Audio Monitor
+
+- **Nghe thử nhạc nền, thuyết minh và âm thanh FX** khi bấm Play trong khu vực preview cố định; không cần xuất toàn bộ MP4 chỉ để nghe thời điểm vào tiếng.
+- Hỗ trợ phát nhạc từ mốc đã chọn, giới hạn highlight, tùy chọn lặp, fade đầu/cuối, giảm nhạc còn khoảng 25% trong lúc có thuyết minh và chỉnh âm lượng trong lúc phát. Theo dõi tối đa **12 hiệu ứng âm thanh**, giữ mỗi vị trí start/sourceStart/duration, fade và mute riêng.
+- Có nút **biểu tượng loa** trên cả timeline thu gọn và đầy đủ để bật/tắt phần monitor nhạc, thuyết minh và FX. Nút này không ảnh hưởng tới nội dung MP4 cuối.
+- Khi tua, tạm dừng, đổi công cụ, chuyển dự án hoặc nhấn xuất video, bộ monitor dừng đúng lúc. Trong giai đoạn tải Speed Curve, âm thanh chờ clip thực sự bắt đầu chạy thay vì phát trước.
+- Tùy chọn **Giữ tiếng gốc của các clip** cũng áp dụng khi xem nhanh video.
+- Các bản nhạc/audio dùng AVAudioPlayer xử lý trực tiếp trên thiết bị. Có kiểm thử Swift cho loop, mốc audio, fade và ducking trong GitHub Actions.
+- **Giới hạn:** Đây là monitor tương đối cho dựng nhanh, không phải engine trộn âm chính xác đến từng sample. Đoạn nhạc có giới hạn highlight/lặp có thể có một nhịp nhỏ tại điểm nối; chưa có auto-ducking dựa trên nội dung giọng nói, và không preview đầy đủ crossfade audio giữa các clip. Để kiểm tra bản mix cuối, dùng **Xem thử 720p**.
+- Phiên bản **4.9.0 (build 34)**, iOS 16+, giữ bundle ID `com.nguyendp911.smartvideo`.
+
 ## ViePN Smart Video v4.8.0 – Xem nhanh toàn timeline
 
 ### Phát preview liên tục không cần xuất file
