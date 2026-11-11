@@ -67,6 +67,12 @@ struct EditorView: View {
     @State private var selectedTextID: UUID?
     @State private var selectedSoundID: UUID?
     @State private var compareOriginalFootage = false
+    /// A stable two-zone editing workspace: preview and timeline never live
+    /// inside the vertically scrolling tool panel.
+    @AppStorage("ViePN.Editor.ExpandedTimeline")
+    private var isTimelineExpanded = false
+    @AppStorage("ViePN.Editor.LargePreview")
+    private var prefersLargePreview = false
 
     private let accent = Color.cyan
 
@@ -87,23 +93,47 @@ struct EditorView: View {
 
     var body: some View {
         GeometryReader { geometry in
-            VStack(spacing: 6) {
+            VStack(spacing: 5) {
                 topBar
-                    .padding(.top, 3)
+                    .padding(.top, 2)
 
+                // Always visible while adjusting long filters, captions,
+                // Voice/AI panels and keyframes. Never put this in ScrollView.
                 videoPreview
                     .frame(height: previewHeight(for: geometry.size.height))
+                    .zIndex(1)
 
-                timeline
+                if isTimelineExpanded {
+                    timeline
+                } else {
+                    compactTimeline
+                }
                 toolPicker
 
-                ScrollView {
-                    toolPanel
-                        .padding(.horizontal, 2)
-                        .padding(.vertical, 8)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                // Only the parameter panel scrolls. Switching tool tabs
+                // restores its top instead of retaining an unrelated offset.
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Color.clear.frame(height: 1)
+                                .id("editor-panel-top")
+                            toolPanel
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity,
+                                       alignment: .topLeading)
+                        }
+                    }
+                    .onChange(of: activeTool) { _ in
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            scrollProxy.scrollTo("editor-panel-top",
+                                                 anchor: .top)
+                        }
+                    }
+                    .scrollDismissesKeyboard(.interactively)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
                 .background(Color.white.opacity(0.035),
                             in: RoundedRectangle(cornerRadius: 15))
             }
@@ -239,9 +269,14 @@ struct EditorView: View {
     }
 
     private func previewHeight(for availableHeight: CGFloat) -> CGFloat {
-        // Height is computed from the content area after respecting the
-        // system safe area and the pinned export bar.
-        min(255, max(135, availableHeight * 0.31))
+        // GeometryReader already excludes the pinned export bar and safe
+        // areas. Reserve an actual editing area even on smaller iPhones.
+        let timelineHeight: CGFloat = isTimelineExpanded ? 224 : 105
+        let reserved = 42 + 54 + timelineHeight + 155 + 28
+        let room = max(120, availableHeight - reserved)
+        let target = availableHeight * (prefersLargePreview ? 0.39 : 0.30)
+        return min(prefersLargePreview ? 285 : 225,
+                   max(120, min(target, room)))
     }
 
     private var topBar: some View {
@@ -464,6 +499,27 @@ struct EditorView: View {
                     .background(.black.opacity(0.65), in: RoundedRectangle(cornerRadius: 5))
                     .padding(5)
             }
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        prefersLargePreview.toggle()
+                    }
+                } label: {
+                    Image(systemName: prefersLargePreview ?
+                          "arrow.down.right.and.arrow.up.left" :
+                          "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .padding(8)
+                        .background(.black.opacity(0.65),
+                                    in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(prefersLargePreview ?
+                                    "Thu nhỏ video xem trước" :
+                                    "Phóng to video xem trước")
+                .padding(5)
+            }
             .overlay(alignment: .bottomTrailing) {
                 if selectedClip?.kind == .video {
                     Button {
@@ -508,6 +564,16 @@ struct EditorView: View {
                 Text(timecode(model.timelineSecond) + " / " + timecode(model.totalDuration))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.cyan)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isTimelineExpanded = false
+                    }
+                } label: {
+                    Image(systemName: "chevron.up.circle.fill")
+                }
+                .accessibilityLabel("Thu gọn timeline")
+                .buttonStyle(.plain)
+                .foregroundStyle(.cyan)
             }
 
             if model.clips.isEmpty {
@@ -726,6 +792,106 @@ struct EditorView: View {
                alignment: .top)
     }
 
+    /// A 100pt always-available timeline for everyday editing. The full
+    /// multi-track timeline can be expanded on demand without hiding preview.
+    private var compactTimeline: some View {
+        VStack(spacing: 4) {
+            HStack(spacing: 8) {
+                Label("Timeline", systemImage: "rectangle.3.group")
+                    .font(.caption.bold())
+                Spacer(minLength: 1)
+                Text(timecode(model.timelineSecond) + " / " +
+                     timecode(model.totalDuration))
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.cyan)
+                    .lineLimit(1)
+
+                Button {
+                    model.undoEdit()
+                    scrubTimeline(to: model.timelineSecond)
+                } label: { Image(systemName: "arrow.uturn.backward") }
+                    .disabled(!model.canUndo)
+                    .accessibilityLabel("Hoàn tác")
+
+                Button {
+                    model.redoEdit()
+                    scrubTimeline(to: model.timelineSecond)
+                } label: { Image(systemName: "arrow.uturn.forward") }
+                    .disabled(!model.canRedo)
+                    .accessibilityLabel("Làm lại")
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        isTimelineExpanded = true
+                    }
+                } label: { Image(systemName: "chevron.down.circle.fill") }
+                    .accessibilityLabel("Mở rộng timeline đa track")
+            }
+            .font(.caption)
+            .buttonStyle(.plain)
+
+            HStack(spacing: 8) {
+                Slider(value: Binding(
+                    get: { min(model.totalDuration,
+                               max(0, model.timelineSecond)) },
+                    set: { scrubTimeline(to: $0) }
+                ), in: 0...max(0.1, model.totalDuration), step: 0.04)
+                    .tint(accent)
+                    .accessibilityLabel("Tua video, xem trước luôn cố định")
+                Button {
+                    if let id = model.splitClip(at: model.timelineSecond) {
+                        selectedClipID = id
+                        scrubTimeline(to: model.timelineSecond)
+                    }
+                } label: {
+                    Label("Tách", systemImage: "scissors")
+                        .font(.caption2.bold())
+                }
+                .buttonStyle(.bordered)
+                .disabled(model.clips.isEmpty)
+            }
+            .frame(height: 27)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    if model.clips.isEmpty {
+                        Text("Bấm Thêm để nhập ảnh hoặc video")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                    ForEach(Array(model.clips.enumerated()),
+                            id: \.element.id) { index, clip in
+                        Button {
+                            selectClip(clip, at: index)
+                            activeTool = .clip
+                        } label: {
+                            Text("\(index + 1) · " +
+                                 String(format: "%.1fs", clip.renderedDuration))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(selectedClipID == clip.id ?
+                                                 .black : .white)
+                                .padding(.horizontal, 9)
+                                .frame(height: 26)
+                                .background(
+                                    selectedClipID == clip.id ?
+                                        accent : Color.white.opacity(0.09),
+                                    in: RoundedRectangle(cornerRadius: 6)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+            .frame(height: 28)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(height: 105)
+        .background(Color.white.opacity(0.055),
+                    in: RoundedRectangle(cornerRadius: 11))
+    }
+
     private func timecode(_ second: Double) -> String {
         let centiseconds = Int((max(0, second) * 100).rounded())
         return String(format: "%02d:%02d.%02d",
@@ -767,33 +933,43 @@ struct EditorView: View {
     }
 
     private var toolPicker: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(EditorTool.allCases) { tool in
-                    Button {
-                        activeTool = tool
-                        previewPlayer?.pause()
-                        isPlaying = false
-                    } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: tool.symbol)
-                                .font(.system(size: 15))
-                            Text(tool.rawValue)
-                                .font(.system(size: 11, weight: .medium))
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(EditorTool.allCases) { tool in
+                        Button {
+                            activeTool = tool
+                            previewPlayer?.pause()
+                            isPlaying = false
+                        } label: {
+                            VStack(spacing: 3) {
+                                Image(systemName: tool.symbol)
+                                    .font(.system(size: 15))
+                                Text(tool.rawValue)
+                                    .font(.system(size: 11, weight: .medium))
+                                    .lineLimit(1)
+                            }
+                            .foregroundStyle(activeTool == tool ? .black : .white)
+                            .frame(width: 78, height: 48)
+                            .background(
+                                activeTool == tool ? accent :
+                                    Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 10)
+                            )
                         }
-                        .foregroundStyle(activeTool == tool ? .black : .white)
-                        .frame(width: 82, height: 49)
-                        .background(
-                            activeTool == tool ? accent : Color.white.opacity(0.09),
-                            in: RoundedRectangle(cornerRadius: 10)
-                        )
+                        .buttonStyle(.plain)
+                        .id(tool.id)
                     }
-                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 2)
+            }
+            .onChange(of: activeTool) { tool in
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(tool.id, anchor: .center)
                 }
             }
-            .padding(.horizontal, 1)
         }
-        .frame(height: 54)
+        .frame(height: 52)
     }
 
     @ViewBuilder
@@ -1897,40 +2073,37 @@ struct EditorView: View {
                 .font(.caption)
             }
 
-            Button {
-                previewPlayer?.pause()
-                isPlaying = false
-                model.renderSynchronizedPreview()
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Xem thử toàn bộ · 720p",
+            // One-row export dock frees about 45pt for the live controls.
+            // It stays outside the editing ScrollView and above the home bar.
+            HStack(spacing: 8) {
+                Button {
+                    previewPlayer?.pause()
+                    isPlaying = false
+                    model.renderSynchronizedPreview()
+                } label: {
+                    Label("Xem thử 720p",
                           systemImage: "play.rectangle.fill")
                         .font(.subheadline.bold())
-                    Spacer()
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-            }
-            .buttonStyle(.bordered)
-            .disabled(model.clips.isEmpty || model.isImporting ||
-                      model.isExporting || model.isRenderingPreview)
+                .buttonStyle(.bordered)
+                .disabled(model.clips.isEmpty || model.isImporting ||
+                          model.isExporting || model.isRenderingPreview)
 
-            Button {
-                previewPlayer?.pause()
-                isPlaying = false
-                model.export()
-            } label: {
-                HStack {
-                    Spacer()
-                    Label("Xuất video MP4 · \(model.quality.rawValue)", systemImage: "square.and.arrow.up.fill")
-                        .font(.headline)
-                    Spacer()
+                Button {
+                    previewPlayer?.pause()
+                    isPlaying = false
+                    model.export()
+                } label: {
+                    Label("Xuất MP4", systemImage: "square.and.arrow.up.fill")
+                        .font(.subheadline.bold())
+                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .frame(height: 36)
+                .buttonStyle(.borderedProminent)
+                .tint(accent)
+                .disabled(model.clips.isEmpty || model.isImporting ||
+                          model.isExporting || model.isRenderingPreview)
             }
-            .buttonStyle(.borderedProminent)
-            .tint(accent)
-            .disabled(model.clips.isEmpty || model.isImporting ||
-                      model.isExporting || model.isRenderingPreview)
         }
     }
 
