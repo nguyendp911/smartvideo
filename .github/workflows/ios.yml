@@ -30,6 +30,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/SpeedCurve.swift scripts/speed-curve-tests.swift -o /tmp/speed-curve-tests
           /tmp/speed-curve-tests
 
+      - name: Validate continuous project preview timing
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/ProjectPreviewTiming.swift scripts/project-preview-tests.swift -o /tmp/project-preview-tests
+          /tmp/project-preview-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
