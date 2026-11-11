@@ -580,6 +580,17 @@ struct EditorView: View {
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.cyan)
                 Button {
+                    liveAudioEnabled.toggle()
+                } label: {
+                    Image(systemName: liveAudioEnabled ?
+                          "speaker.wave.2.fill" : "speaker.slash.fill")
+                        .foregroundStyle(liveAudioEnabled ? accent : .gray)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(liveAudioEnabled ?
+                    "Tắt nghe thử nhạc giọng và FX" :
+                    "Bật nghe thử nhạc giọng và FX")
+                Button {
                     withAnimation(.easeInOut(duration: 0.18)) {
                         isTimelineExpanded = false
                     }
@@ -2094,6 +2105,14 @@ struct EditorView: View {
 
             Toggle("Giữ tiếng gốc của các clip", isOn: $model.keepOriginalAudio)
                 .font(.caption)
+            Text("Nghe thử theo timeline: dùng biểu tượng loa ở thanh timeline. Nhạc, thuyết minh và FX được phát cùng video khi nhấn Play; bản dựng 720p vẫn là chuẩn đối chiếu cuối.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            if let warning = audioMonitor.warning {
+                Text(warning)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
         }
         .padding(10)
     }
