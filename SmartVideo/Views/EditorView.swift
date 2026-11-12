@@ -2167,6 +2167,15 @@ struct EditorView: View {
             }
 
             if let music = model.musicURL {
+                AudioWaveformTrimView(
+                    url: music,
+                    sourceDuration: model.musicDuration,
+                    trimStart: musicTrimStart,
+                    trimEnd: musicTrimEnd,
+                    title: "Waveform · chọn đoạn nhạc",
+                    playheadSource: model.musicStartSeconds +
+                        model.timelineSecond
+                )
                 HStack {
                     Text("Nhạc: \(music.lastPathComponent)")
                         .font(.caption).lineLimit(1)
@@ -2263,6 +2272,38 @@ struct EditorView: View {
             }
         }
         .padding(10)
+    }
+
+    /// Waveform music trim bindings: right edge at the file end is
+    /// represented by musicHighlightDuration == 0 (play all remaining).
+    private var musicTrimStart: Binding<Double> {
+        Binding {
+            model.musicStartSeconds
+        } set: { value in
+            let end = model.musicHighlightDuration > 0 ?
+                min(model.musicDuration, model.musicStartSeconds +
+                    model.musicHighlightDuration) : model.musicDuration
+            let start = min(max(0, value), max(0, end - 0.1))
+            model.musicStartSeconds = start
+            if model.musicHighlightDuration > 0 {
+                model.musicHighlightDuration = max(0.1, end - start)
+            }
+        }
+    }
+
+    private var musicTrimEnd: Binding<Double> {
+        Binding {
+            model.musicHighlightDuration > 0 ?
+                min(model.musicDuration, model.musicStartSeconds +
+                    model.musicHighlightDuration) : model.musicDuration
+        } set: { value in
+            let from = model.musicStartSeconds
+            let end = min(model.musicDuration,
+                          max(from + 0.1, value))
+            model.musicHighlightDuration =
+                end >= model.musicDuration - 0.04 ?
+                    0 : max(0.1, end - from)
+        }
     }
 
     private var exportBar: some View {

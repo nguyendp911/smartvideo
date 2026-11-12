@@ -4,10 +4,13 @@ import CoreMedia
 import AudioToolbox
 
 /// Sample real signal amplitudes for an inexpensive waveform in the editor.
-/// Max 90 seconds sampled and 64 bars; longer audio is represented by
-/// its opening section, not a full-track analysis.
+/// Decode only a user-selected 90-second viewport, never an entire
+/// multi-hour file; this keeps memory/CPU usage bounded on older iPhones.
 enum AudioWaveformSampler {
-    static func sample(url: URL, count: Int = 64) async throws -> [Double] {
+    static func sample(
+        url: URL, count: Int = 64,
+        from offset: Double = 0, window: Double = 90
+    ) async throws -> [Double] {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(
             withMediaType: .audio
@@ -15,12 +18,16 @@ enum AudioWaveformSampler {
 
         let duration = try await asset.load(.duration).seconds
         guard duration.isFinite, duration > 0 else { return [] }
-        let seconds = min(duration, 90)
-        let count = max(12, min(100, count))
+        let start = min(max(0, offset.isFinite ? offset : 0),
+                        max(0, duration - 0.05))
+        let seconds = min(duration - start,
+                          max(0.5, min(90, window.isFinite ? window : 90)))
+        guard seconds > 0.04 else { return [] }
+        let count = max(12, min(160, count))
         var peaks = [Double](repeating: 0, count: count)
         let reader = try AVAssetReader(asset: asset)
         reader.timeRange = CMTimeRange(
-            start: .zero,
+            start: CMTime(seconds: start, preferredTimescale: 600),
             duration: CMTime(seconds: seconds, preferredTimescale: 600)
         )
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
@@ -52,8 +59,10 @@ enum AudioWaveformSampler {
             let second = CMTimeGetSeconds(
                 CMSampleBufferGetPresentationTimeStamp(buffer)
             )
-            guard second.isFinite, second >= 0 else { continue }
-            let index = min(count - 1, max(0, Int(second / seconds * Double(count))))
+            guard second.isFinite, second >= start else { continue }
+            let index = min(count - 1, max(0, Int(
+                (second - start) / seconds * Double(count)
+            )))
             for offset in stride(from: 0, to: pcm.count, by: 64) {
                 peaks[index] = max(peaks[index],
                                    abs(Double(pcm[offset]) / 32768.0))

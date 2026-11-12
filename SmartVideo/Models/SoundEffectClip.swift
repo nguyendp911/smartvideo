@@ -13,6 +13,8 @@ struct SoundEffectClip: Identifiable, Codable, Equatable {
     var fadeIn: Double = 0.04
     var fadeOut: Double = 0.12
     var muted: Bool = false
+    /// Empty for existing projects; non-destructive per-region automation.
+    var volumeKeyframes: [AudioGainKeyframe] = []
 
     var end: Double { start + duration }
     var filename: String { fileURL.lastPathComponent }
@@ -27,6 +29,35 @@ struct SoundEffectClip: Identifiable, Codable, Equatable {
             sourceStart: 0,
             duration: min(5, audioDuration, max(0.1, timelineEnd - start)),
             originalDuration: audioDuration
+        )
+    }
+}
+
+extension SoundEffectClip {
+    private enum CodingKeys: String, CodingKey {
+        case id, fileURL, start, sourceStart, duration, originalDuration
+        case volume, fadeIn, fadeOut, muted, volumeKeyframes
+    }
+
+    /// Old projects lack volumeKeyframes; treat them as 100% constant.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        fileURL = try c.decode(URL.self, forKey: .fileURL)
+        start = try c.decodeIfPresent(Double.self, forKey: .start) ?? 0
+        sourceStart = try c.decodeIfPresent(Double.self, forKey: .sourceStart) ?? 0
+        duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? 1
+        originalDuration = try c.decodeIfPresent(Double.self,
+                                                 forKey: .originalDuration) ?? duration
+        volume = AudioAutomationMath.clampGain(
+            try c.decodeIfPresent(Float.self, forKey: .volume) ?? 0.8
+        )
+        fadeIn = try c.decodeIfPresent(Double.self, forKey: .fadeIn) ?? 0.04
+        fadeOut = try c.decodeIfPresent(Double.self, forKey: .fadeOut) ?? 0.12
+        muted = try c.decodeIfPresent(Bool.self, forKey: .muted) ?? false
+        volumeKeyframes = AudioAutomationMath.normalized(
+            try c.decodeIfPresent([AudioGainKeyframe].self,
+                                  forKey: .volumeKeyframes) ?? []
         )
     }
 }

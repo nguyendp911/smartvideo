@@ -1312,6 +1312,104 @@ final class EditorViewModel: ObservableObject {
         return duplicate.id
     }
 
+    // MARK: - Interactive sound FX waveform & volume automation
+
+    /// Add a keyframe to the currently selected SFX at the GLOBAL playhead.
+    /// A keyframe changes gain relative to the clip's master volume.
+    @discardableResult
+    func addSoundVolumeKeyframe(_ id: UUID) -> UUID? {
+        guard let index = soundEffects.firstIndex(where: { $0.id == id })
+        else { return nil }
+        let effect = soundEffects[index]
+        let relative = timelineSecond - effect.start
+        guard relative >= 0 && relative <= effect.duration else {
+            errorText = "Đặt con trỏ trong khoảng thời gian của âm FX trước."
+            return nil
+        }
+        let p = AudioAutomationMath.clampProgress(
+            relative / max(0.1, effect.duration)
+        )
+        if let existing = effect.volumeKeyframes.first(where: {
+            abs($0.progress - p) < 0.012
+        }) { return existing.id }
+        guard effect.volumeKeyframes.count < 16 else {
+            errorText = "Giới hạn 16 điểm âm lượng mỗi track FX."
+            return nil
+        }
+        let value = AudioAutomationMath.factor(
+            at: p, frames: effect.volumeKeyframes
+        )
+        let key = AudioGainKeyframe(progress: p, gain: value)
+        soundEffects[index].volumeKeyframes = AudioAutomationMath.normalized(
+            effect.volumeKeyframes + [key]
+        )
+        return key.id
+    }
+
+    func updateSoundVolumeKeyframe(
+        _ effectID: UUID, frameID: UUID, gain: Float
+    ) {
+        guard let index = soundEffects.firstIndex(where: {
+            $0.id == effectID
+        }), let point = soundEffects[index].volumeKeyframes.firstIndex(
+            where: { $0.id == frameID }
+        ) else { return }
+        soundEffects[index].volumeKeyframes[point].gain =
+            AudioAutomationMath.clampGain(gain)
+    }
+
+    func deleteSoundVolumeKeyframe(_ effectID: UUID, frameID: UUID) {
+        guard let index = soundEffects.firstIndex(where: {
+            $0.id == effectID
+        }) else { return }
+        soundEffects[index].volumeKeyframes.removeAll {
+            $0.id == frameID
+        }
+    }
+
+    func resetSoundVolumeKeyframes(_ id: UUID) {
+        guard let index = soundEffects.firstIndex(where: {
+            $0.id == id
+        }) else { return }
+        soundEffects[index].volumeKeyframes = []
+    }
+
+    /// Split one SFX region at the playhead without re-encoding its source.
+    /// The keyframe curve is remapped to both halves with edge anchors.
+    @discardableResult
+    func splitSoundEffectAtPlayhead(_ id: UUID) -> UUID? {
+        guard soundEffects.count < 12,
+              let index = soundEffects.firstIndex(where: { $0.id == id })
+        else {
+            errorText = "Không thể tách: tối đa 12 track FX."
+            return nil
+        }
+        let source = soundEffects[index]
+        let local = timelineSecond - source.start
+        guard local >= 0.1 && source.duration - local >= 0.1 else {
+            errorText = "Đặt con trỏ cách mép FX tối thiểu 0,1 giây."
+            return nil
+        }
+        let p = local / source.duration
+        var left = source
+        var right = source
+        left.duration = local
+        left.fadeOut = 0
+        right.id = UUID()
+        right.start = source.start + local
+        right.sourceStart = source.sourceStart + local
+        right.duration = source.duration - local
+        right.fadeIn = 0
+        left.volumeKeyframes = AudioAutomationMath.slice(
+            source.volumeKeyframes, start: 0, end: p
+        )
+        right.volumeKeyframes = AudioAutomationMath.slice(
+            source.volumeKeyframes, start: p, end: 1
+        )
+        soundEffects.replaceSubrange(index...index, with: [left, right])
+        return right.id
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {

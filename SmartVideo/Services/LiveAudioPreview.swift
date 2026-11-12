@@ -145,8 +145,13 @@ final class LiveAudioPreview: ObservableObject {
                 duration: validDuration,
                 fadeIn: effect.fadeIn, fadeOut: effect.fadeOut
             )
+            let relative = timeline - effect.start
+            let keyframeGain = AudioAutomationMath.factor(
+                at: relative / max(0.05, validDuration),
+                frames: effect.volumeKeyframes
+            )
             let gain: Float = effect.muted ? 0 :
-                min(1, max(0, effect.volume)) * envelope
+                min(1, max(0, effect.volume)) * envelope * keyframeGain
             syncPlayer(player, offset: offset, volume: gain)
         }
     }
