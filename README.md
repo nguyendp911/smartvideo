@@ -4,6 +4,18 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.0.0 – Clip Audio Studio
+
+### Âm thanh độc lập cho từng đoạn video
+- Chọn một clip **video** trên timeline, mở tab **Đoạn → Âm thanh gốc của đoạn**: điều chỉnh volume 0–100%, các mức nhanh 0/25/50/100%, bật/tắt tiếng riêng, **fade-in** và **fade-out** riêng 0–3 giây, **Đặt lại**. Clip ảnh không cần audio source.
+- Điều khiển áp dụng **thực sự khi xuất MP4**: AVAudioMix dùng 2 audio track xen kẽ, kết hợp âm lượng, fade từng clip và crossfade ở đầu/cuối clip khi có chuyển cảnh. Các ramp được gộp thành các đoạn thời gian không chồng lấn, tránh một ramp ghi đè ramp khác.
+- **Preview tức thời**: AVPlayer.volume cập nhật theo tiến độ clip gốc, cả clip video cắt/tăng tốc và Speed Curve. Nút giữ tiếng gốc toàn dự án vẫn có ưu tiên cao hơn.
+- Mỗi thao tác đặt nhanh/mute/reset có undo; kéo slider tạo một checkpoint ở đầu thao tác. Split, duplicate, Speed Curve và project save tiếp tục giữ thuộc tính âm thanh theo từng clip.
+- Mở project cũ vẫn phát âm lượng **100%, không tắt tiếng, không fade** do các trường mới có giá trị Codable mặc định; không sửa file nguồn.
+- Envelope có toán học độc lập, kiểm thử Swift trước khi build. Chỉ lấy mẫu trong vùng fade (mỗi 50ms) thay vì tạo hàng nghìn nút trên clip nhiều giờ.
+- **Giới hạn:** MP4 xuất sử dụng envelope gần đúng tuyến tính 50ms tại vùng 2 fade chồng lấn; preview nhanh là cut-style, không tái tạo chính xác crossfade audio giữa 2 clip. Dùng **Xem thử 720p** để đối chiếu audio mix cuối. Hiệu ứng tiếng gốc, nhạc nền, FX và giọng thuyết minh vẫn cần QA trên thiết bị thực.
+- Phiên bản **5.0.0 (build 35)**, iOS 16+, bundle ID không đổi `com.nguyendp911.smartvideo`.
+
 ## ViePN Smart Video v4.9.0 – Live Audio Monitor
 
 - **Nghe thử nhạc nền, thuyết minh và âm thanh FX** khi bấm Play trong khu vực preview cố định; không cần xuất toàn bộ MP4 chỉ để nghe thời điểm vào tiếng.
