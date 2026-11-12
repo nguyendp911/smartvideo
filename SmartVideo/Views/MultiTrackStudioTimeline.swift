@@ -288,7 +288,15 @@ struct MultiTrackStudioTimeline: View {
                     sourceStart: sourceStart, duration: duration,
                     total: total, trackWidth: width,
                     tint: tint, frames: frames, selected: selected,
-                    snapMarkers: snapToBeat ? model.timelineBeatMarkers : [],
+                    // Music's own beats move WITH the music, so snapping
+                    // it to those beats is circular. Snap music to video
+                    // cut boundaries; voice and SFX snap to music beats.
+                    snapMarkers: snapToBeat ? (
+                        projectAudioLane == .music ?
+                            model.clips.indices.map {
+                                model.timelineStart(of: $0)
+                            } : model.timelineBeatMarkers
+                    ) : [],
                     dragClampDuration: dragClampDuration,
                     onSelect: onSelect,
                     onBeginMove: onBeginMove, onMove: onMove,
