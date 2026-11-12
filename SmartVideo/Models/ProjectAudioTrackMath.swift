@@ -1,5 +1,10 @@
 import Foundation
 
+enum ProjectAudioLane {
+    case music
+    case narration
+}
+
 /// Shared source/time mapping and audio-gain automation for the two project
 /// tracks (music and narration). Used by export, live preview and tests.
 enum ProjectAudioTrackMath {
