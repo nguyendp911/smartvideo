@@ -11,6 +11,8 @@ struct AudioWaveformTrimView: View {
     @Binding var trimEnd: Double
     let title: String
     var playheadSource: Double? = nil
+    /// Called exactly once at the beginning of the trim drag for Undo.
+    var onEditBegan: () -> Void = {}
 
     @State private var viewportStart: Double = 0
     @State private var viewportSpan: Double = 30
@@ -90,6 +92,7 @@ struct AudioWaveformTrimView: View {
                         let source = min(total, max(0,
                             viewStart + Double(x / width) * span))
                         if draggingStart == nil {
+                            onEditBegan()
                             let a = CGFloat((trimStart - viewStart) /
                                              span) * width
                             let b = CGFloat((trimEnd - viewStart) /
