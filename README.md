@@ -4,6 +4,15 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## Bản cập nhật mockup sắc nét + chọn ảnh bìa (chưa xác minh build trên iPhone)
+
+- Texture mockup nội bộ 1280×1280 (trước đây 640×640), NSCache giới hạn 48 MB và 6 mẫu để tránh lưu cả 42 ảnh trong RAM. Bóng lá có thân uốn và lá nhọn không đối xứng; cửa sổ có phối cảnh, rèm có nếp bóng mềm. Đây vẫn là hiệu ứng thủ tục 2D, **không phải bóng đổ vật lý 3D hoặc ảnh chụp thật**.
+- Khi **xuất MP4 xong**, chọn **Chọn thumbnail**: kéo đến thời điểm trong video, lấy frame đầy đủ độ phân giải bằng AVAssetImageGenerator hoặc chọn một ảnh từ thư viện; xuất ảnh JPG riêng chất lượng 96% và chia sẻ.
+- Ảnh thumbnail JPG **không được nhúng như poster bắt buộc trong MP4**, vì các mạng xã hội có thể bỏ qua metadata artwork. Khi đăng video, chọn file JPG ở mục ảnh bìa của nền tảng.
+- Các thay đổi được lưu trong source nhưng **chưa có kết quả build/test trên thiết bị** trong phiên này.
+
+
+
 ## ViePN Smart Video v5.6.0 – Mockup Light & Shadow Studio
 
 **Triển khai tính năng thật**: tab Mockup trong trình dựng video, 42 thiết kế **procedural tích hợp ứng dụng** (không dùng PNG/MOV tải ngoài), 12 preset kết hợp nhiều lớp. Các mockup không chỉ tồn tại ở UI: được áp vào từng khung hình ảnh/video trước khi đưa vào timeline và đóng gói MP4, có kiểm thử pixel nền sáng/tối.
