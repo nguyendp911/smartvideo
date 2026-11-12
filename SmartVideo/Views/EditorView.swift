@@ -207,7 +207,19 @@ struct EditorView: View {
             refreshColorPreview()
         }
         .onChange(of: model.keepOriginalAudio) { _ in
-            previewPlayer?.isMuted = !model.keepOriginalAudio
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioVolume) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioMuted) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioFadeIn) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioFadeOut) { _ in
+            updateClipAudioPreview()
         }
         .onChange(of: liveAudioEnabled) { enabled in
             if !enabled { audioMonitor.pause() }
@@ -1172,6 +1184,9 @@ struct EditorView: View {
                            in: 0...max(0, clip.originalDuration - 0.1),
                            step: 0.1)
                         .tint(accent)
+
+                    Divider()
+                    clipAudioControls(clip)
                 }
 
                 HStack {
@@ -1193,6 +1208,139 @@ struct EditorView: View {
         } else {
             Text("Chọn một đoạn trên timeline để chỉnh sửa.")
                 .font(.subheadline).foregroundStyle(.secondary).padding(12)
+        }
+    }
+
+    /// Live volume, mute and fade controls are scoped to the selected video,
+    /// unlike the project's global source-audio switch.
+    private func clipAudioControls(_ clip: TimelineClip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Âm thanh gốc của đoạn", systemImage: "waveform")
+                    .font(.subheadline.bold())
+                Spacer()
+                Button {
+                    model.setClipAudioMuted(clip.id,
+                                            muted: !clip.sourceAudioMuted)
+                } label: {
+                    Label(clip.sourceAudioMuted ? "Bật tiếng" : "Tắt tiếng",
+                          systemImage: clip.sourceAudioMuted ?
+                            "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(clip.sourceAudioMuted ? .orange : accent)
+            }
+
+            HStack {
+                Text("Âm lượng đoạn")
+                Spacer()
+                Text("\(Int(clip.sourceAudioVolume * 100))%")
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioVolumeBinding(clip.id),
+                   in: 0...1, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+                .disabled(clip.sourceAudioMuted)
+            HStack(spacing: 5) {
+                ForEach([0, 25, 50, 100], id: \.self) { level in
+                    Button("\(level)%") {
+                        model.beginClipAudioEdit()
+                        if let index = model.clips.firstIndex(
+                            where: { $0.id == clip.id }
+                        ) {
+                            model.clips[index].sourceAudioVolume =
+                                Float(level) / 100
+                        }
+                    }
+                    .font(.caption2.bold())
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.bordered)
+                    .disabled(clip.sourceAudioMuted)
+                }
+            }
+
+            HStack {
+                Label("Fade vào", systemImage: "arrow.up.right")
+                Spacer()
+                Text(String(format: "%.2fs", clip.sourceAudioFadeIn))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioFadeBinding(clip.id, fadeIn: true),
+                   in: 0...3, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+
+            HStack {
+                Label("Fade ra", systemImage: "arrow.down.right")
+                Spacer()
+                Text(String(format: "%.2fs", clip.sourceAudioFadeOut))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioFadeBinding(clip.id, fadeIn: false),
+                   in: 0...3, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+            HStack {
+                Text("Áp dụng riêng cho clip đã chọn, cả preview và MP4.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Đặt lại") {
+                    model.resetClipAudio(clip.id)
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+            }
+            if !model.keepOriginalAudio {
+                Label("Đang tắt toàn bộ tiếng gốc trong Âm thanh. Bật lại để nghe riêng clip này.",
+                      systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func sourceAudioVolumeBinding(_ id: UUID) -> Binding<Double> {
+        Binding {
+            Double(model.clips.first(where: { $0.id == id })?
+                .sourceAudioVolume ?? 1)
+        } set: { value in
+            guard let index = model.clips.firstIndex(
+                where: { $0.id == id }
+            ) else { return }
+            model.clips[index].sourceAudioVolume =
+                ClipAudioEnvelope.safeVolume(Float(value))
+        }
+    }
+
+    private func sourceAudioFadeBinding(
+        _ id: UUID, fadeIn: Bool
+    ) -> Binding<Double> {
+        Binding {
+            guard let clip = model.clips.first(where: { $0.id == id })
+            else { return 0 }
+            return fadeIn ? clip.sourceAudioFadeIn : clip.sourceAudioFadeOut
+        } set: { value in
+            guard let index = model.clips.firstIndex(
+                where: { $0.id == id }
+            ) else { return }
+            let safe = ClipAudioEnvelope.safeFade(value)
+            if fadeIn {
+                model.clips[index].sourceAudioFadeIn = safe
+            } else {
+                model.clips[index].sourceAudioFadeOut = safe
+            }
         }
     }
 
@@ -2327,6 +2475,7 @@ struct EditorView: View {
 
         model.timelineSecond = min(model.totalDuration,
             model.timelineStart(of: index) + localSecond)
+        updateClipAudioPreview()
         audioMonitor.sync(
             at: model.timelineSecond, model: model,
             enabled: liveAudioEnabled, actuallyPlaying: isPlaying
@@ -2384,6 +2533,25 @@ struct EditorView: View {
         }
     }
 
+    /// AVPlayer is responsible for just the current original source track.
+    /// Overall music, voice and SFX are monitored separately by LiveAudioPreview.
+    /// The fast preview deliberately omits transition overlap crossfades;
+    /// rendered 720p preview shows the real audio-composition result.
+    private func updateClipAudioPreview() {
+        guard let player = previewPlayer, let clip = selectedClip else {
+            return
+        }
+        player.isMuted = !model.keepOriginalAudio || clip.sourceAudioMuted
+        player.volume = ClipAudioEnvelope.gain(
+            at: min(max(0, localSecond), clip.renderedDuration),
+            duration: clip.renderedDuration,
+            volume: clip.sourceAudioVolume,
+            muted: clip.sourceAudioMuted,
+            fadeIn: clip.sourceAudioFadeIn,
+            fadeOut: clip.sourceAudioFadeOut
+        )
+    }
+
     private func refreshColorPreview() {
         updatePreview(preservingClock: true, resumePlayback: isPlaying)
     }
@@ -2414,7 +2582,7 @@ struct EditorView: View {
             let player = AVPlayer(playerItem:
                 VideoFrameGrader.makePreviewItem(for: previewClip))
             previewPlayer = player
-            player.isMuted = !model.keepOriginalAudio
+            updateClipAudioPreview()
             let seekSecond = ProjectPreviewTiming.sourceTime(
                 localTime: clock, trimStart: clip.startTime,
                 playbackSpeed: clip.playbackSpeed, speedCurveEnabled: false
@@ -2448,8 +2616,8 @@ struct EditorView: View {
                           previewRequestID == requestID,
                           selectedClipID == clip.id else { return }
                     let player = AVPlayer(playerItem: item)
-                    player.isMuted = !model.keepOriginalAudio
                     previewPlayer = player
+                    updateClipAudioPreview()
                     await player.seek(to: CMTime(
                         seconds: min(clock, clip.renderedDuration),
                         preferredTimescale: 600

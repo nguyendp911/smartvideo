@@ -1621,6 +1621,31 @@ final class EditorViewModel: ObservableObject {
         timelineSecond = min(timelineSecond, totalDuration)
     }
 
+    // MARK: - Clip source audio studio
+
+    /// Called when the user starts a slider drag, so one gesture is one undo.
+    func beginClipAudioEdit() {
+        checkpoint()
+    }
+
+    func setClipAudioMuted(_ id: UUID, muted: Bool) {
+        guard let index = clips.firstIndex(where: { $0.id == id }),
+              clips[index].kind == .video,
+              clips[index].sourceAudioMuted != muted else { return }
+        checkpoint()
+        clips[index].sourceAudioMuted = muted
+    }
+
+    func resetClipAudio(_ id: UUID) {
+        guard let index = clips.firstIndex(where: { $0.id == id }),
+              clips[index].kind == .video else { return }
+        checkpoint()
+        clips[index].sourceAudioMuted = false
+        clips[index].sourceAudioVolume = 1
+        clips[index].sourceAudioFadeIn = 0
+        clips[index].sourceAudioFadeOut = 0
+    }
+
     @discardableResult
     func splitClip(at second: Double) -> UUID? {
         guard let position = clipAtTimeline(second) else { return nil }
@@ -1651,6 +1676,11 @@ final class EditorViewModel: ObservableObject {
             left.duration = leftSourceSeconds
             right.startTime = source.startTime + leftSourceSeconds
             right.duration = max(0.1, source.duration - leftSourceSeconds)
+            // A split does not add a new fade-out/fade-in at the cut.
+            // Preserve fades on the two outer edges; the new pieces can
+            // still be edited independently in Clip Audio Studio.
+            left.sourceAudioFadeOut = 0
+            right.sourceAudioFadeIn = 0
             if !source.speedCurve.isEmpty {
                 let splitAt = leftSourceSeconds / max(0.001, source.duration)
                 left.speedCurve = SpeedCurveMath.trimmed(
@@ -1751,6 +1781,10 @@ final class EditorViewModel: ObservableObject {
                 right.id = UUID()
                 right.startTime = source.startTime + leftSourceSeconds
                 right.duration = source.duration - leftSourceSeconds
+                // Freeze inserts a silent still. Do not introduce extra
+                // fades at the newly split clip edges.
+                left.sourceAudioFadeOut = 0
+                right.sourceAudioFadeIn = 0
                 if !source.speedCurve.isEmpty {
                     let splitAt = leftSourceSeconds / max(0.001, source.duration)
                     left.speedCurve = SpeedCurveMath.trimmed(

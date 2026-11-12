@@ -19,6 +19,10 @@ final class TimelineComposer {
         let asset: AVURLAsset
         let video: AVAssetTrack
         let sourceAudio: AVAssetTrack?
+        let audioVolume: Float
+        let audioMuted: Bool
+        let audioFadeIn: Double
+        let audioFadeOut: Double
         let from: CMTime
         let sourceDuration: CMTime
         let outputDuration: CMTime
@@ -66,6 +70,10 @@ final class TimelineComposer {
                 flipHorizontal: clip.kind == .video && clip.flipHorizontal,
                 flipVertical: clip.kind == .video && clip.flipVertical,
                 sourceURL: url, asset: asset, video: video, sourceAudio: audio,
+                audioVolume: clip.sourceAudioVolume,
+                audioMuted: clip.sourceAudioMuted,
+                audioFadeIn: clip.sourceAudioFadeIn,
+                audioFadeOut: clip.sourceAudioFadeOut,
                 from: from, sourceDuration: length, outputDuration: output,
                 sourceSize: natural, sourceTransform: preferred
             ))
@@ -147,28 +155,39 @@ final class TimelineComposer {
                         )
                     }
                     activeAudio[slot] = true
+                    // Apply original-audio gain, explicit user fades and
+                    // transition crossfades as one non-overlapping envelope.
+                    // Important: stacking overlapping setVolumeRamp calls
+                    // otherwise overwrites earlier fades in AVAudioMix.
                     let params = trackAudioParams[slot]
-                    // Handle overlap across original audio segments.
                     let inFade = index > 0 ? overlaps[index - 1] : .zero
                     let outFade = index < overlaps.count ? overlaps[index] : .zero
-                    params.setVolume(CMTimeCompare(inFade, .zero) > 0 ? 0 : 1, at: start)
                     let available = CMTimeMinimum(part.outputDuration, scaledAudioLength)
-                    if CMTimeCompare(inFade, .zero) > 0 {
-                        let fade = CMTimeMinimum(inFade, available)
-                        params.setVolumeRamp(
-                            fromStartVolume: 0, toEndVolume: 1,
-                            timeRange: CMTimeRange(start: start, duration: fade)
-                        )
+                    let nodes = ClipAudioEnvelope.points(
+                        duration: available.seconds,
+                        volume: part.audioVolume, muted: part.audioMuted,
+                        fadeIn: part.audioFadeIn, fadeOut: part.audioFadeOut,
+                        incomingOverlap: inFade.seconds,
+                        outgoingOverlap: outFade.seconds
+                    )
+                    if let first = nodes.first {
+                        params.setVolume(first.gain, at: start)
                     }
-                    if CMTimeCompare(outFade, .zero) > 0 {
-                        let fadeAt = CMTimeSubtract(endTimes[index], outFade)
-                        if CMTimeCompare(fadeAt, start) >= 0,
-                           CMTimeCompare(CMTimeSubtract(endTimes[index], fadeAt), .zero) > 0 {
-                            params.setVolumeRamp(
-                                fromStartVolume: 1, toEndVolume: 0,
-                                timeRange: CMTimeRange(start: fadeAt, duration: outFade)
-                            )
-                        }
+                    for pair in zip(nodes, nodes.dropFirst()) {
+                        let (first, second) = pair
+                        let time = CMTimeAdd(start, CMTime(
+                            seconds: first.second, preferredTimescale: 60_000
+                        ))
+                        let duration = CMTime(
+                            seconds: second.second - first.second,
+                            preferredTimescale: 60_000
+                        )
+                        guard CMTimeCompare(duration, .zero) > 0 else { continue }
+                        params.setVolumeRamp(
+                            fromStartVolume: first.gain,
+                            toEndVolume: second.gain,
+                            timeRange: CMTimeRange(start: time, duration: duration)
+                        )
                     }
                 }
             }

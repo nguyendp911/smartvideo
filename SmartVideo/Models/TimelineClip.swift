@@ -118,6 +118,11 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var lookIntensity: Double = 1.0
     var colorAdjustments: ColorAdjustments = .neutral
     var personBackground: PersonBackground = .original
+    /// Independent source-audio settings; original media is never modified.
+    var sourceAudioVolume: Float = 1
+    var sourceAudioMuted: Bool = false
+    var sourceAudioFadeIn: Double = 0
+    var sourceAudioFadeOut: Double = 0
     var flipHorizontal: Bool = false
     var flipVertical: Bool = false
 
@@ -130,6 +135,10 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          lookIntensity: Double = 1.0,
          colorAdjustments: ColorAdjustments = .neutral,
          personBackground: PersonBackground = .original,
+         sourceAudioVolume: Float = 1,
+         sourceAudioMuted: Bool = false,
+         sourceAudioFadeIn: Double = 0,
+         sourceAudioFadeOut: Double = 0,
          flipHorizontal: Bool = false, flipVertical: Bool = false) {
         self.id = id
         self.kind = kind
@@ -144,6 +153,10 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.lookIntensity = min(1, max(0, lookIntensity))
         self.colorAdjustments = colorAdjustments
         self.personBackground = personBackground
+        self.sourceAudioVolume = ClipAudioEnvelope.safeVolume(sourceAudioVolume)
+        self.sourceAudioMuted = sourceAudioMuted
+        self.sourceAudioFadeIn = ClipAudioEnvelope.safeFade(sourceAudioFadeIn)
+        self.sourceAudioFadeOut = ClipAudioEnvelope.safeFade(sourceAudioFadeOut)
         self.flipHorizontal = flipHorizontal
         self.flipVertical = flipVertical
     }
@@ -152,6 +165,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         case id, kind, fileURL, duration, startTime, originalDuration
         case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
         case flipHorizontal, flipVertical, personBackground
+        case sourceAudioVolume, sourceAudioMuted, sourceAudioFadeIn, sourceAudioFadeOut
     }
 
     /// Existing projects from 2.x-3.9 never had a lookIntensity key.
@@ -179,6 +193,17 @@ struct TimelineClip: Identifiable, Hashable, Codable {
                                                  forKey: .colorAdjustments) ?? .neutral
         personBackground = try c.decodeIfPresent(PersonBackground.self,
                                                   forKey: .personBackground) ?? .original
+        sourceAudioVolume = ClipAudioEnvelope.safeVolume(
+            try c.decodeIfPresent(Float.self, forKey: .sourceAudioVolume) ?? 1
+        )
+        sourceAudioMuted = try c.decodeIfPresent(Bool.self,
+                                                  forKey: .sourceAudioMuted) ?? false
+        sourceAudioFadeIn = ClipAudioEnvelope.safeFade(
+            try c.decodeIfPresent(Double.self, forKey: .sourceAudioFadeIn) ?? 0
+        )
+        sourceAudioFadeOut = ClipAudioEnvelope.safeFade(
+            try c.decodeIfPresent(Double.self, forKey: .sourceAudioFadeOut) ?? 0
+        )
         flipHorizontal = try c.decodeIfPresent(Bool.self,
                                                forKey: .flipHorizontal) ?? false
         flipVertical = try c.decodeIfPresent(Bool.self,
