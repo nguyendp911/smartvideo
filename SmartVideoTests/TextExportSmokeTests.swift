@@ -46,6 +46,120 @@ final class TextExportSmokeTests: XCTestCase {
         return count
     }
 
+    func testMockupTextureAndRealCoreImageBlendPixels() throws {
+        XCTAssertEqual(MockupAssetLibrary.all.count, 42)
+        let rect = CGRect(
+            x: 0, y: 0, width: 320, height: 480
+        )
+        let black = CIImage(color: .black).cropped(
+            to: rect
+        )
+        let white = CIImage(color: .white).cropped(
+            to: rect
+        )
+        let context = CIContext()
+        guard let flare = MockupAssetLibrary.asset("flare-golden"),
+              let shadow = MockupAssetLibrary.asset("window-hard") else {
+            XCTFail("Built-in mockup library is missing")
+            return
+        }
+        let flareTexture = MockupOverlayRenderer.texture(
+            for: flare
+        )
+        XCTAssertNotNil(flareTexture.cgImage)
+        if let bitmap = flareTexture.cgImage {
+            XCTAssertGreaterThan(
+                brightPixelCount(bitmap), 100
+            )
+        }
+
+        var light = MockupAssetLibrary.makeClip(
+            flare, at: 0, duration: 2
+        )
+        light.opacity = 1
+        light.blurRadius = 0
+        let bright = try MockupOverlayRenderer.apply(
+            black, overlays: [light], second: 0.7,
+            depth: .front
+        )
+        guard let lightBitmap = context.createCGImage(
+            bright, from: rect
+        ) else {
+            XCTFail("Could not render light into Core Image frame")
+            return
+        }
+        XCTAssertGreaterThan(
+            brightPixelCount(lightBitmap), 100,
+            "Flare must appear in actual exported pixel pipeline"
+        )
+
+        var dark = MockupAssetLibrary.makeClip(
+            shadow, at: 0, duration: 2
+        )
+        dark.opacity = 1
+        dark.blurRadius = 0
+        let shaded = try MockupOverlayRenderer.apply(
+            white, overlays: [dark], second: 0.7,
+            depth: .front
+        )
+        guard let shadedBitmap = context.createCGImage(
+            shaded, from: rect
+        ) else {
+            XCTFail("Could not render window shadow")
+            return
+        }
+        XCTAssertNotEqual(
+            brightPixelCount(shadedBitmap, threshold: 230),
+            Int(rect.width * rect.height),
+            "Window shadow must darken real pixels"
+        )
+    }
+
+    func testMockupBehindPersonLeavesForegroundUnchanged()
+        throws {
+        let rect = CGRect(x: 0, y: 0,
+                          width: 320, height: 480)
+        let black = CIImage(color: .black).cropped(to: rect)
+        let person = CIImage(color: .white).cropped(
+            to: CGRect(x: 110, y: 0, width: 100,
+                       height: 480)
+        )
+        let empty = CIImage(color: .black).cropped(to: rect)
+        let mask = person.composited(over: empty)
+        var light = MockupAssetLibrary.makeClip(
+            MockupAssetLibrary.asset("flare-golden")!,
+            at: 0, duration: 3
+        )
+        light.blurRadius = 0
+        light.opacity = 1
+        light.depthMode = .behindPerson
+        let visible = try MockupOverlayRenderer.apply(
+            black, overlays: [light], second: 1,
+            depth: .behindPerson, personMask: empty
+        )
+        let occluded = try MockupOverlayRenderer.apply(
+            black, overlays: [light], second: 1,
+            depth: .behindPerson, personMask: mask
+        )
+        let context = CIContext()
+        guard let visiblePixels = context.createCGImage(
+            visible, from: rect
+        ), let occludedPixels = context.createCGImage(
+            occluded, from: rect
+        ) else {
+            XCTFail("Could not composite person-depth mockups")
+            return
+        }
+        XCTAssertGreaterThan(
+            brightPixelCount(visiblePixels), 100
+        )
+        XCTAssertLessThan(
+            brightPixelCount(occludedPixels),
+            brightPixelCount(visiblePixels),
+            "Person matte should occlude the light"
+        )
+    }
+
     func testGlyphRasterHasVisiblePixelsForEveryFill() throws {
         let size = CGSize(width: 360, height: 120)
         var title = TextOverlayClip()
