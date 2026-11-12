@@ -1676,6 +1676,11 @@ final class EditorViewModel: ObservableObject {
             left.duration = leftSourceSeconds
             right.startTime = source.startTime + leftSourceSeconds
             right.duration = max(0.1, source.duration - leftSourceSeconds)
+            // A split does not add a new fade-out/fade-in at the cut.
+            // Preserve fades on the two outer edges; the new pieces can
+            // still be edited independently in Clip Audio Studio.
+            left.sourceAudioFadeOut = 0
+            right.sourceAudioFadeIn = 0
             if !source.speedCurve.isEmpty {
                 let splitAt = leftSourceSeconds / max(0.001, source.duration)
                 left.speedCurve = SpeedCurveMath.trimmed(
@@ -1776,6 +1781,10 @@ final class EditorViewModel: ObservableObject {
                 right.id = UUID()
                 right.startTime = source.startTime + leftSourceSeconds
                 right.duration = source.duration - leftSourceSeconds
+                // Freeze inserts a silent still. Do not introduce extra
+                // fades at the newly split clip edges.
+                left.sourceAudioFadeOut = 0
+                right.sourceAudioFadeIn = 0
                 if !source.speedCurve.isEmpty {
                     let splitAt = leftSourceSeconds / max(0.001, source.duration)
                     left.speedCurve = SpeedCurveMath.trimmed(
