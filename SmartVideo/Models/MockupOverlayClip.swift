@@ -180,7 +180,11 @@ enum MockupAnimationSampler {
         let x: Double, y: Double, scale: Double, rotation: Double, opacity: Double
     }
     static func sample(_ c: MockupOverlayClip, at t: Double) -> State {
-        let phase = max(0, t - c.start) * max(0.1, c.animationSpeed)
+        let base = max(0, t - c.start) * max(0.1, c.animationSpeed)
+        // Non-looped animation freezes at its final motion pose.
+        // Looped animation is phase-continuous across the timed clip.
+        let phase = c.loop ? base :
+            min(base, 2 * Double.pi)
         let amount = min(2, max(0, c.animationAmount))
         var x = c.centerX, y = c.centerY, scale = c.scale
         var angle = c.rotationDegrees, alpha = c.opacity
