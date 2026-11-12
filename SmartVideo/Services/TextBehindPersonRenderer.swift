@@ -32,7 +32,16 @@ enum TextBehindPersonRenderer {
             width: max(1, floor(extent.width * renderScale)),
             height: max(1, floor(extent.height * renderScale))
         )
-        let renderer = UIGraphicsImageRenderer(size: canvas)
+        // Critical: the output Core Image coordinates are in physical
+        // pixels. UIGraphicsImageRenderer defaults to 2x/3x on iPhone,
+        // causing the subsequently cropped overlay to miss all glyphs.
+        // A 320x480 video frame MUST produce a 320x480 CGImage.
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(
+            size: canvas, format: format
+        )
         let overlay = renderer.image { renderContext in
             let ctx = renderContext.cgContext
             for item in active {
