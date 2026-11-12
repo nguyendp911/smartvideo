@@ -98,9 +98,10 @@ struct MultiMusicRegionTests {
         let bytes = try JSONSerialization.data(
             withJSONObject: legacy
         )
-        precondition(try JSONDecoder().decode(
+        let oldRegion = try JSONDecoder().decode(
             SoundEffectClip.self, from: bytes
-        ).volumeKeyframes.isEmpty)
+        )
+        precondition(oldRegion.volumeKeyframes.isEmpty)
         print("PASS: independent music trim, paste/duplicate identities, split gain continuity, bounds and Codable")
     }
 }
