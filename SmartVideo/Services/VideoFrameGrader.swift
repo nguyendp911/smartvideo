@@ -13,7 +13,12 @@ enum VideoFrameGrader {
     static func makeComposition(
         asset: AVAsset, look: ImageLook, intensity: Double,
         adjustments: ColorAdjustments = .neutral,
-        personBackground: PersonBackground = .original
+        personBackground: PersonBackground = .original,
+        behindTitles: [TextOverlayClip] = [],
+        timelineStart: Double = 0,
+        sourceStart: Double = 0,
+        speed: Double = 1,
+        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
     ) -> AVVideoComposition {
         let context = CIContext(options: [.cacheIntermediates: false])
         return AVVideoComposition(asset: asset) { request in
@@ -27,7 +32,15 @@ enum VideoFrameGrader {
                     source, mode: personBackground, quality: .fast,
                     foreground: graded
                 )
-                request.finish(with: output, context: context)
+                let projectSecond = timelineStart +
+                    max(0, (request.compositionTime.seconds -
+                             sourceStart) / max(0.05, speed))
+                let composited = try TextBehindPersonRenderer.apply(
+                    to: output, items: behindTitles,
+                    projectTime: projectSecond, maskSource: source,
+                    films: filmstrips, quality: .fast
+                )
+                request.finish(with: composited, context: context)
             } catch {
                 // Export fails explicitly instead of silently returning
                 // the original footage without a requested AI cutout.
@@ -56,12 +69,16 @@ enum VideoFrameGrader {
     /// Returns a transient MOV containing only clip's trimmed source section.
     /// Caller must remove it and replace the working clip's startTime with 0.
     static func renderTrimmed(
-        clip: TimelineClip, outputURL: URL
+        clip: TimelineClip, outputURL: URL,
+        behindTitles: [TextOverlayClip] = [],
+        timelineStart: Double = 0,
+        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
     ) async throws {
         guard clip.kind == .video,
               ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                 !clip.colorAdjustments.isNeutral ||
-                clip.personBackground != .original) else {
+                clip.personBackground != .original ||
+                !behindTitles.isEmpty) else {
             throw SmartVideoError.invalidMedia(
                 "Không có bộ màu video cần xử lý."
             )
@@ -97,7 +114,12 @@ enum VideoFrameGrader {
             asset: asset, look: clip.imageLook,
             intensity: clip.lookIntensity,
             adjustments: clip.colorAdjustments,
-            personBackground: clip.personBackground
+            personBackground: clip.personBackground,
+            behindTitles: behindTitles,
+            timelineStart: timelineStart,
+            sourceStart: clip.startTime,
+            speed: clip.playbackSpeed,
+            filmstrips: filmstrips
         )
         exporter.timeRange = CMTimeRange(
             start: CMTime(seconds: start, preferredTimescale: 600),
