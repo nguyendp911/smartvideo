@@ -718,6 +718,7 @@ struct EditorView: View {
                     },
                     onScrub: { scrubTimeline(to: $0) }
                 )
+            }
             HStack(spacing: 9) {
                 Button {
                     model.undoEdit()
