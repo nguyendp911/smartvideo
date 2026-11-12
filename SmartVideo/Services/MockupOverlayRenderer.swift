@@ -8,7 +8,12 @@ import Vision
 /// No network, Core Animation timings, or paid PNG/MOV dependencies.
 enum MockupOverlayRenderer {
     private static let textureCache = NSCache<NSString, UIImage>()
-    private static let outputSize = CGSize(width: 640, height: 640)
+    private static let outputSize = CGSize(width: 1280, height: 1280)
+    // Bound memory even with 42 available designs (6.5 MB each at 1280²).
+    private static let cacheLimit: Void = {
+        textureCache.countLimit = 6
+        textureCache.totalCostLimit = 48 * 1024 * 1024
+    }()
 
     static func apply(_ source: CIImage, overlays: [MockupOverlayClip],
                       second: Double, depth: MockupDepthMode,
@@ -139,6 +144,7 @@ enum MockupOverlayRenderer {
     }
 
     static func texture(for asset: MockupAsset) -> UIImage {
+        let _ = cacheLimit
         let key = asset.id as NSString
         if let hit = textureCache.object(forKey: key) {
             return hit
@@ -204,7 +210,8 @@ enum MockupOverlayRenderer {
             }
             ctx.restoreGState()
         }
-        textureCache.setObject(result, forKey: key)
+        textureCache.setObject(result, forKey: key,
+                               cost: Int(outputSize.width * outputSize.height * 4))
         return result
     }
 
@@ -239,6 +246,8 @@ enum MockupOverlayRenderer {
         }
     }
 
+    /// Organic, tapered foliage silhouettes. Deterministic curved stems and
+    /// asymmetric pointed leaves avoid the repeated oval/stick appearance.
     private static func drawLeaves(
         _ ctx: CGContext, style: Int, tint: UIColor,
         width w: CGFloat, height h: CGFloat
@@ -248,32 +257,62 @@ enum MockupOverlayRenderer {
             seed = seed &* 2862933555777941757 &+ 3037000493
             return CGFloat((seed >> 32) % 10000) / 10000
         }
-        ctx.setStrokeColor(tint.cgColor)
-        ctx.setLineWidth(style == 3 ? 10 : 5)
-        let branches = style == 1 ? 10 : 6
-        for _ in 0..<branches {
-            let x = random() * w
-            let y = random() * h
-            let end = CGPoint(x: x + (random() - 0.5) * 200,
-                              y: y + 140)
-            ctx.move(to: CGPoint(x: x, y: y))
-            ctx.addLine(to: end)
+        let density = style == 1 ? 11 : (style == 3 ? 5 : 8)
+        let organicTint = tint.withAlphaComponent(style == 5 ? 0.63 : 0.82)
+        for branchIndex in 0..<density {
+            let origin = CGPoint(x: (random() * 1.3 - 0.15) * w,
+                                 y: (random() * 1.2 - 0.1) * h)
+            let length = h * (0.25 + random() * 0.43)
+            let bend = w * (random() - 0.5) * 0.55
+            let end = CGPoint(x: origin.x + bend, y: origin.y + length)
+            let control = CGPoint(x: origin.x + bend * 0.12,
+                                  y: origin.y + length * 0.62)
+            let path = UIBezierPath()
+            path.move(to: origin)
+            path.addQuadCurve(to: end, controlPoint: control)
+            ctx.addPath(path.cgPath)
+            ctx.setStrokeColor(organicTint.cgColor)
+            ctx.setLineWidth((style == 3 ? 4.8 : 2.6) * w / 640)
+            ctx.setLineCap(.round)
             ctx.strokePath()
-            for leaf in 0..<7 {
-                let p = CGFloat(leaf) / 7
-                let lx = x + (end.x - x) * p
-                let ly = y + (end.y - y) * p
-                let length = 23 + random() * (style == 4 ? 65 : 38)
+
+            let leafCount = style == 4 ? 12 : (style == 7 ? 10 : 7)
+            for leafIndex in 0..<leafCount {
+                let t = (CGFloat(leafIndex) + 0.5) / CGFloat(leafCount)
+                let inv = 1 - t
+                let center = CGPoint(
+                    x: inv * inv * origin.x + 2 * inv * t * control.x + t * t * end.x,
+                    y: inv * inv * origin.y + 2 * inv * t * control.y + t * t * end.y
+                )
+                let side: CGFloat = leafIndex % 2 == 0 ? 1 : -1
+                let jitter = 0.73 + random() * 0.65
+                let blade = w * (style == 4 ? 0.09 : 0.047) * jitter
+                let width = blade * (0.26 + random() * 0.17)
+                let angle = side * (0.56 + random() * 0.7)
                 ctx.saveGState()
-                ctx.translateBy(x: lx, y: ly)
-                ctx.rotate(by: (random() - 0.5) * 3)
-                let path = UIBezierPath(ovalIn:
-                    CGRect(x: -length * 0.25, y: 0,
-                           width: length * 0.5, height: length))
-                ctx.setFillColor(tint.cgColor)
-                ctx.addPath(path.cgPath)
+                ctx.translateBy(x: center.x, y: center.y)
+                ctx.rotate(by: angle)
+                let leaf = UIBezierPath()
+                leaf.move(to: .zero)
+                leaf.addCurve(to: CGPoint(x: blade * 0.12, y: blade),
+                              controlPoint1: CGPoint(x: -width * 1.1, y: blade * 0.24),
+                              controlPoint2: CGPoint(x: -width * 0.65, y: blade * 0.76))
+                leaf.addCurve(to: .zero,
+                              controlPoint1: CGPoint(x: width * 1.4, y: blade * 0.79),
+                              controlPoint2: CGPoint(x: width * 0.85, y: blade * 0.19))
+                ctx.setFillColor(organicTint.withAlphaComponent(
+                    0.64 + random() * 0.28).cgColor)
+                ctx.addPath(leaf.cgPath)
                 ctx.fillPath()
                 ctx.restoreGState()
+            }
+            // Thin offshoots make nearby leaves read as a branch, not a stamp.
+            if branchIndex % 2 == 0 {
+                let tip = CGPoint(x: end.x + bend * 0.28, y: end.y + length * 0.1)
+                ctx.move(to: end)
+                ctx.addLine(to: tip)
+                ctx.setLineWidth(1.4 * w / 640)
+                ctx.strokePath()
             }
         }
     }
