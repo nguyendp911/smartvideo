@@ -9,6 +9,8 @@ struct MultiTrackStudioTimeline: View {
     let selectedClipID: UUID?
     @Binding var selectedSoundID: UUID?
     @Binding var selectedMusicRegionID: UUID?
+    @Binding var selectedMockupID: UUID?
+    let onSelectMockup: (MockupOverlayClip) -> Void
     let onSelectMusicRegion: (SoundEffectClip) -> Void
     let onSelectClip: (TimelineClip, Int) -> Void
     let onSelectSound: (SoundEffectClip) -> Void
@@ -38,6 +40,9 @@ struct MultiTrackStudioTimeline: View {
                 VStack(alignment: .leading, spacing: 3) {
                     ruler(width: trackWidth, total: total)
                     videoLane(width: trackWidth, total: total)
+                    if !model.mockupOverlays.isEmpty {
+                        mockupLane(width: trackWidth, total: total)
+                    }
                     if audioRowCount > 0 {
                         ScrollView(.vertical) {
                             LazyVStack(alignment: .leading, spacing: 3) {
@@ -301,6 +306,87 @@ struct MultiTrackStudioTimeline: View {
             .clipped()
         }
         .frame(height: 44)
+    }
+
+    /// Light/shadow overlays share the exact video/audio project clock.
+    /// Drag the region to move its start time without changing duration.
+    private func mockupLane(
+        width: CGFloat, total: Double
+    ) -> some View {
+        HStack(spacing: 0) {
+            Text("☀")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.orange)
+                .frame(width: labelWidth)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.orange.opacity(0.06))
+                ForEach(model.mockupOverlays) { item in
+                    let segmentWidth = max(
+                        12, width * CGFloat(item.duration /
+                                            max(0.1, total))
+                    )
+                    let startX = width * CGFloat(
+                        item.start / max(0.1, total)
+                    )
+                    Button {
+                        selectedMockupID = item.id
+                        onSelectMockup(item)
+                    } label: {
+                        HStack(spacing: 2) {
+                            Image(systemName: "sun.max.fill")
+                                .font(.system(size: 9))
+                            Text(item.name)
+                                .font(.system(size: 9))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 5)
+                        .frame(
+                            width: segmentWidth,
+                            height: 25,
+                            alignment: .leading
+                        )
+                        .foregroundStyle(.white)
+                        .background(
+                            item.muted ?
+                                Color.gray.opacity(0.4) :
+                                Color.orange.opacity(0.60),
+                            in: RoundedRectangle(cornerRadius: 4)
+                        )
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(item.id == selectedMockupID ?
+                                    Color.cyan : Color.clear,
+                                    lineWidth: 1.5)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: startX)
+                    .gesture(
+                        DragGesture(minimumDistance: 8)
+                            .onEnded { value in
+                                guard !item.locked,
+                                      let index = model.mockupOverlays.firstIndex(
+                                        where: { $0.id == item.id }
+                                      ) else { return }
+                                model.beginSoundEffectsEdit()
+                                let next = max(0, min(
+                                    max(0, total - 0.1),
+                                    item.start + Double(
+                                        value.translation.width /
+                                        max(1, width)
+                                    ) * total
+                                ))
+                                model.mockupOverlays[index].start = next
+                                selectedMockupID = item.id
+                                onSelectMockup(item)
+                            }
+                    )
+                }
+            }
+            .frame(width: width, height: 27)
+        }
+        .frame(height: 28)
     }
 
     private func trackLane(
