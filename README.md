@@ -4,6 +4,20 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.6.0 – Light & Shadow Mockup Studio
+
+**Bộ Mockup hiệu ứng ánh sáng / bóng đổ thực sự được lưu vào dự án và kết xuất MP4, không phải mockup trình diễn.**
+
+- **42 hiệu ứng ngoại tuyến**, sinh từ đồ họa vector có alpha, không cần tải stock: 8 kiểu bóng cửa sổ/rèm và nắng qua cửa, 8 kiểu bóng lá/cành/palm và dappled sun, 8 kiểu flare/light leak/tia nắng, 8 kiểu phản chiếu kính/LED/đèn, 6 kiểu bụi/bokeh/haze/fog và 4 hiệu ứng chuyển động. Mỗi kiểu có biến thể hình học/seed riêng và được cache để giới hạn RAM.
+- **12 preset phối sẵn** (mỗi preset thêm 2 lớp): Nắng cửa sổ, Bóng lá sản phẩm, Golden Hour, Cafe Warm, Glass Luxury, Laptop Showcase, Interior Soft Sun, Fashion Lifestyle, Neon Night, Dusty Cinematic, Showroom, Street Sunset.
+- **Tab Mockup riêng**: duyệt 6 nhóm với thumbnail, thêm/nhân bản/xóa, nhập PNG/JPEG tùy chọn (ưu tiên PNG alpha), chọn/hủy lớp, tối đa 12 lớp và timeline làn mockup cho phép kéo thời điểm. Inspector chỉnh opacity, 9 chế độ blend, scale, XY, xoay/lật, blur/feather, brightness/contrast, nhiệt độ màu/tint, khóa/ẩn và cắt vùng thời gian.
+- **Chuyển động mượt khi render:** drift, sway, pulse, flicker, sweep và still; tốc độ, biên độ, bật/tắt lặp. Sampler áp dụng theo **thời gian toàn dự án**, kể cả video đã trim và thay đổi tốc độ, cho ra cùng một kết quả khi xuất và xem thử đã render.
+- **Trước/sau người**: Core Image phủ/mockup lên frame video/photo thực. Khi chọn sau người, Vision tạo matte trên source và đặt người lên trên bóng/ánh sáng. Đối với ảnh tĩnh, hệ thống tái sử dụng mặt nạ đã tính để tránh chạy Vision 30 lần/giây. Đường âm thanh và chuyển cảnh cũ không thay đổi.
+- **Tự căn và tránh mặt**: Vision nhận diện khuôn mặt cục bộ, tính độ sáng ở các vùng hình, đề xuất góc đặt và opacity cho mockup. Tùy chọn Tránh che mặt bảo vệ vùng hình elip xung quanh mặt qua mask mềm khi xuất (khi Vision nhận diện được).
+- **Lưu/mở dự án**: lưu chính xác các thuộc tính và đường dẫn file PNG/JPEG trong thư mục Media, copy/validate file nhập từ Files. Các project 5.5.x được mở với danh sách mockup mặc định rỗng; undo/redo chụp lại các lớp mockup.
+- **Giới hạn có chủ ý**: Mockup built-in là họa tiết **procedural 2D**, không phải 42 clip video alpha quay ngoài đời. Quick preview là hướng dẫn vị trí/chuyển động, muốn xem blend và mặt nạ người chính xác hãy dùng **Xem thử 720p**. Auto Fit là xử lý Vision + luminance, không phải AI tái tạo ánh sáng vật lý, 3D/surface depth reconstruction hay model học sâu ngoài thiết bị. Tránh mặt cần nhận diện được mặt; trên video chuyển động nhanh có thể render chậm. Với 4K/nhạc nền/hiệu ứng nhiều lớp cần thử thực tế trên iPhone 12 Pro Max.
+- **5.6.0, build 43**, iOS 16+, vẫn giữ bundle ID `com.nguyendp911.smartvideo`. GitHub Actions tạo IPA **unsigned** để ký chứng chỉ Apple riêng.
+
 ## ViePN Smart Video v5.5.2 – Fix chữ Sau người trong video thật
 
 - **Sửa mốc thời gian video đã cắt:** trước đây `AVVideoComposition` có thể dùng thời gian gốc khi xuất một phần video và dùng thời gian tương đối khi xử lý đoạn MOV trung gian. Kết quả `projectSecond` bị chệch khiến lớp chữ **Sau người** không có frame nào nằm trong khoảng thời gian hiệu lực. Bản này cắt video và audio vào `AVMutableComposition` **bắt đầu từ 0 giây** trước khi chạy Vision/Core Image. Chuyển đổi thành timeline project bằng `clipStart + trimmedCompositionSecond / playbackSpeed` rõ ràng, cả với video đã cắt ở mốc 13 giây, tốc độ 0,5×/2× và nhiều clip.
