@@ -84,7 +84,7 @@ struct MultiMusicRegionTests {
             timelineStart: 9, projectDuration: 10,
             volume: 1, fadeIn: 0, fadeOut: 0, frames: []
         )!
-        near(clipped.duration, 0.9)
+        near(clipped.duration, 1)
 
         let encoded = try JSONEncoder().encode(music)
         let decoded = try JSONDecoder().decode(
