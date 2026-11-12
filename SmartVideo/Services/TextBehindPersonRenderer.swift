@@ -93,8 +93,31 @@ enum TextBehindPersonRenderer {
         let pulse = item.pulseEnabled ?
             1 + 0.035 * sin(localSecond * .pi * 2 / 1.7) : 1
         let wide = canvas.width * 0.85
-        let fontSize = CGFloat(min(160, max(15, item.fontSize))) *
+        var renderedTitle = item
+        let baseFont = CGFloat(min(160, max(15, item.fontSize))) *
             min(1, canvas.width / 720)
+        var fontSize = baseFont
+        if item.behindVisibilityAssist {
+            // If the title is narrow and centered on a person, Vision
+            // correctly occludes ALL glyphs. Widen behind-person lettering
+            // toward the canvas edges so letters can remain visible on
+            // either side, without painting over the foreground person.
+            // User can disable this option to preserve exact typography.
+            let estimate = (item.text as NSString).size(
+                withAttributes: [
+                    .font: UIFont.systemFont(
+                        ofSize: max(1, baseFont),
+                        weight: .black
+                    )
+                ]
+            ).width
+            let desiredWidth = canvas.width * 0.72
+            let enlargement = min(6, max(1, desiredWidth /
+                                           max(1, estimate)))
+            fontSize = min(180, canvas.height * 0.21,
+                           baseFont * enlargement)
+            renderedTitle.fontSize = Double(fontSize)
+        }
         let tall = min(canvas.height * 0.5, fontSize * 3.5)
         let bounds = CGRect(x: -wide / 2, y: -tall / 2,
                             width: wide, height: tall)
@@ -103,7 +126,7 @@ enum TextBehindPersonRenderer {
               imageSize.height > 0 else { return }
 
         let image = TextMaskMedia.rasterizedGlyph(
-            for: item, size: imageSize,
+            for: renderedTitle, size: imageSize,
             videoFrame: item.fillMode == .video ?
                 film?.frame(at: localSecond) : nil
         )
@@ -146,7 +169,7 @@ enum TextBehindPersonRenderer {
         // The previous nested source-in transparency blend could silently
         // produce a completely transparent title during video rendering.
         if item.fauxDepth > 0 {
-            var shadowItem = item
+            var shadowItem = renderedTitle
             shadowItem.fillMode = .solid
             shadowItem.colorHex = "242424"
             if let depth = TextMaskMedia.rasterizedGlyph(
@@ -174,7 +197,7 @@ enum TextBehindPersonRenderer {
         )
 
         if let outline = TextMaskMedia.outlineImage(
-            for: item, size: imageSize
+            for: renderedTitle, size: imageSize
         ) {
             UIImage(cgImage: outline).draw(in: region)
         }
