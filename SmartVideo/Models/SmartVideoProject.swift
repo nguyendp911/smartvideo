@@ -29,6 +29,10 @@ struct SmartVideoProject: Codable {
     var voiceMasteringSettings: VoiceMasteringSettings
     var musicVolume: Float
     var musicStartSeconds: Double
+    /// Project-time position, separate from source trim (musicStartSeconds).
+    var musicTimelineOffset: Double
+    var musicVolumeKeyframes: [AudioGainKeyframe]
+    var voiceVolumeKeyframes: [AudioGainKeyframe]
     var musicHighlightDuration: Double
     var musicFadeIn: Double
     var musicFadeOut: Double
@@ -68,7 +72,10 @@ struct SmartVideoProject: Codable {
          vfxIntensity: Double, vfxCoverage: String, vfxStart: Double,
          vfxEnd: Double, subtitleX: Double, subtitleY: Double,
          stripMetadata: Bool, addMetadata: Bool, metadata: ExportMetadata,
-         studioPresetID: String?) {
+         studioPresetID: String?,
+         musicTimelineOffset: Double = 0,
+         musicVolumeKeyframes: [AudioGainKeyframe] = [],
+         voiceVolumeKeyframes: [AudioGainKeyframe] = []) {
         self.id = id
         self.name = name
         self.savedAt = savedAt
@@ -94,6 +101,13 @@ struct SmartVideoProject: Codable {
         self.voiceMasteringSettings = voiceMasteringSettings
         self.musicVolume = musicVolume
         self.musicStartSeconds = musicStartSeconds
+        self.musicTimelineOffset = musicTimelineOffset
+        self.musicVolumeKeyframes = AudioAutomationMath.normalized(
+            musicVolumeKeyframes
+        )
+        self.voiceVolumeKeyframes = AudioAutomationMath.normalized(
+            voiceVolumeKeyframes
+        )
         self.musicHighlightDuration = musicHighlightDuration
         self.musicFadeIn = musicFadeIn
         self.musicFadeOut = musicFadeOut
@@ -123,6 +137,7 @@ struct SmartVideoProject: Codable {
              originalMusicFileName, musicMasteringSettings,
              voiceMasteringSettings, musicVolume, musicStartSeconds,
              musicHighlightDuration, musicFadeIn, musicFadeOut, musicRepeat,
+             musicTimelineOffset, musicVolumeKeyframes, voiceVolumeKeyframes,
              keepOriginalAudio, voiceOffset, voiceVolume, vfxPresets,
              vfxIntensity, vfxCoverage, vfxStart, vfxEnd, subtitleX,
              subtitleY, stripMetadata, addMetadata, metadata,
@@ -173,6 +188,19 @@ struct SmartVideoProject: Codable {
         ) ?? VoiceMasteringSettings()
         musicVolume = try values.decode(Float.self, forKey: .musicVolume)
         musicStartSeconds = try values.decode(Double.self, forKey: .musicStartSeconds)
+        musicTimelineOffset = max(0, try values.decodeIfPresent(
+            Double.self, forKey: .musicTimelineOffset
+        ) ?? 0)
+        musicVolumeKeyframes = AudioAutomationMath.normalized(
+            try values.decodeIfPresent(
+                [AudioGainKeyframe].self, forKey: .musicVolumeKeyframes
+            ) ?? []
+        )
+        voiceVolumeKeyframes = AudioAutomationMath.normalized(
+            try values.decodeIfPresent(
+                [AudioGainKeyframe].self, forKey: .voiceVolumeKeyframes
+            ) ?? []
+        )
         musicHighlightDuration = try values.decode(Double.self, forKey: .musicHighlightDuration)
         musicFadeIn = try values.decode(Double.self, forKey: .musicFadeIn)
         musicFadeOut = try values.decode(Double.self, forKey: .musicFadeOut)

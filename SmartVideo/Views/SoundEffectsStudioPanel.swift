@@ -235,6 +235,9 @@ struct SoundEffectsStudioPanel: View {
         let voice = model.voiceoverURL
         let effects = model.soundEffects
         let start = model.musicStartSeconds
+        let timelineOffset = model.musicTimelineOffset
+        let musicFrames = model.musicVolumeKeyframes
+        let voiceFrames = model.voiceVolumeKeyframes
         let highlight = model.musicHighlightDuration
         let repeatMusic = model.repeatShortMusic
         let musicVolume = model.musicVolume
@@ -250,14 +253,17 @@ struct SoundEffectsStudioPanel: View {
                     duration: duration,
                     musicURL: music,
                     musicStart: start,
+                    musicTimelineOffset: timelineOffset,
                     musicHighlightDuration: highlight,
                     repeatMusic: repeatMusic,
                     musicVolume: musicVolume,
+                    musicVolumeKeyframes: musicFrames,
                     musicFadeIn: musicFadeIn,
                     musicFadeOut: musicFadeOut,
                     narrationURL: voice,
                     narrationStart: voiceStart,
                     narrationVolume: voiceVolume,
+                    voiceVolumeKeyframes: voiceFrames,
                     effects: effects
                 )
                 try AVAudioSession.sharedInstance().setCategory(

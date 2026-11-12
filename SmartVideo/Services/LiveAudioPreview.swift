@@ -93,40 +93,59 @@ final class LiveAudioPreview: ObservableObject {
                 soundEffects: model.soundEffects)
 
         if let music {
-            let end = LiveAudioPreviewMath.musicEnd(
-                timelineEnd: model.totalDuration,
+            let start = ProjectAudioTrackMath.safeStart(
+                model.musicTimelineOffset,
+                projectDuration: model.totalDuration
+            )
+            let span = ProjectAudioTrackMath.musicDuration(
+                projectDuration: model.totalDuration,
+                timelineStart: start, fileDuration: music.duration,
+                sourceStart: model.musicStartSeconds,
+                highlightDuration: model.musicHighlightDuration,
+                repeats: model.repeatShortMusic
+            )
+            let offset = ProjectAudioTrackMath.musicSourceTime(
+                projectSecond: timeline,
+                timelineStart: start,
+                projectDuration: model.totalDuration,
                 fileDuration: music.duration,
-                start: model.musicStartSeconds,
+                sourceStart: model.musicStartSeconds,
                 highlightDuration: model.musicHighlightDuration,
                 repeats: model.repeatShortMusic
             )
-            let offset = LiveAudioPreviewMath.musicOffset(
-                timeline: timeline, fileDuration: music.duration,
-                start: model.musicStartSeconds,
-                highlightDuration: model.musicHighlightDuration,
-                repeats: model.repeatShortMusic
-            )
-            let narrationEnd: Double? = narration.map {
-                max(0, model.voiceoverOffset) + $0.duration
+            let voiceStart: Double? = narration.map { _ in
+                max(0, model.voiceoverOffset) - start
             }
-            let gain = LiveAudioPreviewMath.musicGain(
-                timeline: timeline, baseVolume: model.musicVolume,
-                musicEnd: end, fadeIn: model.musicFadeIn,
-                fadeOut: model.musicFadeOut,
-                narrationStart: narration == nil ?
-                    nil : max(0, model.voiceoverOffset),
-                narrationEnd: narrationEnd
+            let voiceEnd: Double? = narration.map {
+                max(0, model.voiceoverOffset) + $0.duration - start
+            }
+            let gain = ProjectAudioTrackMath.gain(
+                localSecond: timeline - start,
+                duration: span, volume: model.musicVolume,
+                fadeIn: model.musicFadeIn, fadeOut: model.musicFadeOut,
+                keyframes: model.musicVolumeKeyframes,
+                narrationStart: voiceStart,
+                narrationEnd: voiceEnd
             )
             syncPlayer(music, offset: offset, volume: gain)
         }
 
         if let narration {
+            let start = max(0, model.voiceoverOffset)
+            let duration = min(narration.duration,
+                               max(0, model.totalDuration - start))
             let offset = LiveAudioPreviewMath.regionOffset(
-                timeline: timeline, regionStart: model.voiceoverOffset,
-                sourceStart: 0, duration: narration.duration
+                timeline: timeline, regionStart: start,
+                sourceStart: 0, duration: duration
             )
-            syncPlayer(narration, offset: offset,
-                       volume: min(1, max(0, model.voiceoverVolume)))
+            let gain = ProjectAudioTrackMath.gain(
+                localSecond: timeline - start,
+                duration: duration,
+                volume: model.voiceoverVolume,
+                fadeIn: 0, fadeOut: 0,
+                keyframes: model.voiceVolumeKeyframes
+            )
+            syncPlayer(narration, offset: offset, volume: gain)
         }
 
         for effect in model.soundEffects.prefix(12) {

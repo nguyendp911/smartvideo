@@ -29,6 +29,9 @@ final class VideoRenderer {
         musicURL: URL?,
         musicVolume: Float,
         musicStartSeconds: Double,
+        musicTimelineOffset: Double,
+        musicVolumeKeyframes: [AudioGainKeyframe],
+        voiceVolumeKeyframes: [AudioGainKeyframe],
         repeatShortMusic: Bool,
         musicHighlightDuration: Double,
         voiceoverURL: URL?,
@@ -155,137 +158,142 @@ final class VideoRenderer {
         let cursor = timeline.duration
 
         var mixParameters: [AVAudioMixInputParameters] = timeline.originalMixParameters
-        var musicParameters: AVMutableAudioMixInputParameters?
-        var musicEnd = CMTime.zero
-        var narrationEnd = CMTime.zero
-        var narrationStart: CMTime?
+        // First place narration so that music ducking can be calculated
+        // in the SAME envelope as fades and volume keyframes. Individual
+        // AVAudioMix ramps must never overlap or overwrite each other.
+        var narrationStart: Double?
+        var narrationEnd: Double?
 
-        // Music: trim at a selected start offset; loop only when requested,
-        // keep its output duration aligned to the video, then fade at the end.
-        if let musicURL {
-            let musicAsset = AVURLAsset(url: musicURL)
-            guard let musicSource = try await musicAsset.loadTracks(withMediaType: .audio).first else {
-                throw SmartVideoError.invalidMedia("Tệp nhạc không có track âm thanh.")
+        func rampMix(
+            track: AVMutableCompositionTrack, at start: Double,
+            points: [(second: Double, gain: Float)]
+        ) -> AVMutableAudioMixInputParameters {
+            let param = AVMutableAudioMixInputParameters(track: track)
+            let global = CMTime(seconds: start, preferredTimescale: 60_000)
+            if let first = points.first {
+                param.setVolume(first.gain, at: global)
             }
-            let sourceDuration = try await musicAsset.load(.duration)
-            let maxStart = max(0, sourceDuration.seconds - 0.1)
-            let safeStart = min(max(0, musicStartSeconds), maxStart)
-            let start = CMTime(seconds: safeStart, preferredTimescale: 600)
-            let availableMusic = CMTimeSubtract(sourceDuration, start)
-            let remainingMusic = musicHighlightDuration > 0
-                ? CMTimeMinimum(availableMusic, CMTime(seconds: musicHighlightDuration, preferredTimescale: 600))
-                : availableMusic
-            guard remainingMusic.isValid && CMTimeCompare(remainingMusic, .zero) > 0 else {
-                throw SmartVideoError.invalidMedia("Không còn nhạc sau điểm cắt.")
-            }
-            guard let track = composition.addMutableTrack(
-                withMediaType: .audio,
-                preferredTrackID: kCMPersistentTrackID_Invalid
-            ) else { throw SmartVideoError.cannotCreateWriter }
-
-            var outputTime = CMTime.zero
-            while CMTimeCompare(outputTime, cursor) < 0 {
-                try Task.checkCancellation()
-                let availableVideo = CMTimeSubtract(cursor, outputTime)
-                let length = CMTimeMinimum(availableVideo, remainingMusic)
-                try track.insertTimeRange(
-                    CMTimeRange(start: start, duration: length),
-                    of: musicSource,
-                    at: outputTime
+            for (a, b) in zip(points, points.dropFirst()) {
+                guard b.second > a.second else { continue }
+                param.setVolumeRamp(
+                    fromStartVolume: a.gain,
+                    toEndVolume: b.gain,
+                    timeRange: CMTimeRange(
+                        start: CMTimeAdd(global, CMTime(
+                            seconds: a.second, preferredTimescale: 60_000
+                        )),
+                        duration: CMTime(
+                            seconds: b.second - a.second,
+                            preferredTimescale: 60_000
+                        )
+                    )
                 )
-                outputTime = CMTimeAdd(outputTime, length)
-                if !repeatShortMusic { break }
             }
-            musicEnd = outputTime
-            let params = AVMutableAudioMixInputParameters(track: track)
-            let baseVolume = min(1, max(0, musicVolume))
-            let startsImmediately = voiceoverURL != nil && voiceoverOffset <= 0.05
-            let startingVolume = startsImmediately ? baseVolume * 0.25 : baseVolume
-            params.setVolume(startingVolume, at: .zero)
-            let fadeIn = CMTimeMinimum(
-                outputTime, CMTime(seconds: max(0, min(5, musicFadeIn)), preferredTimescale: 600)
-            )
-            if CMTimeCompare(fadeIn, .zero) > 0 {
-                params.setVolumeRamp(fromStartVolume: 0, toEndVolume: startingVolume,
-                    timeRange: CMTimeRange(start: .zero, duration: fadeIn))
-            }
-            musicParameters = params
+            return param
         }
 
         if let voiceoverURL {
             let voiceAsset = AVURLAsset(url: voiceoverURL)
-            guard let narration = try await voiceAsset.loadTracks(withMediaType: .audio).first else {
-                throw SmartVideoError.invalidMedia("Tệp thuyết minh không có âm thanh.")
+            guard let source = try await voiceAsset.loadTracks(
+                withMediaType: .audio
+            ).first else {
+                throw SmartVideoError.invalidMedia(
+                    "Tệp thuyết minh không có âm thanh."
+                )
             }
-            let narrationDuration = try await voiceAsset.load(.duration)
-            let voiceStart = CMTime(seconds: min(max(0, voiceoverOffset), cursor.seconds),
-                                   preferredTimescale: 600)
-            let length = CMTimeMinimum(CMTimeSubtract(cursor, voiceStart), narrationDuration)
-            if CMTimeCompare(length, .zero) > 0 {
+            let assetDuration = try await voiceAsset.load(.duration).seconds
+            let at = ProjectAudioTrackMath.safeStart(
+                voiceoverOffset, projectDuration: cursor.seconds
+            )
+            let seconds = min(max(0, assetDuration), cursor.seconds - at)
+            if seconds > 0.05 {
                 guard let track = composition.addMutableTrack(
                     withMediaType: .audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 ) else { throw SmartVideoError.cannotCreateWriter }
-                try track.insertTimeRange(CMTimeRange(start: .zero, duration: length),
-                                          of: narration, at: voiceStart)
-                narrationStart = voiceStart
-                narrationEnd = CMTimeAdd(voiceStart, length)
-                let narrationParams = AVMutableAudioMixInputParameters(track: track)
-                narrationParams.setVolume(min(1, max(0, voiceoverVolume)), at: voiceStart)
-                mixParameters.append(narrationParams)
+                try track.insertTimeRange(
+                    CMTimeRange(start: .zero,
+                                duration: CMTime(seconds: seconds,
+                                                 preferredTimescale: 600)),
+                    of: source,
+                    at: CMTime(seconds: at, preferredTimescale: 600)
+                )
+                narrationStart = at
+                narrationEnd = at + seconds
+                mixParameters.append(rampMix(
+                    track: track, at: at,
+                    points: ProjectAudioTrackMath.points(
+                        duration: seconds, volume: voiceoverVolume,
+                        fadeIn: 0, fadeOut: 0,
+                        keyframes: voiceVolumeKeyframes
+                    )
+                ))
             }
         }
 
-        if let musicParameters {
-            let base = min(1, max(0, musicVolume))
-            let ducked = base * 0.25
-            let fadeLength = CMTimeMinimum(
-                musicEnd, CMTime(seconds: max(0, min(8, musicFadeOut)), preferredTimescale: 600)
-            )
-            let fadeStart = CMTimeSubtract(musicEnd, fadeLength)
-            if let start = narrationStart,
-               CMTimeCompare(narrationEnd, start) > 0,
-               CMTimeCompare(start, fadeStart) < 0 {
-                // Duck only while the narration is audible. Avoid constantly
-                // attenuating background music during a late voiceover.
-                if CMTimeCompare(start,
-                                 CMTime(seconds: 0.25, preferredTimescale: 600)) > 0 {
-                    let transitionLength = CMTimeMinimum(
-                        CMTime(seconds: 0.15, preferredTimescale: 600),
-                        CMTimeSubtract(narrationEnd, start)
-                    )
-                    if CMTimeCompare(transitionLength, .zero) > 0 {
-                        musicParameters.setVolumeRamp(
-                            fromStartVolume: base, toEndVolume: ducked,
-                            timeRange: CMTimeRange(start: start, duration: transitionLength)
-                        )
-                    }
-                }
-                if CMTimeCompare(narrationEnd, fadeStart) < 0 {
-                    let returnLength = CMTimeMinimum(
-                        CMTime(seconds: 0.2, preferredTimescale: 600),
-                        CMTimeSubtract(fadeStart, narrationEnd)
-                    )
-                    if CMTimeCompare(returnLength, .zero) > 0 {
-                        musicParameters.setVolumeRamp(
-                            fromStartVolume: ducked, toEndVolume: base,
-                            timeRange: CMTimeRange(start: narrationEnd, duration: returnLength)
-                        )
-                    }
-                }
-            }
-            if CMTimeCompare(fadeLength, .zero) > 0 {
-                let isNarratingAtFade = narrationStart.map { start in
-                    CMTimeCompare(start, fadeStart) <= 0 &&
-                    CMTimeCompare(narrationEnd, fadeStart) >= 0
-                } ?? false
-                musicParameters.setVolumeRamp(
-                    fromStartVolume: isNarratingAtFade ? ducked : base,
-                    toEndVolume: 0,
-                    timeRange: CMTimeRange(start: fadeStart, duration: fadeLength)
+        if let musicURL {
+            let asset = AVURLAsset(url: musicURL)
+            guard let source = try await asset.loadTracks(
+                withMediaType: .audio
+            ).first else {
+                throw SmartVideoError.invalidMedia(
+                    "Tệp nhạc không có track âm thanh."
                 )
             }
-            mixParameters.append(musicParameters)
+            let fileSeconds = try await asset.load(.duration).seconds
+            let from = min(max(0, musicStartSeconds),
+                           max(0, fileSeconds - 0.05))
+            let section = musicHighlightDuration > 0 ?
+                min(fileSeconds - from, musicHighlightDuration) :
+                fileSeconds - from
+            guard section > 0.05 else {
+                throw SmartVideoError.invalidMedia(
+                    "Không còn nhạc sau điểm cắt."
+                )
+            }
+            let at = ProjectAudioTrackMath.safeStart(
+                musicTimelineOffset, projectDuration: cursor.seconds
+            )
+            let musicLength = ProjectAudioTrackMath.musicDuration(
+                projectDuration: cursor.seconds, timelineStart: at,
+                fileDuration: fileSeconds, sourceStart: from,
+                highlightDuration: musicHighlightDuration,
+                repeats: repeatShortMusic
+            )
+            if musicLength > 0.05 {
+                guard let track = composition.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) else { throw SmartVideoError.cannotCreateWriter }
+                var local = 0.0
+                while local < musicLength - 0.01 {
+                    try Task.checkCancellation()
+                    let length = min(section, musicLength - local)
+                    guard length > 0.02 else { break }
+                    try track.insertTimeRange(
+                        CMTimeRange(
+                            start: CMTime(seconds: from,
+                                          preferredTimescale: 600),
+                            duration: CMTime(seconds: length,
+                                             preferredTimescale: 600)
+                        ), of: source,
+                        at: CMTime(seconds: at + local,
+                                   preferredTimescale: 600)
+                    )
+                    local += length
+                    if !repeatShortMusic { break }
+                }
+                mixParameters.append(rampMix(
+                    track: track, at: at,
+                    points: ProjectAudioTrackMath.points(
+                        duration: local, volume: musicVolume,
+                        fadeIn: musicFadeIn, fadeOut: musicFadeOut,
+                        keyframes: musicVolumeKeyframes,
+                        narrationStart: narrationStart.map { $0 - at },
+                        narrationEnd: narrationEnd.map { $0 - at }
+                    )
+                ))
+            }
         }
 
         // Independently mix SFX at chosen global timeline positions.

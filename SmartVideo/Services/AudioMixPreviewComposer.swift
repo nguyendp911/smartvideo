@@ -1,129 +1,176 @@
 import Foundation
 import AVFoundation
 
-/// Play a lightweight in-memory audio mix without encoding an MP4.
-/// Includes background music, narration and up to 12 SFX tracks.
-/// Video clip source audio is intentionally excluded.
+/// Lightweight in-memory audio mix used for review without writing MP4.
+/// Same project-track offset and gain math as the final VideoRenderer.
+/// Original video clip source audio is intentionally not included here.
 enum AudioMixPreviewComposer {
     @MainActor
     static func makeItem(
         duration: Double,
         musicURL: URL?,
         musicStart: Double,
+        musicTimelineOffset: Double,
         musicHighlightDuration: Double,
         repeatMusic: Bool,
         musicVolume: Float,
+        musicVolumeKeyframes: [AudioGainKeyframe],
         musicFadeIn: Double,
         musicFadeOut: Double,
         narrationURL: URL?,
         narrationStart: Double,
         narrationVolume: Float,
+        voiceVolumeKeyframes: [AudioGainKeyframe],
         effects: [SoundEffectClip]
     ) async throws -> AVPlayerItem {
-        guard duration.isFinite && duration > 0 else {
-            throw SmartVideoError.invalidMedia("Chưa có video/ảnh để nghe bản phối.")
+        guard duration.isFinite, duration > 0 else {
+            throw SmartVideoError.invalidMedia(
+                "Chưa có video/ảnh để nghe bản phối."
+            )
         }
         let total = CMTime(seconds: duration, preferredTimescale: 600)
         let composition = AVMutableComposition()
-        var mixParameters: [AVAudioMixInputParameters] = []
+        var mixes: [AVAudioMixInputParameters] = []
 
-        if let musicURL {
-            let asset = AVURLAsset(url: musicURL)
-            guard let source = try await asset.loadTracks(withMediaType: .audio).first else {
-                throw SmartVideoError.invalidMedia("Không đọc được track nhạc nền.")
+        func mix(
+            _ track: AVMutableCompositionTrack,
+            at start: Double,
+            points: [(second: Double, gain: Float)]
+        ) -> AVAudioMixInputParameters {
+            let params = AVMutableAudioMixInputParameters(track: track)
+            let at = CMTime(seconds: start, preferredTimescale: 60_000)
+            if let first = points.first {
+                params.setVolume(first.gain, at: at)
             }
-            let fileSeconds = try await asset.load(.duration).seconds
-            let offset = min(max(0, musicStart), max(0, fileSeconds - 0.1))
-            let take = min(
-                fileSeconds - offset,
-                musicHighlightDuration > 0 ? musicHighlightDuration : fileSeconds
+            for (a, b) in zip(points, points.dropFirst()) {
+                guard b.second > a.second else { continue }
+                params.setVolumeRamp(
+                    fromStartVolume: a.gain, toEndVolume: b.gain,
+                    timeRange: CMTimeRange(
+                        start: CMTimeAdd(at, CMTime(
+                            seconds: a.second, preferredTimescale: 60_000
+                        )),
+                        duration: CMTime(
+                            seconds: b.second - a.second,
+                            preferredTimescale: 60_000
+                        )
+                    )
+                )
+            }
+            return params
+        }
+
+        var voiceAt: Double?
+        var voiceEnd: Double?
+        if let narrationURL {
+            let asset = AVURLAsset(url: narrationURL)
+            guard let source = try await asset.loadTracks(
+                withMediaType: .audio
+            ).first else {
+                throw SmartVideoError.invalidMedia(
+                    "Thuyết minh không có track âm thanh."
+                )
+            }
+            let fileDuration = try await asset.load(.duration).seconds
+            let start = ProjectAudioTrackMath.safeStart(
+                narrationStart, projectDuration: duration
             )
-            if take > 0.04 {
+            let seconds = min(max(0, fileDuration), duration - start)
+            if seconds > 0.05 {
                 guard let output = composition.addMutableTrack(
                     withMediaType: .audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 ) else { throw SmartVideoError.cannotCreateWriter }
-                var cursor = 0.0
-                while cursor < duration - 0.01 {
-                    let length = min(take, duration - cursor)
-                    guard length > 0.02 else { break }
-                    try output.insertTimeRange(CMTimeRange(
-                        start: CMTime(seconds: offset, preferredTimescale: 600),
-                        duration: CMTime(seconds: length, preferredTimescale: 600)
+                try output.insertTimeRange(
+                    CMTimeRange(
+                        start: .zero,
+                        duration: CMTime(seconds: seconds,
+                                         preferredTimescale: 600)
                     ), of: source,
-                    at: CMTime(seconds: cursor, preferredTimescale: 600))
-                    cursor += length
-                    if !repeatMusic { break }
-                }
-
-                let parameters = AVMutableAudioMixInputParameters(track: output)
-                let volume = min(1, max(0, musicVolume))
-                parameters.setVolume(volume, at: .zero)
-                let fadeIn = min(max(0, musicFadeIn), cursor / 2)
-                let fadeOut = min(max(0, musicFadeOut), cursor / 2)
-                if fadeIn > 0.01 {
-                    parameters.setVolumeRamp(
-                        fromStartVolume: 0, toEndVolume: volume,
-                        timeRange: CMTimeRange(
-                            start: .zero,
-                            duration: CMTime(seconds: fadeIn,
-                                             preferredTimescale: 600)
-                        )
-                    )
-                }
-                if fadeOut > 0.01 {
-                    parameters.setVolumeRamp(
-                        fromStartVolume: volume, toEndVolume: 0,
-                        timeRange: CMTimeRange(
-                            start: CMTime(seconds: cursor - fadeOut,
-                                          preferredTimescale: 600),
-                            duration: CMTime(seconds: fadeOut,
-                                             preferredTimescale: 600)
-                        )
-                    )
-                }
-                mixParameters.append(parameters)
+                    at: CMTime(seconds: start,
+                               preferredTimescale: 600)
+                )
+                voiceAt = start
+                voiceEnd = start + seconds
+                mixes.append(mix(output, at: start,
+                    points: ProjectAudioTrackMath.points(
+                        duration: seconds, volume: narrationVolume,
+                        fadeIn: 0, fadeOut: 0,
+                        keyframes: voiceVolumeKeyframes
+                    )))
             }
         }
 
-        if let narrationURL {
-            let asset = AVURLAsset(url: narrationURL)
-            guard let source = try await asset.loadTracks(withMediaType: .audio).first else {
-                throw SmartVideoError.invalidMedia("Thuyết minh không có track âm thanh.")
+        if let musicURL {
+            let asset = AVURLAsset(url: musicURL)
+            guard let source = try await asset.loadTracks(
+                withMediaType: .audio
+            ).first else {
+                throw SmartVideoError.invalidMedia(
+                    "Không đọc được track nhạc nền."
+                )
             }
             let fileSeconds = try await asset.load(.duration).seconds
-            let at = min(max(0, narrationStart), duration)
-            let take = min(fileSeconds, duration - at)
-            if take > 0.04 {
-                guard let destination = composition.addMutableTrack(
+            let offset = min(max(0, musicStart),
+                             max(0, fileSeconds - 0.05))
+            let section = musicHighlightDuration > 0
+                ? min(fileSeconds - offset, musicHighlightDuration)
+                : fileSeconds - offset
+            let at = ProjectAudioTrackMath.safeStart(
+                musicTimelineOffset, projectDuration: duration
+            )
+            let span = ProjectAudioTrackMath.musicDuration(
+                projectDuration: duration, timelineStart: at,
+                fileDuration: fileSeconds, sourceStart: offset,
+                highlightDuration: musicHighlightDuration,
+                repeats: repeatMusic
+            )
+            if section > 0.05 && span > 0.05 {
+                guard let output = composition.addMutableTrack(
                     withMediaType: .audio,
                     preferredTrackID: kCMPersistentTrackID_Invalid
                 ) else { throw SmartVideoError.cannotCreateWriter }
-                try destination.insertTimeRange(CMTimeRange(
-                    start: .zero,
-                    duration: CMTime(seconds: take, preferredTimescale: 600)
-                ), of: source, at: CMTime(seconds: at, preferredTimescale: 600))
-                let parameters = AVMutableAudioMixInputParameters(track: destination)
-                parameters.setVolume(
-                    min(1, max(0, narrationVolume)),
-                    at: CMTime(seconds: at, preferredTimescale: 600)
-                )
-                mixParameters.append(parameters)
+                var played = 0.0
+                while played < span - 0.01 {
+                    try Task.checkCancellation()
+                    let length = min(section, span - played)
+                    guard length > 0.02 else { break }
+                    try output.insertTimeRange(
+                        CMTimeRange(
+                            start: CMTime(seconds: offset,
+                                          preferredTimescale: 600),
+                            duration: CMTime(seconds: length,
+                                             preferredTimescale: 600)
+                        ), of: source,
+                        at: CMTime(seconds: at + played,
+                                   preferredTimescale: 600)
+                    )
+                    played += length
+                    if !repeatMusic { break }
+                }
+                mixes.append(mix(output, at: at,
+                    points: ProjectAudioTrackMath.points(
+                        duration: played, volume: musicVolume,
+                        fadeIn: musicFadeIn, fadeOut: musicFadeOut,
+                        keyframes: musicVolumeKeyframes,
+                        narrationStart: voiceAt.map { $0 - at },
+                        narrationEnd: voiceEnd.map { $0 - at }
+                    )))
             }
         }
 
-        mixParameters.append(contentsOf: try await SoundEffectsMixer.add(
+        mixes.append(contentsOf: try await SoundEffectsMixer.add(
             effects, to: composition, timelineDuration: total
         ))
-        guard !mixParameters.isEmpty else {
+        guard !mixes.isEmpty else {
             throw SmartVideoError.invalidMedia(
                 "Chưa có nhạc, thuyết minh hoặc SFX để nghe thử."
             )
         }
         let item = AVPlayerItem(asset: composition)
-        let mix = AVMutableAudioMix()
-        mix.inputParameters = mixParameters
-        item.audioMix = mix
+        let result = AVMutableAudioMix()
+        result.inputParameters = mixes
+        item.audioMix = result
         return item
     }
 }
