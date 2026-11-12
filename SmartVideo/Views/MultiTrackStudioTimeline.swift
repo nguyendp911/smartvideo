@@ -10,6 +10,7 @@ struct MultiTrackStudioTimeline: View {
     @Binding var selectedSoundID: UUID?
     let onSelectClip: (TimelineClip, Int) -> Void
     let onSelectSound: (SoundEffectClip) -> Void
+    let onSelectProjectAudio: (ProjectAudioLane) -> Void
     let onScrub: (Double) -> Void
 
     @State private var snapToBeat = true
@@ -41,14 +42,27 @@ struct MultiTrackStudioTimeline: View {
                                         tag: "♪", title: model.repeatShortMusic ?
                                             "Nhạc · lặp" : "Nhạc",
                                         url: music, sourceStart: model.musicStartSeconds,
-                                        start: 0,
+                                        start: model.musicTimelineOffset,
                                         duration: musicSpan(total),
                                         total: total, width: trackWidth,
-                                        tint: .green, frames: [],
+                                        tint: .green,
+                                        frames: model.musicVolumeKeyframes,
                                         selected: false,
-                                        onSelect: { onScrub(0) },
-                                        onBeginMove: nil, onMove: nil,
-                                        effectID: nil
+                                        onSelect: {
+                                            onSelectProjectAudio(.music)
+                                        },
+                                        onBeginMove: {
+                                            model.beginSoundEffectsEdit()
+                                            onSelectProjectAudio(.music)
+                                        },
+                                        onMove: { second in
+                                            model.projectAudioMove(
+                                                .music, to: second,
+                                                recordUndo: false
+                                            )
+                                        },
+                                        effectID: nil,
+                                        projectAudioLane: .music
                                     )
                                 }
                                 if let voice = model.voiceoverURL {
@@ -62,13 +76,24 @@ struct MultiTrackStudioTimeline: View {
                                                 voiceDurationSeconds : total
                                         )),
                                         total: total, width: trackWidth,
-                                        tint: .purple, frames: [],
+                                        tint: .purple,
+                                        frames: model.voiceVolumeKeyframes,
                                         selected: false,
                                         onSelect: {
-                                            onScrub(model.voiceoverOffset)
+                                            onSelectProjectAudio(.narration)
                                         },
-                                        onBeginMove: nil, onMove: nil,
-                                        effectID: nil
+                                        onBeginMove: {
+                                            model.beginSoundEffectsEdit()
+                                            onSelectProjectAudio(.narration)
+                                        },
+                                        onMove: { second in
+                                            model.projectAudioMove(
+                                                .narration, to: second,
+                                                recordUndo: false
+                                            )
+                                        },
+                                        effectID: nil,
+                                        projectAudioLane: .narration
                                     )
                                 }
                                 ForEach(Array(model.soundEffects.enumerated()),
@@ -95,7 +120,8 @@ struct MultiTrackStudioTimeline: View {
                                                 recordUndo: false
                                             )
                                         },
-                                        effectID: effect.id
+                                        effectID: effect.id,
+                                        projectAudioLane: nil
                                     )
                                 }
                             }
@@ -128,7 +154,9 @@ struct MultiTrackStudioTimeline: View {
                             model.musicStartSeconds)
         let section = model.musicHighlightDuration > 0 ?
             min(available, model.musicHighlightDuration) : available
-        return model.repeatShortMusic ? total : min(total, section)
+        return model.repeatShortMusic ?
+            max(0.1, total - model.musicTimelineOffset) :
+            min(max(0.1, total - model.musicTimelineOffset), section)
     }
 
     private func ruler(width: CGFloat, total: Double) -> some View {
@@ -239,7 +267,8 @@ struct MultiTrackStudioTimeline: View {
         onSelect: @escaping () -> Void,
         onBeginMove: (() -> Void)?,
         onMove: ((Double) -> Void)?,
-        effectID: UUID?
+        effectID: UUID?,
+        projectAudioLane: ProjectAudioLane?
     ) -> some View {
         HStack(spacing: 0) {
             Text(tag)
@@ -258,17 +287,25 @@ struct MultiTrackStudioTimeline: View {
                     snapMarkers: snapToBeat ? model.timelineBeatMarkers : [],
                     onSelect: onSelect,
                     onBeginMove: onBeginMove, onMove: onMove,
-                    onBeginFrame: effectID == nil ? nil : {
+                    onBeginFrame: (effectID != nil ||
+                        projectAudioLane != nil) ? {
                         model.beginSoundEffectsEdit()
-                    },
-                    onMoveFrame: effectID.map { id in
-                        { (frame: UUID, progress: Double, gain: Float) in
+                    } : nil,
+                    onMoveFrame: (effectID != nil ||
+                        projectAudioLane != nil) ? {
+                        (frame: UUID, progress: Double, gain: Float) in
+                        if let id = effectID {
                             model.moveSoundVolumeKeyframe(
                                 id, frameID: frame,
                                 progress: progress, gain: gain
                             )
+                        } else if let lane = projectAudioLane {
+                            model.moveProjectAudioKeyframe(
+                                lane, id: frame,
+                                progress: progress, gain: gain
+                            )
                         }
-                    }
+                    } : nil
                 )
                 .offset(x: width * CGFloat(max(0, start) / total))
                 playhead(width: width, total: total)
