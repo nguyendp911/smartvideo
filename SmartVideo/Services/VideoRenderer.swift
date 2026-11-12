@@ -468,6 +468,12 @@ final class VideoRenderer {
             ))
         let black = CIImage(color: .black).cropped(to: canvasRect)
         let staticFrame = fitted.composited(over: black)
+        // Still-image subject segmentation only once for the source
+        // photo, even when generating many pan/zoom frames.
+        let staticPersonMask = behindTitles.isEmpty ? nil :
+            try PersonCutoutProcessor.personMask(
+                staticFrame, quality: .balanced
+            )
         let colorSpace = CGColorSpaceCreateDeviceRGB()
 
         let writer = try AVAssetWriter(outputURL: destinationURL, fileType: .mov)
@@ -568,10 +574,32 @@ final class VideoRenderer {
                     by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: size.height)
                 )
             }
+            var movingMask = staticPersonMask
+            if let staticPersonMask, imageMotion != .none {
+                let tx = CGAffineTransform(
+                    translationX: size.width / 2, y: size.height / 2
+                )
+                .scaledBy(x: zoom, y: zoom)
+                .translatedBy(x: -size.width / 2, y: -size.height / 2)
+                .translatedBy(x: shift / zoom, y: 0)
+                movingMask = staticPersonMask.transformed(by: tx)
+                    .cropped(to: canvasRect)
+            }
+            if flipHorizontal {
+                movingMask = movingMask?.transformed(by:
+                    CGAffineTransform(a: -1, b: 0, c: 0, d: 1,
+                                      tx: size.width, ty: 0))
+            }
+            if flipVertical {
+                movingMask = movingMask?.transformed(by:
+                    CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
+                                      tx: 0, ty: size.height))
+            }
             let depthFrame = try TextBehindPersonRenderer.apply(
                 to: finalFrame, items: behindTitles,
                 projectTime: timelineStart +
                     Double(frameIndex) / Double(framesPerSecond),
+                maskOverride: movingMask,
                 films: filmstrips, quality: .fast
             )
             imageContext.render(depthFrame, to: pixelBuffer,
