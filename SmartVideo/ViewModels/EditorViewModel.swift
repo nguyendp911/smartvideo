@@ -138,6 +138,7 @@ final class EditorViewModel: ObservableObject {
     @Published var musicHighlightDuration: Double = 0
     @Published var voiceoverOffset: Double = 0
     @Published var voiceoverVolume: Float = 1
+    @Published var voiceoverDuration: Double = 0
     @Published var stripMetadata: Bool = true
     @Published var musicHighlightLength: Double = 20
     @Published var musicHighlights: [MusicHighlight] = []
@@ -1487,6 +1488,121 @@ final class EditorViewModel: ObservableObject {
         return right.id
     }
 
+    // MARK: - Project music and narration keyframe automation
+
+    func projectAudioStart(_ lane: ProjectAudioLane) -> Double {
+        lane == .music ? musicTimelineOffset : voiceoverOffset
+    }
+
+    func projectAudioDuration(_ lane: ProjectAudioLane) -> Double {
+        switch lane {
+        case .music:
+            return ProjectAudioTrackMath.musicDuration(
+                projectDuration: totalDuration,
+                timelineStart: musicTimelineOffset,
+                fileDuration: musicDuration,
+                sourceStart: musicStartSeconds,
+                highlightDuration: musicHighlightDuration,
+                repeats: repeatShortMusic
+            )
+        case .narration:
+            return min(max(0, totalDuration - voiceoverOffset),
+                       max(0, voiceoverDuration))
+        }
+    }
+
+    func projectAudioFrames(_ lane: ProjectAudioLane) -> [AudioGainKeyframe] {
+        lane == .music ? musicVolumeKeyframes : voiceVolumeKeyframes
+    }
+
+    func projectAudioMove(
+        _ lane: ProjectAudioLane, to second: Double,
+        recordUndo: Bool = true
+    ) {
+        guard second.isFinite else { return }
+        let length: Double = lane == .music ?
+            min(0.1, max(0.05, projectAudioDuration(lane))) :
+            max(0.1, voiceoverDuration)
+        let target = AudioTimelineMath.clampStart(
+            second, duration: length, projectDuration: totalDuration
+        )
+        guard abs(projectAudioStart(lane) - target) > 0.0001 else {
+            return
+        }
+        if recordUndo { checkpoint() }
+        if lane == .music { musicTimelineOffset = target }
+        else { voiceoverOffset = target }
+    }
+
+    @discardableResult
+    func addProjectAudioKeyframe(_ lane: ProjectAudioLane) -> UUID? {
+        let offset = projectAudioStart(lane)
+        let length = projectAudioDuration(lane)
+        guard length >= 0.1,
+              timelineSecond >= offset,
+              timelineSecond <= offset + length else {
+            errorText = "Đặt con trỏ nằm trong đoạn nhạc/giọng đọc."
+            return nil
+        }
+        let position = AudioAutomationMath.clampProgress(
+            (timelineSecond - offset) / length
+        )
+        let frames = projectAudioFrames(lane)
+        if let existing = frames.first(where: {
+            abs($0.progress - position) <= 0.01
+        }) { return existing.id }
+        guard frames.count < 16 else {
+            errorText = "Giới hạn 16 keyframe âm lượng cho mỗi track."
+            return nil
+        }
+        let gain = AudioAutomationMath.factor(
+            at: position, frames: frames
+        )
+        let key = AudioGainKeyframe(progress: position, gain: gain)
+        checkpoint()
+        let adjusted = AudioAutomationMath.normalized(frames + [key])
+        if lane == .music { musicVolumeKeyframes = adjusted }
+        else { voiceVolumeKeyframes = adjusted }
+        return key.id
+    }
+
+    /// A drag starts with one checkpoint, then updates without undo churn.
+    func moveProjectAudioKeyframe(
+        _ lane: ProjectAudioLane, id: UUID,
+        progress: Double, gain: Float
+    ) {
+        var frames = projectAudioFrames(lane)
+        guard let index = frames.firstIndex(where: {
+            $0.id == id
+        }) else { return }
+        let left = index == 0 ? 0 : frames[index - 1].progress + 0.01
+        let right = index == frames.count - 1 ?
+            1 : frames[index + 1].progress - 0.01
+        frames[index].progress = max(left, min(right,
+            AudioAutomationMath.clampProgress(progress)))
+        frames[index].gain = AudioAutomationMath.clampGain(gain)
+        if lane == .music { musicVolumeKeyframes = frames }
+        else { voiceVolumeKeyframes = frames }
+    }
+
+    func removeProjectAudioKeyframe(
+        _ lane: ProjectAudioLane, id: UUID
+    ) {
+        let frames = projectAudioFrames(lane)
+        guard frames.contains(where: { $0.id == id }) else { return }
+        checkpoint()
+        let reduced = frames.filter { $0.id != id }
+        if lane == .music { musicVolumeKeyframes = reduced }
+        else { voiceVolumeKeyframes = reduced }
+    }
+
+    func clearProjectAudioKeyframes(_ lane: ProjectAudioLane) {
+        guard !projectAudioFrames(lane).isEmpty else { return }
+        checkpoint()
+        if lane == .music { musicVolumeKeyframes = [] }
+        else { voiceVolumeKeyframes = [] }
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {
@@ -1708,6 +1824,7 @@ final class EditorViewModel: ObservableObject {
         musicProcessingMessage = ""
         renderedPreviewURL = nil
         voiceoverURL = nil
+        voiceoverDuration = 0
         originalVoiceoverURL = nil
         masteringSettings = VoiceMasteringSettings()
         masteringMessage = ""
