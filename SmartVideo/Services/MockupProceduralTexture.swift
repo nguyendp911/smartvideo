@@ -210,11 +210,11 @@ enum MockupProceduralTexture {
             leaf.move(to: CGPoint(x: -length, y: 0))
             leaf.addQuadCurve(
                 to: CGPoint(x: length, y: 0),
-                control: CGPoint(x: 0, y: -breadth * 2)
+                controlPoint: CGPoint(x: 0, y: -breadth * 2)
             )
             leaf.addQuadCurve(
                 to: CGPoint(x: -length, y: 0),
-                control: CGPoint(x: 0, y: breadth * 2)
+                controlPoint: CGPoint(x: 0, y: breadth * 2)
             )
             ctx.addPath(leaf.cgPath)
             ctx.fillPath()
