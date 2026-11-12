@@ -9,7 +9,6 @@ import Vision
 enum MockupOverlayRenderer {
     private static let textureCache = NSCache<NSString, UIImage>()
     private static let outputSize = CGSize(width: 640, height: 640)
-    private static let ciContext = CIContext(options: [.cacheIntermediates: false])
 
     static func apply(_ source: CIImage, overlays: [MockupOverlayClip],
                       second: Double, depth: MockupDepthMode,
@@ -38,23 +37,6 @@ enum MockupOverlayRenderer {
             let base = CIImage(cgImage: texture)
             let effectiveScale = max(ext.width, ext.height) /
                 CGFloat(texture.width) * CGFloat(state.scale)
-            var transform = CGAffineTransform(
-                translationX: -CGFloat(texture.width) / 2,
-                y: -CGFloat(texture.height) / 2
-            )
-            transform = transform.scaledBy(
-                x: clip.flipHorizontal ? -effectiveScale : effectiveScale,
-                y: clip.flipVertical ? -effectiveScale : effectiveScale
-            )
-            transform = transform.rotated(
-                by: CGFloat(state.rotation) * .pi / 180
-            )
-            transform = transform.translatedBy(
-                x: (ext.minX + ext.width * CGFloat(state.x)) /
-                    max(0.001, effectiveScale),
-                y: (ext.minY + ext.height * (1 - CGFloat(state.y))) /
-                    max(0.001, effectiveScale)
-            )
             // Compose with center-position transform in world coordinates.
             let center = CGAffineTransform(
                 translationX: ext.minX + ext.width * CGFloat(state.x),
@@ -76,7 +58,10 @@ enum MockupOverlayRenderer {
                     .concatenating(rotate)
                     .concatenating(center)
             )
-            let blur = min(45, max(0, clip.blurRadius))
+            // Feather is expressed in normalized 0–1 softness and shared
+            // by the still/video export path.
+            let blur = min(45, max(0, clip.blurRadius +
+                clip.feather * 24))
             if blur > 0.01 {
                 transformed = transformed.applyingFilter(
                     "CIGaussianBlur",
