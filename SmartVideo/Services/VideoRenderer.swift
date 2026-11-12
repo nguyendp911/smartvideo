@@ -618,16 +618,16 @@ final class VideoRenderer {
                     CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
                                       tx: 0, ty: size.height))
             }
-            let frameTime = timelineStart +
+            let projectSecond = timelineStart +
                 Double(frameIndex) / Double(framesPerSecond)
             let mockupFrame = try MockupFrameRenderer.apply(
                 to: finalFrame, items: mockupOverlays,
-                projectTime: frameTime,
+                projectTime: projectSecond,
                 cachedPersonMask: movingMask
             )
             let depthFrame = try TextBehindPersonRenderer.apply(
                 to: mockupFrame, items: behindTitles,
-                projectTime: frameTime,
+                projectTime: projectSecond,
                 maskOverride: movingMask,
                 films: filmstrips, quality: .fast
             )
