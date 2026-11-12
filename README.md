@@ -4,6 +4,19 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.4.0 – Multi-Music Regions
+
+### Nhiều đoạn nhạc độc lập trên timeline
+
+- **Multi-Music Studio** trong tab **Âm thanh**: chuyển rõ giữa **Một nhạc nền** (hành vi 5.3) và **Nhiều đoạn nhạc**; dữ liệu cả hai chế độ vẫn được lưu, chỉ một chế độ phát trong bản phối để không bị phát đúp.
+- Tối đa **12 đoạn nhạc độc lập** (ngoài 12 FX): nhập MP3/M4A/WAV riêng từ ứng dụng Tệp, hoặc **Từ nhạc nền** đang chọn. Chuyển đổi nhạc nền một bài thành vùng nhạc không làm thay đổi file gốc, giữ cắt nguồn và keyframe nhưng **không** tái tạo chế độ lặp nhạc tự động trong các vùng.
+- **Tách nhạc tại con trỏ**, **Sao chép → Dán**, **Nhân bản**, **Xóa**; mỗi vùng có `start`, `sourceStart`, `duration`, `volume`, `fadeIn/fadeOut`, `muted` và tối đa **16 keyframe âm lượng** riêng. Split chia keyframe để giữ nguyên mức âm ngay tại điểm tách, không tự tạo fade ngoài ý muốn.
+- Mỗi vùng nhạc hiện **waveform màu xanh lá trong timeline mở rộng**, kéo trực tiếp để dời mốc phát; di chuyển keyframe trên track (thời điểm và độ lớn). Bộ waveform cắt nguồn trong bảng chỉnh cũng hỗ trợ tua/zoom; vùng nhạc gốc không bị ghi đè.
+- **Xuất MP4**, **Xem thử 720p**, **Nghe bản phối** và **xem nhanh** đều dùng các vùng âm thanh này khi ở chế độ nhiều đoạn. Các vùng có thể chồng lên nhau, trộn độc lập; nhạc tự hạ âm lượng khi thuyết minh có tiếng, qua các ramp AVAudioMix.
+- **Undo/Redo** cho chuyển chế độ và các thao tác vùng nhạc; save/load thêm `musicRegions` và `musicRegionMode` với mặc định tương thích dự án cũ. Không tự phát lại bài nhạc nền cũ khi người dùng xóa vùng cuối và vẫn đang ở chế độ nhiều đoạn.
+- **Giới hạn**: chưa có chế độ ripple dịch chuyển video/phụ đề sau khi tách nhạc. Các vùng nhạc không tự lặp theo từng vùng; bật **Một nhạc nền** để giữ loop nhạc toàn dự án. Tổng 12 nhạc + 12 FX có thể ngốn tài nguyên ở iPhone cũ; thực tế cần kiểm tra render và âm thanh trên thiết bị trước khi phát hành rộng.
+- Phiên bản **5.4.0 (build 39)**, bundle ID `com.nguyendp911.smartvideo` không thay đổi, IPA cần ký riêng.
+
 ## ViePN Smart Video v5.3.0 – Music & Voice Automation Pro
 
 - **Kéo nhạc nền và thuyết minh trên timeline**: các track âm nhạc / giọng đọc kéo ngang trực tiếp, có hút vào nhịp nếu bật nam châm. Đã tách riêng **mốc cắt bên trong MP3** (`musicStartSeconds`) và **mốc nhạc phát trên video** (`musicTimelineOffset`), để dời track không làm đổi đoạn nguồn.
