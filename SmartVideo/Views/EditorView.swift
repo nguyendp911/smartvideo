@@ -754,6 +754,11 @@ struct EditorView: View {
                     selectedClipID: selectedClipID,
                     selectedSoundID: $selectedSoundID,
                     selectedMusicRegionID: $selectedMusicRegionID,
+                    selectedMockupID: $selectedMockupID,
+                    onSelectMockup: { item in
+                        selectedMockupID = item.id
+                        activeTool = .mockup
+                    },
                     onSelectMusicRegion: { region in
                         selectedMusicRegionID = region.id
                         activeTool = .audio
