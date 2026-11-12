@@ -37,9 +37,9 @@ struct ClipAudioEnvelopeTests {
         // User fades multiply with transition fades without overriding one.
         near(sample(0.25, fadeIn: 1, inOverlap: 0.5), 0.125)
         near(sample(9.75, fadeOut: 1, outOverlap: 0.5), 0.125)
-        near(sample(0.5, duration: 1, fadeIn: 3), 1)
-        near(sample(0.24, duration: 1, fadeIn: 3), 0.5)
-        near(sample(1, duration: 0.2, fadeOut: 3), 0)
+        near(sample(0.5, 1, fadeIn: 3), 1)
+        near(sample(0.24, 1, fadeIn: 3), 0.5)
+        near(sample(1, 0.2, fadeOut: 3), 0)
         near(sample(-0.1), 0)
         near(sample(12), 0)
         precondition(ClipAudioEnvelope.safeVolume(.nan) == 1)
