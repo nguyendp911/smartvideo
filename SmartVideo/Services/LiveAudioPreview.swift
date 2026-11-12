@@ -89,8 +89,12 @@ final class LiveAudioPreview: ObservableObject {
             pause()
             return
         }
-        prepare(musicURL: model.musicURL, narrationURL: model.voiceoverURL,
-                soundEffects: model.soundEffects)
+        let regions = model.musicRegionMode ? model.musicRegions : []
+        prepare(
+            musicURL: model.musicRegionMode ? nil : model.musicURL,
+            narrationURL: model.voiceoverURL,
+            soundEffects: model.soundEffects + regions
+        )
 
         if let music {
             let start = ProjectAudioTrackMath.safeStart(
@@ -146,6 +150,38 @@ final class LiveAudioPreview: ObservableObject {
                 keyframes: model.voiceVolumeKeyframes
             )
             syncPlayer(narration, offset: offset, volume: gain)
+        }
+
+        // New independent music regions share the same AVAudioPlayer cache
+        // and envelope as SFX, but add narration ducking.
+        for region in regions.prefix(12) {
+            guard let player = effects[region.id] else { continue }
+            let length = min(
+                max(0, region.duration),
+                max(0, player.duration - region.sourceStart),
+                max(0, model.totalDuration - region.start)
+            )
+            let offset = LiveAudioPreviewMath.regionOffset(
+                timeline: timeline, regionStart: region.start,
+                sourceStart: region.sourceStart, duration: length
+            )
+            let relative = timeline - region.start
+            let voiceStart = narration.map { _ in
+                model.voiceoverOffset - region.start
+            }
+            let voiceEnd = narration.map {
+                model.voiceoverOffset + $0.duration - region.start
+            }
+            let gain = region.muted ? Float.zero :
+                ProjectAudioTrackMath.gain(
+                    localSecond: relative,
+                    duration: length, volume: region.volume,
+                    fadeIn: region.fadeIn, fadeOut: region.fadeOut,
+                    keyframes: region.volumeKeyframes,
+                    narrationStart: voiceStart,
+                    narrationEnd: voiceEnd
+                )
+            syncPlayer(player, offset: offset, volume: gain)
         }
 
         for effect in model.soundEffects.prefix(12) {
