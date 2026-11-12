@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 enum TextTitlePreset: String, CaseIterable, Identifiable {
     case behindPerson = "Title Behind Person"
