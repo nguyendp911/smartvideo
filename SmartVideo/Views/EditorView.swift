@@ -289,7 +289,8 @@ struct EditorView: View {
     private func previewHeight(for availableHeight: CGFloat) -> CGFloat {
         // GeometryReader already excludes the pinned export bar and safe
         // areas. Reserve an actual editing area even on smaller iPhones.
-        let timelineHeight: CGFloat = isTimelineExpanded ? 224 : 105
+        let timelineHeight: CGFloat = isTimelineExpanded ?
+            expandedTimelineHeight : 105
         let reserved = 42 + 54 + timelineHeight + 155 + 28
         let room = max(120, availableHeight - reserved)
         let target = availableHeight * (prefersLargePreview ? 0.39 : 0.30)
@@ -579,6 +580,22 @@ struct EditorView: View {
         .background(Color.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 13))
     }
 
+    /// Keep the video and parameter workspace usable even when the user
+    /// adds 12 FX tracks: the audio lanes scroll vertically within a cap.
+    private var expandedTimelineHeight: CGFloat {
+        let lanes = model.soundEffects.count +
+            (model.musicURL == nil ? 0 : 1) +
+            (model.voiceoverURL == nil ? 0 : 1)
+        let tracks = lanes > 0 ? min(CGFloat(lanes) * 47, 132) : 0
+        let selectedOverlayStrip =
+            (activeTool == .overlay && selectedOverlayID != nil) ||
+            (activeTool == .pip && selectedPIPID != nil) ||
+            (activeTool == .title && selectedTextID != nil)
+        return 188 + tracks +
+            (model.timelineBeatMarkers.isEmpty ? 0 : 17) +
+            (selectedOverlayStrip ? 24 : 0)
+    }
+
     private var timeline: some View {
         VStack(spacing: 5) {
             HStack(spacing: 7) {
@@ -687,106 +704,20 @@ struct EditorView: View {
                     .frame(height: 23)
                 }
 
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 4) {
-                        ForEach(Array(model.clips.enumerated()), id: \.element.id) { index, clip in
-                            Button {
-                                selectClip(clip, at: index)
-                                activeTool = .clip
-                            } label: {
-                                VStack(spacing: 3) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 6)
-                                            .fill(Color.white.opacity(0.09))
-                                        TimelineThumbnail(clip: clip)
-                                            .frame(width: timelineClipWidth(clip), height: 35)
-                                            .clipped()
-                                    }
-                                    .frame(width: timelineClipWidth(clip), height: 35)
-                                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                                    Text("\(index + 1) · " +
-                                         String(format: "%.1fs", clip.renderedDuration))
-                                        .font(.system(size: 9, weight: .medium))
-                                        .foregroundStyle(.white)
-                                }
-                                .padding(3)
-                                .background(
-                                    selectedClipID == clip.id ?
-                                        Color.cyan.opacity(0.22) : Color.white.opacity(0.04),
-                                    in: RoundedRectangle(cornerRadius: 7)
-                                )
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 7)
-                                        .stroke(
-                                            selectedClipID == clip.id ? Color.cyan : .clear,
-                                            lineWidth: 1.3
-                                        )
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .draggable(clip.id.uuidString)
-                            .dropDestination(for: String.self) { items, _ in
-                                guard let first = items.first,
-                                      let dragged = UUID(uuidString: first) else {
-                                    return false
-                                }
-                                model.reorderClip(draggedID: dragged, before: clip.id)
-                                return true
-                            }
-                        }
-                    }
-                }
-            }
-            if !model.soundEffects.isEmpty {
-                HStack(spacing: 6) {
-                    Text("FX")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.cyan)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(Color.cyan.opacity(0.08))
-                            ForEach(model.soundEffects) { item in
-                                Button {
-                                    selectedSoundID = item.id
-                                    activeTool = .sfx
-                                    scrubTimeline(to: item.start)
-                                } label: {
-                                    Text("♫ " + item.filename)
-                                        .font(.system(size: 8))
-                                        .lineLimit(1)
-                                        .foregroundStyle(.white)
-                                        .padding(.horizontal, 3)
-                                        .frame(maxWidth: .infinity,
-                                               maxHeight: .infinity)
-                                        .background(
-                                            selectedSoundID == item.id ?
-                                                Color.cyan.opacity(0.63) :
-                                                Color.blue.opacity(0.55),
-                                            in: RoundedRectangle(cornerRadius: 4)
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .frame(
-                                    width: max(14, geo.size.width *
-                                        CGFloat(min(1, item.duration /
-                                            max(0.1, model.totalDuration)))),
-                                    height: 24
-                                )
-                                .offset(
-                                    x: geo.size.width * CGFloat(
-                                        min(1, max(0, item.start /
-                                            max(0.1, model.totalDuration)))
-                                    )
-                                )
-                            }
-                        }
-                        .clipped()
-                    }
-                    .frame(height: 24)
-                }
-                .frame(height: 27)
-            }
+                MultiTrackStudioTimeline(
+                    model: model,
+                    selectedClipID: selectedClipID,
+                    selectedSoundID: $selectedSoundID,
+                    onSelectClip: { clip, index in
+                        selectClip(clip, at: index)
+                        activeTool = .clip
+                    },
+                    onSelectSound: { effect in
+                        selectedSoundID = effect.id
+                        activeTool = .sfx
+                    },
+                    onScrub: { scrubTimeline(to: $0) }
+                )
             HStack(spacing: 9) {
                 Button {
                     model.undoEdit()
@@ -822,12 +753,7 @@ struct EditorView: View {
             .font(.caption)
             .buttonStyle(.bordered)
         }
-        .frame(height: (model.soundEffects.isEmpty ? 154 : 186) +
-               (model.timelineBeatMarkers.isEmpty ? 0 : 17) +
-               ((activeTool == .overlay && selectedOverlayID != nil) ||
-                (activeTool == .pip && selectedPIPID != nil) ||
-                (activeTool == .title && selectedTextID != nil) ? 24 : 0),
-               alignment: .top)
+        .frame(height: expandedTimelineHeight, alignment: .top)
     }
 
     /// A 100pt always-available timeline for everyday editing. The full
