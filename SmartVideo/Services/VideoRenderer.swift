@@ -63,10 +63,40 @@ final class VideoRenderer {
             }
         }
 
+        // Prepare a small, bounded filmstrip once per video-filled title.
+        // Never decode MOV/MP4 inside each exported source frame.
+        var textFilms: [UUID: TextMaskMedia.Filmstrip] = [:]
+        for item in textOverlays where item.fillMode == .video {
+            if let url = item.fillAssetURL,
+               let film = TextMaskMedia.load(url: url) {
+                textFilms[item.id] = film
+            }
+        }
+
+        // Match TimelineComposer's overlapping transition positions.
+        var clipStarts: [Double] = []
+        var position = 0.0
+        for i in clips.indices {
+            if i > 0 && transition != .cut {
+                let previous = clips[i - 1].renderedDuration
+                let incoming = clips[i].renderedDuration
+                position -= min(transitionSeconds,
+                                previous * 0.24, incoming * 0.24)
+            }
+            clipStarts.append(max(0, position))
+            position += clips[i].renderedDuration
+        }
+
         var workingClips = clips
         var sourceURLs: [URL] = []
         for (index, clip) in clips.enumerated() {
             try Task.checkCancellation()
+            let clipStart = clipStarts[index]
+            let behindTitles = textOverlays.filter {
+                $0.depthMode == .behindPerson &&
+                $0.end > clipStart &&
+                $0.start < clipStart + clip.renderedDuration
+            }
             if clip.kind == .image {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
@@ -83,7 +113,10 @@ final class VideoRenderer {
                     colorAdjustments: clip.colorAdjustments,
                     personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
-                    flipVertical: clip.flipVertical
+                    flipVertical: clip.flipVertical,
+                    behindTitles: behindTitles,
+                    timelineStart: clipStart,
+                    filmstrips: textFilms
                 )
                 sourceURLs.append(temporary)
             } else if !clip.speedCurve.isEmpty {
@@ -112,13 +145,17 @@ final class VideoRenderer {
 
                 if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                     !clip.colorAdjustments.isNeutral ||
-                    clip.personBackground != .original {
+                    clip.personBackground != .original ||
+                    !behindTitles.isEmpty {
                     // Existing Core Image grading is run AFTER the retime.
                     // Do not discard the grade or apply it twice.
                     let gradeURL = MediaStorage.newTemporaryVideoURL()
                     generatedImageVideos.append(gradeURL)
                     try await VideoFrameGrader.renderTrimmed(
-                        clip: prepared, outputURL: gradeURL
+                        clip: prepared, outputURL: gradeURL,
+                        behindTitles: behindTitles,
+                        timelineStart: clipStart,
+                        filmstrips: textFilms
                     )
                     sourceURLs.append(gradeURL)
                 } else {
@@ -127,11 +164,15 @@ final class VideoRenderer {
                 workingClips[index] = prepared
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                       !clip.colorAdjustments.isNeutral ||
-                      clip.personBackground != .original {
+                      clip.personBackground != .original ||
+                      !behindTitles.isEmpty {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
                 try await VideoFrameGrader.renderTrimmed(
-                    clip: clip, outputURL: temporary
+                    clip: clip, outputURL: temporary,
+                    behindTitles: behindTitles,
+                    timelineStart: clipStart,
+                    filmstrips: textFilms
                 )
                 sourceURLs.append(temporary)
                 // The intermediate MOV starts at 0 because only the selected
@@ -391,7 +432,10 @@ final class VideoRenderer {
         colorAdjustments: ColorAdjustments,
         personBackground: PersonBackground,
         flipHorizontal: Bool,
-        flipVertical: Bool
+        flipVertical: Bool,
+        behindTitles: [TextOverlayClip] = [],
+        timelineStart: Double = 0,
+        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
     ) async throws {
         guard let image = CIImage(contentsOf: imageURL, options: [.applyOrientationProperty: true]) else {
             throw SmartVideoError.invalidMedia("Không mở được ảnh: \(imageURL.lastPathComponent)")
@@ -524,7 +568,13 @@ final class VideoRenderer {
                     by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: size.height)
                 )
             }
-            imageContext.render(finalFrame, to: pixelBuffer,
+            let depthFrame = try TextBehindPersonRenderer.apply(
+                to: finalFrame, items: behindTitles,
+                projectTime: timelineStart +
+                    Double(frameIndex) / Double(framesPerSecond),
+                films: filmstrips, quality: .fast
+            )
+            imageContext.render(depthFrame, to: pixelBuffer,
                                 bounds: canvasRect, colorSpace: colorSpace)
             let frameTime = CMTime(value: Int64(frameIndex), timescale: framesPerSecond)
             guard adaptor.append(pixelBuffer, withPresentationTime: frameTime) else {
