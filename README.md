@@ -4,6 +4,16 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.3.0 – Music & Voice Automation Pro
+
+- **Kéo nhạc nền và thuyết minh trên timeline**: các track âm nhạc / giọng đọc kéo ngang trực tiếp, có hút vào nhịp nếu bật nam châm. Đã tách riêng **mốc cắt bên trong MP3** (`musicStartSeconds`) và **mốc nhạc phát trên video** (`musicTimelineOffset`), để dời track không làm đổi đoạn nguồn.
+- **Keyframe âm lượng cho cả nhạc nền và giọng đọc**: trong tab Âm thanh, thêm tối đa 16 mốc/track tại vị trí con trỏ, chọn chấm màu cam, chỉnh mức 0–100% bằng slider hoặc kéo điểm trực tiếp trên timeline. Có xóa từng mốc hoặc xóa toàn bộ; Undo/Redo cho di chuyển và thay đổi mốc.
+- **Bản MP4 thật, Preview 720p, bản nghe phối âm và Live Preview** dùng chung `ProjectAudioTrackMath` cho mốc phát nhạc, đoạn nguồn, loop, fade, ducking và keyframe. Các ramp được chia thành đoạn không chồng lấn, tránh fade hoặc duck ghi đè lên keyframe.
+- **Nhạc xuất hiện muộn**: trước mốc nhạc không có âm thanh; sau đó nhạc phát từ phần nguồn đã cắt và lặp nếu bật tùy chọn. Giọng đọc theo mốc riêng; vùng nhạc trùng với thuyết minh giảm âm lượng có ramp 150ms/200ms.
+- **Dự án cũ tương thích**: JSON không có `musicTimelineOffset` mặc định bắt đầu nhạc tại 0 giây; mảng keyframe nhạc/giọng vắng mặt mặc định rỗng = âm lượng giữ nguyên. Giữ nguồn và bundle ID hiện tại.
+- **Giới hạn**: một track nhạc nền toàn dự án và một track thuyết minh (chưa hỗ trợ nhiều đoạn nhạc độc lập trên timeline). Mỗi FX vẫn là vùng độc lập như bản 5.2. Kéo/điểm keyframe cần thử trên thiết bị thật; bộ nghe nhanh có thể có độ trễ nhỏ ở điểm lặp MP3. Không thay đổi app ký bằng chứng chỉ.
+- v**5.3.0 (build 38)**, iOS 16+, bundle ID `com.nguyendp911.smartvideo`.
+
 ## ViePN Smart Video v5.2.0 – Unified Multi-Track Timeline
 
 ### Video, nhạc nền, giọng đọc và FX chung một trục thời gian
