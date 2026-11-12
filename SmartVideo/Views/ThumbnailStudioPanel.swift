@@ -28,8 +28,12 @@ struct ThumbnailStudioPanel: View {
                             Image(uiImage: cover).resizable()
                                 .scaledToFit()
                         } else {
-                            ContentUnavailableView("Chưa có ảnh bìa",
-                                systemImage: "photo.on.rectangle")
+                            VStack(spacing: 8) {
+                                Image(systemName: "photo.on.rectangle")
+                                    .font(.largeTitle)
+                                Text("Chưa có ảnh bìa").font(.caption)
+                            }
+                            .foregroundStyle(.secondary)
                         }
                     }
                     .frame(maxWidth: .infinity)
@@ -80,7 +84,7 @@ struct ThumbnailStudioPanel: View {
             .navigationTitle("Ảnh bìa video")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Đóng") { dismiss() }
                 }
             }
