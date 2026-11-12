@@ -29,13 +29,13 @@ struct MusicRegionsStudioPanel: View {
                 Button("Một nhạc nền") {
                     model.selectMusicRegionMode(false)
                 }
-                .buttonStyle(model.musicRegionMode ?
-                    .bordered : .borderedProminent)
+                .buttonStyle(.bordered)
+                .tint(model.musicRegionMode ? .gray : .green)
                 Button("Nhiều đoạn nhạc") {
                     model.selectMusicRegionMode(true)
                 }
-                .buttonStyle(model.musicRegionMode ?
-                    .borderedProminent : .bordered)
+                .buttonStyle(.bordered)
+                .tint(model.musicRegionMode ? .green : .gray)
             }
             .font(.caption)
             .tint(.green)
@@ -146,22 +146,6 @@ struct MusicRegionsStudioPanel: View {
         }
         .onChange(of: selectedID) { _ in
             selectedFrameID = nil
-        }
-    }
-
-    private func bind(
-        _ id: UUID, key: WritableKeyPath<SoundEffectClip, Double>,
-        defaultValue: Double = 0
-    ) -> Binding<Double> {
-        Binding {
-            model.musicRegions.first(where: { $0.id == id })?[
-                keyPath: key
-            ] ?? defaultValue
-        } set: { newValue in
-            guard let index = model.musicRegions.firstIndex(where: {
-                $0.id == id
-            }) else { return }
-            model.musicRegions[index][keyPath: key] = newValue
         }
     }
 
