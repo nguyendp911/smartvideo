@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 /// Professional-style shared horizontal viewport: video, music, voice and
 /// independently movable FX use the exact same pixels-per-project-second.
@@ -12,6 +13,7 @@ struct MultiTrackStudioTimeline: View {
     let onScrub: (Double) -> Void
 
     @State private var snapToBeat = true
+    @State private var voiceDurationSeconds: Double = 0
     private let labelWidth: CGFloat = 36
 
     private var audioRowCount: Int {
@@ -54,7 +56,11 @@ struct MultiTrackStudioTimeline: View {
                                         tag: "🎙", title: "Giọng đọc",
                                         url: voice, sourceStart: 0,
                                         start: min(total, max(0, model.voiceoverOffset)),
-                                        duration: max(0.1, total - model.voiceoverOffset),
+                                        duration: max(0.1, min(
+                                            total - model.voiceoverOffset,
+                                            voiceDurationSeconds > 0 ?
+                                                voiceDurationSeconds : total
+                                        )),
                                         total: total, width: trackWidth,
                                         tint: .purple, frames: [],
                                         selected: false,
@@ -103,6 +109,15 @@ struct MultiTrackStudioTimeline: View {
             }
             .scrollIndicators(.visible)
         }
+        .task(id: model.voiceoverURL?.path ?? "") {
+            voiceDurationSeconds = 0
+            if let url = model.voiceoverURL,
+               let length = try? await AVURLAsset(url: url)
+                .load(.duration).seconds,
+               length.isFinite, length > 0 {
+                voiceDurationSeconds = length
+            }
+        }
         .frame(height: 86 + (audioRowCount > 0 ?
             min(CGFloat(audioRowCount) * 47, 132) : 0))
     }
@@ -122,7 +137,7 @@ struct MultiTrackStudioTimeline: View {
             Button {
                 snapToBeat.toggle()
             } label: {
-                Image(systemName: snapToBeat ? "magnet" : "magnet")
+                Image(systemName: "magnet")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(snapToBeat ? Color.cyan : Color.gray)
                     .frame(width: labelWidth, height: 20)
@@ -316,7 +331,13 @@ private struct AudioWaveformTimelineRegion: View {
             Canvas { context, size in
                 let items = samples.isEmpty ?
                     Array(repeating: 0.12, count: 36) : samples
-                let cell = size.width / CGFloat(max(1, items.count))
+                // For long media, draw ONLY the sampled opening 90s.
+                // Stretching those peaks over the whole duration would
+                // misrepresent portions of the source we never read.
+                let sampledWidth = size.width * CGFloat(
+                    min(1, 90 / max(0.1, duration))
+                )
+                let cell = sampledWidth / CGFloat(max(1, items.count))
                 for (i, peak) in items.enumerated() {
                     let height = max(2, CGFloat(peak) * 17)
                     context.fill(Path(roundedRect: CGRect(
