@@ -1246,6 +1246,7 @@ final class EditorViewModel: ObservableObject {
                             "Tệp âm thanh có thời lượng không hợp lệ."
                         )
                     }
+                    checkpoint()
                     soundEffects.append(SoundEffectClip.create(
                         url: local, audioDuration: duration,
                         timelineStart: timelineSecond, timelineEnd: totalDuration
@@ -1283,6 +1284,7 @@ final class EditorViewModel: ObservableObject {
                             "Không tạo được âm thanh mẫu."
                         )
                     }
+                    checkpoint()
                     soundEffects.append(SoundEffectClip.create(
                         url: url, audioDuration: duration,
                         timelineStart: at, timelineEnd: total
