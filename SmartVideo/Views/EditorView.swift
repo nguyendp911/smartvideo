@@ -206,6 +206,15 @@ struct EditorView: View {
         .onChange(of: selectedClip?.speedCurve) { _ in
             refreshColorPreview()
         }
+        .task(id: model.voiceoverURL?.path ?? "") {
+            model.voiceoverDuration = 0
+            if let url = model.voiceoverURL,
+               let seconds = try? await AVURLAsset(url: url)
+                .load(.duration).seconds,
+               seconds.isFinite, seconds > 0 {
+                model.voiceoverDuration = seconds
+            }
+        }
         .onChange(of: model.keepOriginalAudio) { _ in
             updateClipAudioPreview()
         }
@@ -715,6 +724,9 @@ struct EditorView: View {
                     onSelectSound: { effect in
                         selectedSoundID = effect.id
                         activeTool = .sfx
+                    },
+                    onSelectProjectAudio: { _ in
+                        activeTool = .audio
                     },
                     onScrub: { scrubTimeline(to: $0) }
                 )
@@ -2052,7 +2064,9 @@ struct EditorView: View {
                 .font(.caption)
                 Slider(value: $model.voiceoverOffset,
                        in: 0...max(0.1, model.totalDuration - 0.1),
-                       step: 0.1)
+                       step: 0.1, onEditingChanged: { editing in
+                           if editing { model.beginSoundEffectsEdit() }
+                       })
                     .tint(.cyan)
                 HStack {
                     Text("Âm lượng thuyết minh")
@@ -2062,6 +2076,9 @@ struct EditorView: View {
                 .font(.caption)
                 Slider(value: $model.voiceoverVolume, in: 0...1)
                     .tint(.cyan)
+                ProjectAudioAutomationPanel(
+                    model: model, lane: .narration
+                )
             }
             Divider()
             Text("Tạo thuyết minh từ văn bản")
@@ -2144,6 +2161,9 @@ struct EditorView: View {
                 }.font(.caption)
                 Slider(value: $model.musicVolume, in: 0...1)
                     .tint(accent)
+                ProjectAudioAutomationPanel(
+                    model: model, lane: .music
+                )
                 if model.musicHighlightDuration > 0 {
                     Text(String(format: "Highlight nhạc: %.1fs đến %.1fs",
                                 model.musicStartSeconds,
