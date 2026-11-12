@@ -4,6 +4,18 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.2.0 – Unified Multi-Track Timeline
+
+### Video, nhạc nền, giọng đọc và FX chung một trục thời gian
+- **Mở rộng timeline** ngay dưới video cố định: chung một vùng cuộn ngang và chung tỷ lệ thời gian cho video, MP3, thuyết minh, và **từng** track FX (tối đa 12). Có thước thời gian và đường playhead chạy đồng bộ; chạm thước để tua.
+- **Waveform thực** cho track âm thanh, lấy mẫu từ PCM theo phần đầu nguồn, giới hạn 90 giây/track để tránh giải mã tệp dài quá tốn tài nguyên. Với âm thanh dài, phần chưa lấy mẫu **không** bị tô bằng sóng âm giả.
+- **Kéo ngang vùng waveform FX** để dời vị trí phát trên dự án (không cắt lại nguồn). Nút **nam châm** trên thước thời gian cho phép bật/tắt hút vào mốc nhịp từ Beat Sync. Kéo track bị chặn ở đầu/cuối tổng thời lượng.
+- **Kéo điểm keyframe trực tiếp trên dòng FX**: ngang đổi mốc thời gian, dọc tăng/giảm gain. Có thể mở bảng Âm FX để tinh chỉnh số chính xác như trước. Các ramp này xuất ra MP4 và nghe trong Quick Preview đã có từ v5.1.
+- Video, nhạc, giọng và FX cuộn ngang cùng nhau; danh sách âm thanh cuộn dọc riêng khi nhiều track để video preview **không bị đẩy khỏi màn hình**. Thu gọn timeline trở về giao diện gọn v4.7.
+- **Hoàn tác/Làm lại có cả SoundFX**, gồm kéo track, kéo keyframe, thay đổi các slider FX, tắt tiếng, nhập/nhân bản/xóa FX, chia FX và cắt bằng waveform. Một cử chỉ kéo được ghi nhận thành một bước Undo; không khôi phục dữ liệu giữa hai dự án khác nhau.
+- **Giới hạn:** phiên bản 5.2 mới cho **FX** kéo trực tiếp (nhạc nền vẫn ở mốc 0, giọng đọc vẫn điều chỉnh offset từ tab Âm thanh). Waveform track dài chỉ vẽ phần nguồn đã phân tích, không tự quét toàn bộ tệp dài. Phần nhạc lặp được vẽ dưới dạng vùng phát và mẫu waveform, chưa vẽ chính xác từng chu kỳ. Việc căn hàng thời gian chính xác khi kéo cần kiểm thử cảm ứng trên iPhone thật.
+- v**5.2.0 (build 37)**, iOS 16+; bundle ID `com.nguyendp911.smartvideo` không đổi.
+
 ## ViePN Smart Video v5.1.0 – Waveform Editor & SFX Audio Keyframes
 
 ### Chỉnh âm thanh chính xác hơn mà không cần xuất thử
