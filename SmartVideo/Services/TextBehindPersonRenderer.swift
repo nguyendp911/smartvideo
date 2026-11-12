@@ -183,6 +183,26 @@ enum TextBehindPersonRenderer {
             }
         }
         ctx.endTransparencyLayer()
+
+        // Draw a separate colorable outer stroke, rather than merely
+        // widening the image glyph alpha. The stroke is also behind Vision's
+        // foreground person because it participates in this scene layer.
+        if item.strokeWidth > 0,
+           let edge = TextMaskMedia.glyphMask(
+                text: item.text, size: imageSize,
+                fontSize: fontSize,
+                strokeWidth: CGFloat(item.strokeWidth),
+                outlineOnly: true
+           ) {
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
+            UIImage(cgImage: edge).draw(in: region)
+            ctx.setBlendMode(.sourceIn)
+            ctx.setFillColor(TextOverlayRenderer.uiColor(
+                hex: item.strokeHex
+            ).cgColor)
+            ctx.fill(region)
+            ctx.endTransparencyLayer()
+        }
         ctx.restoreGState()
     }
 }
