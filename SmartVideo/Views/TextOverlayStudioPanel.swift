@@ -4,6 +4,8 @@ struct TextOverlayStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
     let onScrub: (Double) -> Void
+    let importTextFill: (Bool) -> Void
+    let autoPosition: (UUID) -> Void
 
     private var selected: TextOverlayClip? {
         model.textOverlays.first { $0.id == selectedID }
@@ -54,6 +56,125 @@ struct TextOverlayStudioPanel: View {
 
             if let item = selected,
                let idx = model.textOverlays.firstIndex(where: { $0.id == item.id }) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Preset tiêu đề điện ảnh")
+                        .font(.caption.bold())
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 7) {
+                            ForEach(TextTitlePreset.allCases) { preset in
+                                Button(preset.rawValue) {
+                                    preset.apply(
+                                        to: &model.textOverlays[idx]
+                                    )
+                                }
+                                .buttonStyle(.bordered)
+                                .font(.caption2)
+                            }
+                        }
+                    }
+                }
+                Picker("Vị trí theo chủ thể",
+                       selection: $model.textOverlays[idx].depthMode) {
+                    ForEach(TextDepthMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                if item.depthMode == .behindPerson {
+                    Text("Chữ sẽ được ghép sau người bằng Vision khi xuất video hoặc Xem thử 720p. Chỉ tách người, chưa tách các loại vật thể khác. Preview nhanh là lớp hướng dẫn vị trí.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    autoPosition(item.id)
+                } label: {
+                    Label("AI gợi ý vị trí tránh khuôn mặt",
+                          systemImage: "face.dashed")
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+
+                Picker("Nội dung bên trong chữ",
+                       selection: $model.textOverlays[idx].fillMode) {
+                    ForEach(TextFillMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+
+                if item.fillMode == .gradient {
+                    Text("Màu chuyển sắc thứ hai (HEX)")
+                        .font(.caption.bold())
+                    TextField("18D6F5",
+                              text: $model.textOverlays[idx].gradientEndHex)
+                        .textInputAutocapitalization(.characters)
+                        .textFieldStyle(.roundedBorder)
+                }
+                if item.fillMode == .image || item.fillMode == .video {
+                    HStack {
+                        Button {
+                            importTextFill(item.fillMode == .video)
+                        } label: {
+                            Label(item.fillMode == .video ?
+                                  "Chọn video trong chữ" :
+                                  "Chọn ảnh trong chữ",
+                                  systemImage: "photo.on.rectangle")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Spacer(minLength: 0)
+                        Text(item.fillAssetURL?.lastPathComponent ??
+                             "Chưa chọn")
+                            .font(.caption2)
+                            .lineLimit(1)
+                    }
+                    Picker("Cách đặt ảnh/video", selection:
+                        $model.textOverlays[idx].maskFit) {
+                        ForEach(TextMaskFit.allCases) { fit in
+                            Text(fit.rawValue).tag(fit)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    row("Phóng to nội dung trong chữ",
+                        String(format: "%.1fx", item.maskScale))
+                    Slider(value: $model.textOverlays[idx].maskScale,
+                           in: 0.5...4, step: 0.05).tint(.cyan)
+                    row("Dịch ảnh theo X",
+                        String(format: "%.2f", item.maskOffsetX))
+                    Slider(value: $model.textOverlays[idx].maskOffsetX,
+                           in: -1...1, step: 0.02).tint(.cyan)
+                    row("Dịch ảnh theo Y",
+                        String(format: "%.2f", item.maskOffsetY))
+                    Slider(value: $model.textOverlays[idx].maskOffsetY,
+                           in: -1...1, step: 0.02).tint(.cyan)
+                    if item.fillMode == .video {
+                        Text("Video trong chữ lấy mẫu tối đa 32 khung từ 4 giây đầu, rồi lặp để tối ưu bộ nhớ. Xem thử 720p để kiểm tra chuyển động thực.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Text("Hiệu ứng viền và chiều sâu")
+                    .font(.caption.bold())
+                row("Độ dày viền", String(format: "%.1f", item.strokeWidth))
+                Slider(value: $model.textOverlays[idx].strokeWidth,
+                       in: 0...12, step: 0.5).tint(.cyan)
+                TextField("Màu viền (HEX)",
+                          text: $model.textOverlays[idx].strokeHex)
+                    .textInputAutocapitalization(.characters)
+                    .textFieldStyle(.roundedBorder)
+                row("Bóng đổ", "\(Int(item.shadowOpacity * 100))%")
+                Slider(value: $model.textOverlays[idx].shadowOpacity,
+                       in: 0...1, step: 0.05).tint(.cyan)
+                row("Glow", String(format: "%.1f", item.glowRadius))
+                Slider(value: $model.textOverlays[idx].glowRadius,
+                       in: 0...20, step: 1).tint(.cyan)
+                row("Nổi giả 3D", String(format: "%.1f", item.fauxDepth))
+                Slider(value: $model.textOverlays[idx].fauxDepth,
+                       in: 0...20, step: 1).tint(.cyan)
+                Toggle("Chữ nhịp thở (Pulse)",
+                       isOn: $model.textOverlays[idx].pulseEnabled)
+                    .font(.caption)
+
                 TextField("Nội dung chữ", text: $model.textOverlays[idx].text,
                           axis: .vertical)
                     .lineLimit(2...4)
