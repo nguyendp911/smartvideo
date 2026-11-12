@@ -1516,29 +1516,19 @@ final class EditorViewModel: ObservableObject {
             errorText = "Chọn nhạc nền hợp lệ, thêm video và còn chỗ trống (tối đa 12 đoạn)."
             return nil
         }
-        let start = ProjectAudioTrackMath.safeStart(
-            musicTimelineOffset, projectDuration: totalDuration
-        )
-        let source = min(max(0, musicStartSeconds),
-                         max(0, musicDuration - 0.1))
-        let length = min(
-            musicHighlightDuration > 0 ?
-                musicHighlightDuration : musicDuration - source,
-            max(0.1, totalDuration - start),
-            musicDuration - source
-        )
-        guard length >= 0.1 else { return nil }
-        var region = SoundEffectClip.create(
-            url: musicURL, audioDuration: musicDuration,
-            timelineStart: start, timelineEnd: totalDuration
-        )
-        region.start = start
-        region.sourceStart = source
-        region.duration = length
-        region.volume = AudioAutomationMath.clampGain(musicVolume)
-        region.fadeIn = min(3, max(0, musicFadeIn))
-        region.fadeOut = min(3, max(0, musicFadeOut))
-        region.volumeKeyframes = musicVolumeKeyframes
+        guard let region = MusicRegionEditMath.fromLegacy(
+            url: musicURL, fileDuration: musicDuration,
+            sourceStart: musicStartSeconds,
+            highlightDuration: musicHighlightDuration,
+            timelineStart: musicTimelineOffset,
+            projectDuration: totalDuration,
+            volume: musicVolume,
+            fadeIn: musicFadeIn, fadeOut: musicFadeOut,
+            frames: musicVolumeKeyframes
+        ) else {
+            errorText = "Đoạn nguồn quá ngắn hoặc thời lượng nhạc không hợp lệ."
+            return nil
+        }
         checkpoint()
         musicRegions.append(region)
         musicRegionMode = true
@@ -1626,14 +1616,8 @@ final class EditorViewModel: ObservableObject {
               let region = musicRegions.first(where: {
                   $0.id == id
               }) else { return nil }
-        var next = region
-        next.id = UUID()
-        next.volumeKeyframes = region.volumeKeyframes.map {
-            AudioGainKeyframe(progress: $0.progress, gain: $0.gain)
-        }
-        next.start = AudioTimelineMath.clampStart(
-            second ?? region.end,
-            duration: region.duration,
+        let next = MusicRegionEditMath.duplicate(
+            region, at: second ?? region.end,
             projectDuration: totalDuration
         )
         checkpoint()
@@ -1656,14 +1640,8 @@ final class EditorViewModel: ObservableObject {
             errorText = "Tối đa 12 đoạn nhạc."
             return nil
         }
-        // Do not reuse the clipboard's ID or its keyframe IDs.
-        var region = copiedMusicRegion
-        region.id = UUID()
-        region.volumeKeyframes = copiedMusicRegion.volumeKeyframes.map {
-            AudioGainKeyframe(progress: $0.progress, gain: $0.gain)
-        }
-        region.start = AudioTimelineMath.clampStart(
-            timelineSecond, duration: region.duration,
+        let region = MusicRegionEditMath.duplicate(
+            copiedMusicRegion, at: timelineSecond,
             projectDuration: totalDuration
         )
         checkpoint()
@@ -1682,31 +1660,17 @@ final class EditorViewModel: ObservableObject {
             return nil
         }
         let original = musicRegions[index]
-        let local = timelineSecond - original.start
-        guard local >= 0.10,
-              original.duration - local >= 0.10 else {
+        guard let pieces = MusicRegionEditMath.split(
+            original, at: timelineSecond
+        ) else {
             errorText = "Đặt con trỏ cách hai mép đoạn nhạc ít nhất 0,1 giây."
             return nil
         }
-        var left = original
-        var right = original
-        left.duration = local
-        left.fadeOut = 0
-        right.id = UUID()
-        right.start = original.start + local
-        right.sourceStart = original.sourceStart + local
-        right.duration = original.duration - local
-        right.fadeIn = 0
-        let ratio = local / original.duration
-        left.volumeKeyframes = AudioAutomationMath.slice(
-            original.volumeKeyframes, start: 0, end: ratio
-        )
-        right.volumeKeyframes = AudioAutomationMath.slice(
-            original.volumeKeyframes, start: ratio, end: 1
-        )
         checkpoint()
-        musicRegions.replaceSubrange(index...index, with: [left, right])
-        return right.id
+        musicRegions.replaceSubrange(
+            index...index, with: [pieces.left, pieces.right]
+        )
+        return pieces.right.id
     }
 
     func removeMusicRegion(_ id: UUID) {
