@@ -83,11 +83,13 @@ enum VideoFrameGrader {
                 "Không có bộ màu video cần xử lý."
             )
         }
-        let asset = AVURLAsset(url: clip.fileURL)
-        guard !(try await asset.loadTracks(withMediaType: .video)).isEmpty else {
+        let originalAsset = AVURLAsset(url: clip.fileURL)
+        guard let videoTrack = try await originalAsset.loadTracks(
+            withMediaType: .video
+        ).first else {
             throw SmartVideoError.missingVideoTrack(clip.filename)
         }
-        let available = try await asset.load(.duration).seconds
+        let available = try await originalAsset.load(.duration).seconds
         let start = max(0, clip.startTime)
         let seconds = min(clip.duration, max(0, available - start))
         guard seconds.isFinite && seconds > 0.06 else {
@@ -96,8 +98,54 @@ enum VideoFrameGrader {
             )
         }
 
+        // Critical for title depth: AVVideoComposition on a source file
+        // with timeRange=sourceStart may report compositionTime relative to
+        // zero OR the original asset's source timestamp depending on export
+        // path. In 5.5.1 titles after 0s could be permanently gated out.
+        // Trim all tracks into a composition whose first frame is 0 seconds;
+        // now the compositor clock is deterministic for every iPhone source.
+        let zeroBased = AVMutableComposition()
+        guard let trimmedVideo = zeroBased.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw SmartVideoError.cannotCreateWriter
+        }
+        let sourceRange = CMTimeRange(
+            start: CMTime(seconds: start, preferredTimescale: 600),
+            duration: CMTime(seconds: seconds, preferredTimescale: 600)
+        )
+        try trimmedVideo.insertTimeRange(
+            sourceRange, of: videoTrack, at: .zero
+        )
+        trimmedVideo.preferredTransform = try await videoTrack.load(
+            .preferredTransform
+        )
+
+        // Preserve original sound while re-basing its timestamps.
+        if let audio = try await originalAsset.loadTracks(
+            withMediaType: .audio
+        ).first {
+            let audibleRange = CMTimeRangeGetIntersection(
+                sourceRange, try await audio.load(.timeRange)
+            )
+            if audibleRange.duration.isNumeric &&
+                CMTimeCompare(audibleRange.duration, .zero) > 0,
+                let trimmedAudio = zeroBased.addMutableTrack(
+                    withMediaType: .audio,
+                    preferredTrackID: kCMPersistentTrackID_Invalid
+                ) {
+                try trimmedAudio.insertTimeRange(
+                    audibleRange, of: audio,
+                    at: CMTimeSubtract(audibleRange.start,
+                                       sourceRange.start)
+                )
+            }
+        }
+
         guard let exporter = AVAssetExportSession(
-            asset: asset, presetName: AVAssetExportPresetHighestQuality
+            asset: zeroBased,
+            presetName: AVAssetExportPresetHighestQuality
         ) else {
             throw SmartVideoError.cannotExport(
                 "Thiết bị không thể khởi tạo Core Image Video Grading."
@@ -111,20 +159,18 @@ enum VideoFrameGrader {
         exporter.outputURL = outputURL
         exporter.outputFileType = .mov
         exporter.videoComposition = makeComposition(
-            asset: asset, look: clip.imageLook,
+            asset: zeroBased, look: clip.imageLook,
             intensity: clip.lookIntensity,
             adjustments: clip.colorAdjustments,
             personBackground: clip.personBackground,
             behindTitles: behindTitles,
             timelineStart: timelineStart,
-            sourceStart: clip.startTime,
+            sourceStart: 0,
             speed: clip.playbackSpeed,
             filmstrips: filmstrips
         )
-        exporter.timeRange = CMTimeRange(
-            start: CMTime(seconds: start, preferredTimescale: 600),
-            duration: CMTime(seconds: seconds, preferredTimescale: 600)
-        )
+        // The source was trimmed BEFORE videoComposition; no timeRange
+        // is applied to this export. All filters begin at t=0.
         exporter.shouldOptimizeForNetworkUse = false
 
         do {
