@@ -45,6 +45,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/ClipAudioEnvelope.swift scripts/clip-audio-envelope-tests.swift -o /tmp/clip-audio-tests
           /tmp/clip-audio-tests
 
+      - name: Validate SFX audio keyframes and project compatibility
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/SoundEffectClip.swift scripts/audio-automation-tests.swift -o /tmp/audio-automation-tests
+          /tmp/audio-automation-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
