@@ -64,9 +64,10 @@ struct MockupLibraryTests {
                 MockupOverlayClip.self, from: data
             ).opacity, 0.83
         )
-        precondition(try JSONDecoder().decode(
+        let restoredCustom = try JSONDecoder().decode(
             MockupOverlayClip.self, from: data
-        ) == clip)
+        )
+        precondition(restoredCustom == clip)
 
         // Historical incomplete title / mockup entries do not crash.
         var dictionary = try JSONSerialization.jsonObject(
