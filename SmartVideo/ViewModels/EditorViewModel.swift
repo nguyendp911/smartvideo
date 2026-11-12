@@ -1621,6 +1621,31 @@ final class EditorViewModel: ObservableObject {
         timelineSecond = min(timelineSecond, totalDuration)
     }
 
+    // MARK: - Clip source audio studio
+
+    /// Called when the user starts a slider drag, so one gesture is one undo.
+    func beginClipAudioEdit() {
+        checkpoint()
+    }
+
+    func setClipAudioMuted(_ id: UUID, muted: Bool) {
+        guard let index = clips.firstIndex(where: { $0.id == id }),
+              clips[index].kind == .video,
+              clips[index].sourceAudioMuted != muted else { return }
+        checkpoint()
+        clips[index].sourceAudioMuted = muted
+    }
+
+    func resetClipAudio(_ id: UUID) {
+        guard let index = clips.firstIndex(where: { $0.id == id }),
+              clips[index].kind == .video else { return }
+        checkpoint()
+        clips[index].sourceAudioMuted = false
+        clips[index].sourceAudioVolume = 1
+        clips[index].sourceAudioFadeIn = 0
+        clips[index].sourceAudioFadeOut = 0
+    }
+
     @discardableResult
     func splitClip(at second: Double) -> UUID? {
         guard let position = clipAtTimeline(second) else { return nil }
