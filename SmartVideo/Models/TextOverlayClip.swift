@@ -1,5 +1,25 @@
 import Foundation
 
+enum TextDepthMode: String, CaseIterable, Codable, Identifiable {
+    case front = "Trước chủ thể"
+    case behindPerson = "Sau người"
+    var id: String { rawValue }
+}
+
+enum TextFillMode: String, CaseIterable, Codable, Identifiable {
+    case solid = "Màu đơn"
+    case gradient = "Chuyển sắc"
+    case image = "Ảnh trong chữ"
+    case video = "Video trong chữ"
+    var id: String { rawValue }
+}
+
+enum TextMaskFit: String, CaseIterable, Codable, Identifiable {
+    case fill = "Lấp đầy"
+    case fit = "Vừa khung"
+    var id: String { rawValue }
+}
+
 /// A title/text layer independent of the subtitle track.
 struct TextOverlayClip: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
@@ -17,6 +37,22 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
     var easing: OverlayEasing = .easeInOut
     var pathMode: OverlayMotionPath = .straight
     var keyframes: [OverlayKeyframe] = []
+    /// v5.5: real subject-aware text compositing in export (people only).
+    var depthMode: TextDepthMode = .front
+    var fillMode: TextFillMode = .solid
+    var fillAssetURL: URL?
+    var maskScale: Double = 1
+    var maskOffsetX: Double = 0
+    var maskOffsetY: Double = 0
+    var maskFit: TextMaskFit = .fill
+    var gradientEndHex: String = "18D6F5"
+    var strokeWidth: Double = 0
+    var strokeHex: String = "FFFFFF"
+    var shadowOpacity: Double = 0.4
+    var glowRadius: Double = 0
+    var fauxDepth: Double = 0
+    /// Optional continuous subtle breathing animation.
+    var pulseEnabled = false
 
     var end: Double { start + duration }
 
@@ -24,6 +60,10 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
         case id, text, start, duration, startX, startY, endX, endY
         case fontSize, colorHex, useBackground, opacity, easing
         case pathMode, keyframes
+        case depthMode, fillMode, fillAssetURL, maskScale,
+             maskOffsetX, maskOffsetY, maskFit, gradientEndHex,
+             strokeWidth, strokeHex, shadowOpacity, glowRadius,
+             fauxDepth, pulseEnabled
     }
 
     init() {}
@@ -47,5 +87,26 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
                                          forKey: .pathMode) ?? .straight
         keyframes = try c.decodeIfPresent([OverlayKeyframe].self,
                                           forKey: .keyframes) ?? []
+        depthMode = try c.decodeIfPresent(TextDepthMode.self, forKey: .depthMode) ?? .front
+        fillMode = try c.decodeIfPresent(TextFillMode.self, forKey: .fillMode) ?? .solid
+        fillAssetURL = try c.decodeIfPresent(URL.self, forKey: .fillAssetURL)
+        maskScale = min(4, max(0.5,
+            try c.decodeIfPresent(Double.self, forKey: .maskScale) ?? 1))
+        maskOffsetX = min(1, max(-1,
+            try c.decodeIfPresent(Double.self, forKey: .maskOffsetX) ?? 0))
+        maskOffsetY = min(1, max(-1,
+            try c.decodeIfPresent(Double.self, forKey: .maskOffsetY) ?? 0))
+        maskFit = try c.decodeIfPresent(TextMaskFit.self, forKey: .maskFit) ?? .fill
+        gradientEndHex = try c.decodeIfPresent(String.self, forKey: .gradientEndHex) ?? "18D6F5"
+        strokeWidth = min(12, max(0,
+            try c.decodeIfPresent(Double.self, forKey: .strokeWidth) ?? 0))
+        strokeHex = try c.decodeIfPresent(String.self, forKey: .strokeHex) ?? "FFFFFF"
+        shadowOpacity = min(1, max(0,
+            try c.decodeIfPresent(Double.self, forKey: .shadowOpacity) ?? 0.4))
+        glowRadius = min(20, max(0,
+            try c.decodeIfPresent(Double.self, forKey: .glowRadius) ?? 0))
+        fauxDepth = min(20, max(0,
+            try c.decodeIfPresent(Double.self, forKey: .fauxDepth) ?? 0))
+        pulseEnabled = try c.decodeIfPresent(Bool.self, forKey: .pulseEnabled) ?? false
     }
 }
