@@ -87,6 +87,24 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      - name: Verify visible text pixels and exported MP4 on Simulator
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available
+          DEVICE=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; data=json.load(sys.stdin)["devices"]; uuids=[d["udid"] for ds in data.values() for d in ds if d["state"] in ("Shutdown","Booted") and d["name"].startswith("iPhone") and d.get("isAvailable",True)]; print(uuids[0] if uuids else "")')
+          test -n "$DEVICE"
+          echo "Using iOS Simulator: $DEVICE"
+          xcodebuild \
+            -project SmartVideo.xcodeproj \
+            -scheme SmartVideo \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$DEVICE" \
+            -derivedDataPath build/DerivedData \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            -only-testing:SmartVideoTests/TextExportSmokeTests \
+            test
+
       - name: Package simulator app for inspection
         if: success()
         run: |
