@@ -215,34 +215,72 @@ enum MockupOverlayRenderer {
         return result
     }
 
+    /// Window casting with perspective, irregular penumbra, and curtain folds.
+    /// Texture alpha remains separate from the user's opacity/blend controls.
     private static func drawWindow(
         _ ctx: CGContext, style: Int, tint: UIColor,
         width w: CGFloat, height h: CGFloat
     ) {
-        ctx.setFillColor(tint.cgColor)
-        let bars = style == 3 ? 11 : style == 2 ? 6 : 4
-        let thickness: CGFloat = style == 1 ? 27 : 15
-        for index in 0..<bars {
-            let x = CGFloat(index) * w / CGFloat(bars) + w * 0.08
-            if style == 3 {
-                ctx.fill(CGRect(x: 0,
-                                y: CGFloat(index) * h / CGFloat(bars),
-                                width: w,
-                                height: thickness))
+        let blinds = style == 3
+        let count = blinds ? 12 : (style == 2 ? 6 : 4)
+        let thickness = (style == 1 ? 0.047 : 0.023) * w
+        let mainTint = tint.withAlphaComponent(style == 0 ? 0.55 : 0.79)
+        ctx.setFillColor(mainTint.cgColor)
+        for index in 0..<count {
+            let p = CGFloat(index) / CGFloat(count)
+            let shadow = UIBezierPath()
+            if blinds {
+                let y = (p + 0.05) * h
+                let skew = w * (0.035 + CGFloat(style % 3) * 0.012)
+                shadow.move(to: CGPoint(x: -w * 0.1, y: y))
+                shadow.addLine(to: CGPoint(x: w * 1.1, y: y + skew))
+                shadow.addLine(to: CGPoint(x: w * 1.1, y: y + skew + thickness * 0.75))
+                shadow.addLine(to: CGPoint(x: -w * 0.1, y: y + thickness))
             } else {
-                ctx.fill(CGRect(x: x, y: -h * 0.2,
-                                width: thickness, height: h * 1.5))
+                let x = (p + 0.08) * w
+                let perspective = (CGFloat(index) - CGFloat(count) / 2) * w * 0.037
+                shadow.move(to: CGPoint(x: x - perspective, y: -h * 0.13))
+                shadow.addLine(to: CGPoint(x: x + thickness - perspective, y: -h * 0.13))
+                shadow.addLine(to: CGPoint(x: x + thickness + perspective, y: h * 1.14))
+                shadow.addLine(to: CGPoint(x: x + perspective, y: h * 1.14))
+            }
+            shadow.close()
+            ctx.addPath(shadow.cgPath)
+            ctx.fillPath()
+        }
+        if !blinds {
+            for row in [0.28, 0.68] {
+                let bar = UIBezierPath()
+                let y = h * row
+                bar.move(to: CGPoint(x: -w * 0.2, y: y - thickness))
+                bar.addLine(to: CGPoint(x: w * 1.2, y: y + h * 0.07))
+                bar.addLine(to: CGPoint(x: w * 1.2, y: y + h * 0.07 + thickness))
+                bar.addLine(to: CGPoint(x: -w * 0.2, y: y))
+                bar.close()
+                ctx.addPath(bar.cgPath)
+                ctx.fillPath()
             }
         }
-        if style != 3 {
-            ctx.fill(CGRect(x: 0, y: h * 0.27,
-                            width: w, height: thickness * 1.1))
-            ctx.fill(CGRect(x: 0, y: h * 0.69,
-                            width: w, height: thickness * 1.15))
-        }
         if style == 4 || style == 5 || style == 6 {
+            // Broad, translucent light spill instead of opaque white streaks.
             drawLight(ctx, style: style, tint: .white,
                       width: w, height: h)
+            if style == 4 {
+                for fold in 0..<8 {
+                    let x = CGFloat(fold) * w / 7
+                    let foldPath = UIBezierPath()
+                    foldPath.move(to: CGPoint(x: x, y: -h * 0.1))
+                    foldPath.addCurve(
+                        to: CGPoint(x: x + w * 0.09, y: h * 1.1),
+                        controlPoint1: CGPoint(x: x + w * 0.085, y: h * 0.24),
+                        controlPoint2: CGPoint(x: x - w * 0.035, y: h * 0.78)
+                    )
+                    ctx.setStrokeColor(tint.withAlphaComponent(0.2).cgColor)
+                    ctx.setLineWidth(w * 0.016)
+                    ctx.addPath(foldPath.cgPath)
+                    ctx.strokePath()
+                }
+            }
         }
     }
 
