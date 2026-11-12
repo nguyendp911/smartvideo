@@ -65,6 +65,7 @@ struct EditorView: View {
     @State private var lastStillFrameTick: Date?
     @State private var showProjects = false
     @State private var showRenderedPreview = false
+    @State private var showThumbnailStudio = false
     @State private var pickedOverlay: PhotosPickerItem?
     @State private var selectedOverlayID: UUID?
     @State private var pickedPIP: PhotosPickerItem?
@@ -157,6 +158,9 @@ struct EditorView: View {
         }
         .background(Color(red: 0.055, green: 0.067, blue: 0.09)
             .ignoresSafeArea())
+        .sheet(isPresented: $showThumbnailStudio) {
+            ThumbnailStudioPanel(videoURL: model.exportedURL)
+        }
         .onChange(of: pickedPIP) { item in
             guard let item else { return }
             Task {
@@ -2338,6 +2342,11 @@ struct EditorView: View {
                               systemImage: "square.and.arrow.down")
                     }
                     .disabled(model.didSaveToPhotos)
+                    Button {
+                        showThumbnailStudio = true
+                    } label: {
+                        Label("Chọn thumbnail", systemImage: "photo.on.rectangle")
+                    }
                     ShareLink(item: result) {
                         Label("Chia sẻ MP4", systemImage: "square.and.arrow.up")
                     }
