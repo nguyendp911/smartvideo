@@ -14,6 +14,10 @@ final class EditorViewModel: ObservableObject {
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
+    @Published var musicRegions: [SoundEffectClip] = []
+    @Published var musicRegionMode = false
+    @Published var isImportingMusicRegion = false
+    private var copiedMusicRegion: SoundEffectClip?
     @Published var isImportingSoundEffects = false
     @Published var isDetectingBeats = false
     @Published var musicBeatSourceTimes: [Double] = []
@@ -23,7 +27,8 @@ final class EditorViewModel: ObservableObject {
 
     /// Mapped to the video timeline (not source media clock).
     var timelineBeatMarkers: [Double] {
-        guard !musicBeatSourceTimes.isEmpty, musicDuration > 0, totalDuration > 0 else {
+        guard !musicRegionMode,
+              !musicBeatSourceTimes.isEmpty, musicDuration > 0, totalDuration > 0 else {
             return []
         }
         let start = min(max(0, musicStartSeconds), musicDuration)
@@ -58,6 +63,8 @@ final class EditorViewModel: ObservableObject {
     private struct TimelineSnapshot {
         var clips: [TimelineClip]
         var soundEffects: [SoundEffectClip]
+        var musicRegions: [SoundEffectClip]
+        var musicRegionMode: Bool
         var projectID: UUID
         var musicTimelineOffset: Double
         var voiceoverOffset: Double
@@ -68,7 +75,9 @@ final class EditorViewModel: ObservableObject {
     private var redoStack: [TimelineSnapshot] = []
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
-            clips: clips, soundEffects: soundEffects, projectID: projectID,
+            clips: clips, soundEffects: soundEffects,
+            musicRegions: musicRegions, musicRegionMode: musicRegionMode,
+            projectID: projectID,
             musicTimelineOffset: musicTimelineOffset,
             voiceoverOffset: voiceoverOffset,
             musicVolumeKeyframes: musicVolumeKeyframes,
@@ -1653,7 +1662,9 @@ final class EditorViewModel: ObservableObject {
                 studioPresetID: appliedStudioPresetID,
                 musicTimelineOffset: musicTimelineOffset,
                 musicVolumeKeyframes: musicVolumeKeyframes,
-                voiceVolumeKeyframes: voiceVolumeKeyframes
+                voiceVolumeKeyframes: voiceVolumeKeyframes,
+                musicRegions: musicRegions,
+                musicRegionMode: musicRegionMode
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -1681,7 +1692,11 @@ final class EditorViewModel: ObservableObject {
             let sfxFiles = p.soundEffects.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
-            let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles + sfxFiles +
+            let musicFiles = p.musicRegions.map {
+                MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
+            }
+            let allFiles = restoredClips.map(\.fileURL) +
+                overlayFiles + pipFiles + sfxFiles + musicFiles +
                 [restoredMusic, restoredVoice, restoredOriginalVoice,
                  restoredOriginalMusic].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
@@ -1721,6 +1736,15 @@ final class EditorViewModel: ObservableObject {
                 )
                 return effect
             }
+            musicRegions = p.musicRegions.map {
+                var item = $0
+                item.fileURL = MediaStorage.mediaDirectory.appendingPathComponent(
+                    $0.fileURL.lastPathComponent
+                )
+                return item
+            }
+            musicRegionMode = p.musicRegionMode
+            copiedMusicRegion = nil
             subtitles = p.subtitles
             subtitleAppearance = p.subtitleAppearance
             autoCaptionStatus = ""
@@ -1806,6 +1830,9 @@ final class EditorViewModel: ObservableObject {
         videoOverlays = []
         textOverlays = []
         soundEffects = []
+        musicRegions = []
+        musicRegionMode = false
+        copiedMusicRegion = nil
         musicBeatSourceTimes = []
         detectedTempoBPM = 0
         subtitles = []
@@ -1868,6 +1895,8 @@ final class EditorViewModel: ObservableObject {
         redoStack.append(currentSnapshot)
         clips = previous.clips
         soundEffects = previous.soundEffects
+        musicRegions = previous.musicRegions
+        musicRegionMode = previous.musicRegionMode
         musicTimelineOffset = previous.musicTimelineOffset
         voiceoverOffset = previous.voiceoverOffset
         musicVolumeKeyframes = previous.musicVolumeKeyframes
@@ -1886,6 +1915,8 @@ final class EditorViewModel: ObservableObject {
         undoStack.append(currentSnapshot)
         clips = next.clips
         soundEffects = next.soundEffects
+        musicRegions = next.musicRegions
+        musicRegionMode = next.musicRegionMode
         musicTimelineOffset = next.musicTimelineOffset
         voiceoverOffset = next.voiceoverOffset
         musicVolumeKeyframes = next.musicVolumeKeyframes
@@ -2303,6 +2334,8 @@ final class EditorViewModel: ObservableObject {
         let workVideoOverlays = videoOverlays
         let workTextOverlays = textOverlays
         let workSoundEffects = soundEffects
+        let workMusicRegions = musicRegions
+        let workMusicRegionMode = musicRegionMode
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
@@ -2310,7 +2343,7 @@ final class EditorViewModel: ObservableObject {
         let workVFXCoverage = vfxCoverage
         let workVFXStartTime = vfxStartTime
         let workVFXEndTime = vfxEndTime
-        let workMusic = musicURL
+        let workMusic = musicRegionMode ? nil : musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
         let workMusicOffset = musicTimelineOffset
@@ -2343,6 +2376,7 @@ final class EditorViewModel: ObservableObject {
                         videoOverlays: workVideoOverlays,
                         textOverlays: workTextOverlays,
                         soundEffects: workSoundEffects,
+                        musicRegions: workMusicRegionMode ? workMusicRegions : [],
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
