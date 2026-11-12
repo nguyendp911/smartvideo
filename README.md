@@ -4,6 +4,19 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.1.0 – Waveform Editor & SFX Audio Keyframes
+
+### Chỉnh âm thanh chính xác hơn mà không cần xuất thử
+- **Waveform tương tác** trong tab **Âm thanh** (nhạc nền) và **Âm FX** (track đang chọn): hiển thị đỉnh tín hiệu thật từ file PCM đã giải mã, có 2 vạch chỉnh cắt **đầu nguồn** (xanh) và **cuối nguồn** (cam), chạm/kéo để chỉnh thời gian vào/ra. Thao tác không sửa file gốc.
+- Các phím điều khiển **zoom**, **dịch trái/phải** và **Tới đoạn cắt** cho phép xem từng cửa sổ của tệp dài. Mỗi lần chỉ phân tích tối đa 90 giây với 112 cột; **không** giả định waveform của 90 giây đầu đại diện cho mọi phần nhạc.
+- Nhạc nền cập nhật **musicStartSeconds / musicHighlightDuration**, kết hợp với tự lặp, giới hạn highlight, fade và tính năng render sẵn có. SFX cập nhật **sourceStart + duration** ngay khi kéo điểm cắt.
+- **Tách FX tại con trỏ**: hai đoạn phát liên tục từ cùng file, không biến đổi âm gốc; các keyframe được chia lại và giữ nguyên giá trị đúng tại mốc tách, tránh nhảy âm lượng.
+- **16 keyframe âm lượng trên mỗi track FX**: đặt tại con trỏ timeline, xem đường âm lượng trên biểu đồ, chọn điểm màu cam và kéo slider 0–100%, xóa từng điểm hoặc xóa toàn bộ. Từ điểm này tới điểm tiếp theo nội suy tuyến tính.
+- **Nghe thử và xuất MP4 đều có hiệu lực**: LiveAudioPreview và SoundEffectsMixer đọc các keyframe cùng fade-in/fade-out, mute và master volume. AVAudioMix được dựng thành các đoạn ramp không chồng nhau; chỉ lấy mẫu 50ms ở vùng fade, giữ mức tài nguyên ổn định với clip dài.
+- Dự án cũ không có `volumeKeyframes` vẫn mở bình thường (mặc định không automation). Tối đa 12 track FX như trước, không thay đổi bundle ID.
+- **Giới hạn**: waveform là cửa sổ **nguồn** có thể kéo/chỉnh cắt trong panel, không phải DAW đa track toàn màn hình; việc kéo điểm cắt SFX không tự ripple các lớp khác. Keyframe hiện áp dụng cho **FX**, không phải âm lượng nhạc nền hoặc tiếng gốc video. Preview nhanh vẫn chưa tái hiện chính xác các chuyển cảnh hình và âm thanh nhiều clip; dùng **Xem thử 720p** để kiểm tra bản kết xuất hoàn chỉnh.
+- Phiên bản **5.1.0 (build 36)**, iOS 16+ và bundle ID `com.nguyendp911.smartvideo`.
+
 ## ViePN Smart Video v5.0.0 – Clip Audio Studio
 
 ### Âm thanh độc lập cho từng đoạn video
