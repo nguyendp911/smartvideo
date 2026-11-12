@@ -10,6 +10,9 @@ enum TextOverlayRenderer {
         for item in overlays where !item.text.trimmingCharacters(
             in: .whitespacesAndNewlines
         ).isEmpty {
+            // Behind-person titles are burned under the Vision foreground
+            // directly into each source clip, before this top-layer pass.
+            guard item.depthMode == .front else { continue }
             let begin = min(max(0, item.start), duration)
             let end = min(duration, max(begin, item.end))
             guard end > begin + 0.04 else { continue }
@@ -37,16 +40,55 @@ enum TextOverlayRenderer {
             outer.transform = transform(first)
             gate.addSublayer(outer)
 
-            let title = CATextLayer()
-            title.frame = outer.bounds.insetBy(dx: 9, dy: 5)
-            title.string = item.text
-            title.font = UIFont.boldSystemFont(ofSize: fontSize)
-            title.fontSize = fontSize
-            title.alignmentMode = .center
-            title.foregroundColor = uiColor(hex: item.colorHex).cgColor
-            title.isWrapped = true
-            title.contentsScale = 2
-            outer.addSublayer(title)
+            let content = TextMaskMedia.contentLayer(
+                for: item,
+                bounds: outer.bounds.insetBy(dx: 9, dy: 5),
+                begin: begin, duration: end - begin
+            )
+            content.position = CGPoint(
+                x: outer.bounds.midX, y: outer.bounds.midY
+            )
+            content.shadowColor = UIColor.black.cgColor
+            content.shadowOpacity = Float(
+                min(1, max(0, item.shadowOpacity))
+            )
+            content.shadowRadius = CGFloat(
+                min(20, max(0, item.glowRadius))
+            )
+            content.shadowOffset = CGSize(width: 1.5, height: -2)
+            if item.fauxDepth > 0 {
+                let depth = CALayer()
+                depth.bounds = content.bounds
+                depth.position = CGPoint(
+                    x: content.position.x + CGFloat(item.fauxDepth),
+                    y: content.position.y - CGFloat(item.fauxDepth)
+                )
+                depth.backgroundColor = UIColor.black.withAlphaComponent(
+                    0.55
+                ).cgColor
+                depth.mask = {
+                    let mask = CALayer()
+                    mask.frame = depth.bounds
+                    mask.contents = TextMaskMedia.glyphMask(
+                        text: item.text, size: depth.bounds.size,
+                        fontSize: fontSize,
+                        strokeWidth: CGFloat(item.strokeWidth)
+                    )
+                    return mask
+                }()
+                outer.addSublayer(depth)
+            }
+            outer.addSublayer(content)
+            if item.pulseEnabled {
+                let pulse = CABasicAnimation(keyPath: "transform.scale")
+                pulse.fromValue = 1
+                pulse.toValue = 1.045
+                pulse.duration = 0.85
+                pulse.autoreverses = true
+                pulse.repeatCount = Float.greatestFiniteMagnitude
+                pulse.beginTime = AVCoreAnimationBeginTimeAtZero + begin
+                content.add(pulse, forKey: "breath")
+            }
 
             let visible = CAKeyframeAnimation(keyPath: "opacity")
             visible.values = [0, 1, 1, 0]
