@@ -55,30 +55,27 @@ enum SoundEffectsMixer {
             let parameter = AVMutableAudioMixInputParameters(
                 track: destination
             )
-            let gain: Float = effect.muted ? 0 : min(1, max(0, effect.volume))
-            let rise = min(max(0, effect.fadeIn), seconds * 0.48)
-            let fall = min(max(0, effect.fadeOut), seconds * 0.48)
-
-            parameter.setVolume(rise > 0 ? 0 : gain, at: timelineStart)
-            if rise > 0 {
-                parameter.setVolumeRamp(
-                    fromStartVolume: 0,
-                    toEndVolume: gain,
-                    timeRange: CMTimeRange(
-                        start: timelineStart,
-                        duration: CMTime(seconds: rise, preferredTimescale: 600)
-                    )
-                )
+            let points = AudioAutomationMath.envelope(
+                duration: seconds, volume: effect.volume,
+                muted: effect.muted, fadeIn: effect.fadeIn,
+                fadeOut: effect.fadeOut, frames: effect.volumeKeyframes
+            )
+            if let first = points.first {
+                parameter.setVolume(first.gain, at: timelineStart)
             }
-            if fall > 0 {
-                let fadeStart = CMTime(
-                    seconds: start + seconds - fall, preferredTimescale: 600
-                )
+            // Keyframes and fades share one non-overlapping envelope.
+            for (a, b) in zip(points, points.dropFirst()) {
+                let duration = b.second - a.second
+                guard duration > 0 else { continue }
+                let from = CMTimeAdd(timelineStart, CMTime(
+                    seconds: a.second, preferredTimescale: 60_000
+                ))
                 parameter.setVolumeRamp(
-                    fromStartVolume: gain, toEndVolume: 0,
+                    fromStartVolume: a.gain, toEndVolume: b.gain,
                     timeRange: CMTimeRange(
-                        start: fadeStart,
-                        duration: CMTime(seconds: fall, preferredTimescale: 600)
+                        start: from, duration: CMTime(
+                            seconds: duration, preferredTimescale: 60_000
+                        )
                     )
                 )
             }
