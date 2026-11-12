@@ -1497,6 +1497,288 @@ final class EditorViewModel: ObservableObject {
         return right.id
     }
 
+    // MARK: - Multi-music regions (5.4)
+
+    /// Legacy music remains in the project until the user explicitly chooses
+    /// its mode. Only one music mode is audible in preview and MP4.
+    func selectMusicRegionMode(_ enabled: Bool) {
+        guard enabled != musicRegionMode else { return }
+        checkpoint()
+        musicRegionMode = enabled
+    }
+
+    /// Creates a non-destructive region from the current legacy background
+    /// music, retaining the selected source trim and volume automation.
+    @discardableResult
+    func addCurrentMusicAsRegion() -> UUID? {
+        guard let musicURL, musicDuration > 0.1,
+              !clips.isEmpty, musicRegions.count < 12 else {
+            errorText = "Chọn nhạc nền hợp lệ, thêm video và còn chỗ trống (tối đa 12 đoạn)."
+            return nil
+        }
+        let start = ProjectAudioTrackMath.safeStart(
+            musicTimelineOffset, projectDuration: totalDuration
+        )
+        let source = min(max(0, musicStartSeconds),
+                         max(0, musicDuration - 0.1))
+        let length = min(
+            musicHighlightDuration > 0 ?
+                musicHighlightDuration : musicDuration - source,
+            max(0.1, totalDuration - start),
+            musicDuration - source
+        )
+        guard length >= 0.1 else { return nil }
+        var region = SoundEffectClip.create(
+            url: musicURL, audioDuration: musicDuration,
+            timelineStart: start, timelineEnd: totalDuration
+        )
+        region.start = start
+        region.sourceStart = source
+        region.duration = length
+        region.volume = AudioAutomationMath.clampGain(musicVolume)
+        region.fadeIn = min(3, max(0, musicFadeIn))
+        region.fadeOut = min(3, max(0, musicFadeOut))
+        region.volumeKeyframes = musicVolumeKeyframes
+        checkpoint()
+        musicRegions.append(region)
+        musicRegionMode = true
+        return region.id
+    }
+
+    func importMusicRegion(from sourceURL: URL) {
+        guard !isImportingMusicRegion,
+              !clips.isEmpty, musicRegions.count < 12 else {
+            errorText = "Cần có video và còn chỗ trống (tối đa 12 đoạn nhạc)."
+            return
+        }
+        isImportingMusicRegion = true
+        do {
+            let local = try copyScoped(
+                sourceURL, fallbackExtension: "m4a"
+            )
+            Task {
+                defer { isImportingMusicRegion = false }
+                do {
+                    let asset = AVURLAsset(url: local)
+                    guard !(try await asset.loadTracks(
+                        withMediaType: .audio
+                    )).isEmpty else {
+                        throw SmartVideoError.invalidMedia(
+                            "Tệp nhạc không có âm thanh."
+                        )
+                    }
+                    let seconds = try await asset.load(.duration).seconds
+                    guard seconds.isFinite && seconds > 0.1 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Thời lượng nhạc không hợp lệ."
+                        )
+                    }
+                    guard musicRegions.count < 12 else {
+                        try? FileManager.default.removeItem(at: local)
+                        return
+                    }
+                    var region = SoundEffectClip.create(
+                        url: local, audioDuration: seconds,
+                        timelineStart: timelineSecond,
+                        timelineEnd: totalDuration
+                    )
+                    region.duration = min(
+                        max(0.1, seconds),
+                        max(0.1, totalDuration - region.start)
+                    )
+                    region.volume = 0.38
+                    region.fadeIn = 0.20
+                    region.fadeOut = 0.35
+                    checkpoint()
+                    musicRegions.append(region)
+                    musicRegionMode = true
+                } catch {
+                    try? FileManager.default.removeItem(at: local)
+                    errorText = "Không nhập được đoạn nhạc: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            isImportingMusicRegion = false
+            errorText = "Không mở được nhạc từ Tệp: \(error.localizedDescription)"
+        }
+    }
+
+    func moveMusicRegion(
+        _ id: UUID, to second: Double,
+        recordUndo: Bool = true
+    ) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), second.isFinite else { return }
+        let region = musicRegions[index]
+        let target = AudioTimelineMath.clampStart(
+            second, duration: region.duration,
+            projectDuration: totalDuration
+        )
+        guard abs(target - region.start) > 0.0001 else { return }
+        if recordUndo { checkpoint() }
+        musicRegions[index].start = target
+    }
+
+    @discardableResult
+    func duplicateMusicRegion(_ id: UUID, at second: Double? = nil) -> UUID? {
+        guard musicRegions.count < 12,
+              let region = musicRegions.first(where: {
+                  $0.id == id
+              }) else { return nil }
+        var next = region
+        next.id = UUID()
+        next.volumeKeyframes = region.volumeKeyframes.map {
+            AudioGainKeyframe(progress: $0.progress, gain: $0.gain)
+        }
+        next.start = AudioTimelineMath.clampStart(
+            second ?? region.end,
+            duration: region.duration,
+            projectDuration: totalDuration
+        )
+        checkpoint()
+        musicRegions.append(next)
+        musicRegionMode = true
+        return next.id
+    }
+
+    func copyMusicRegion(_ id: UUID) {
+        copiedMusicRegion = musicRegions.first(where: { $0.id == id })
+    }
+
+    @discardableResult
+    func pasteMusicRegionAtPlayhead() -> UUID? {
+        guard let copiedMusicRegion else {
+            errorText = "Sao chép một đoạn nhạc trước khi dán."
+            return nil
+        }
+        guard musicRegions.count < 12 else {
+            errorText = "Tối đa 12 đoạn nhạc."
+            return nil
+        }
+        // Do not reuse the clipboard's ID or its keyframe IDs.
+        var region = copiedMusicRegion
+        region.id = UUID()
+        region.volumeKeyframes = copiedMusicRegion.volumeKeyframes.map {
+            AudioGainKeyframe(progress: $0.progress, gain: $0.gain)
+        }
+        region.start = AudioTimelineMath.clampStart(
+            timelineSecond, duration: region.duration,
+            projectDuration: totalDuration
+        )
+        checkpoint()
+        musicRegions.append(region)
+        musicRegionMode = true
+        return region.id
+    }
+
+    @discardableResult
+    func splitMusicRegionAtPlayhead(_ id: UUID) -> UUID? {
+        guard musicRegions.count < 12,
+              let index = musicRegions.firstIndex(where: {
+                  $0.id == id
+              }) else {
+            errorText = "Tối đa 12 đoạn nhạc hoặc không tìm thấy đoạn."
+            return nil
+        }
+        let original = musicRegions[index]
+        let local = timelineSecond - original.start
+        guard local >= 0.10,
+              original.duration - local >= 0.10 else {
+            errorText = "Đặt con trỏ cách hai mép đoạn nhạc ít nhất 0,1 giây."
+            return nil
+        }
+        var left = original
+        var right = original
+        left.duration = local
+        left.fadeOut = 0
+        right.id = UUID()
+        right.start = original.start + local
+        right.sourceStart = original.sourceStart + local
+        right.duration = original.duration - local
+        right.fadeIn = 0
+        let ratio = local / original.duration
+        left.volumeKeyframes = AudioAutomationMath.slice(
+            original.volumeKeyframes, start: 0, end: ratio
+        )
+        right.volumeKeyframes = AudioAutomationMath.slice(
+            original.volumeKeyframes, start: ratio, end: 1
+        )
+        checkpoint()
+        musicRegions.replaceSubrange(index...index, with: [left, right])
+        return right.id
+    }
+
+    func removeMusicRegion(_ id: UUID) {
+        guard musicRegions.contains(where: { $0.id == id }) else { return }
+        checkpoint()
+        musicRegions.removeAll { $0.id == id }
+        // Keep clip mode even if empty to avoid unexpectedly re-enabling
+        // the legacy full-length music when the last clip is deleted.
+    }
+
+    @discardableResult
+    func addMusicRegionKeyframe(_ id: UUID) -> UUID? {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }) else { return nil }
+        let region = musicRegions[index]
+        let p = (timelineSecond - region.start) /
+            max(0.1, region.duration)
+        guard p >= 0 && p <= 1 else {
+            errorText = "Đặt con trỏ nằm trong đoạn nhạc."
+            return nil
+        }
+        if let existing = region.volumeKeyframes.first(where: {
+            abs($0.progress - p) < 0.012
+        }) { return existing.id }
+        guard region.volumeKeyframes.count < 16 else {
+            errorText = "Tối đa 16 keyframe cho mỗi đoạn nhạc."
+            return nil
+        }
+        let gain = AudioAutomationMath.factor(
+            at: p, frames: region.volumeKeyframes
+        )
+        let frame = AudioGainKeyframe(progress: p, gain: gain)
+        checkpoint()
+        musicRegions[index].volumeKeyframes = AudioAutomationMath.normalized(
+            region.volumeKeyframes + [frame]
+        )
+        return frame.id
+    }
+
+    func moveMusicRegionKeyframe(
+        _ id: UUID, frameID: UUID,
+        progress: Double, gain: Float
+    ) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), let frameIndex = musicRegions[index].volumeKeyframes.firstIndex(
+            where: { $0.id == frameID }
+        ) else { return }
+        let frames = musicRegions[index].volumeKeyframes
+        let lower = frameIndex == 0 ?
+            0 : frames[frameIndex - 1].progress + 0.01
+        let upper = frameIndex == frames.count - 1 ?
+            1 : frames[frameIndex + 1].progress - 0.01
+        musicRegions[index].volumeKeyframes[frameIndex].progress =
+            max(lower, min(upper, AudioAutomationMath.clampProgress(progress)))
+        musicRegions[index].volumeKeyframes[frameIndex].gain =
+            AudioAutomationMath.clampGain(gain)
+    }
+
+    func deleteMusicRegionKeyframe(_ id: UUID, frameID: UUID) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), musicRegions[index].volumeKeyframes.contains(where: {
+            $0.id == frameID
+        }) else { return }
+        checkpoint()
+        musicRegions[index].volumeKeyframes.removeAll {
+            $0.id == frameID
+        }
+    }
+
     // MARK: - Project music and narration keyframe automation
 
     func projectAudioStart(_ lane: ProjectAudioLane) -> Double {
