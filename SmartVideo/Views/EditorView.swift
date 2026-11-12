@@ -1172,6 +1172,9 @@ struct EditorView: View {
                            in: 0...max(0, clip.originalDuration - 0.1),
                            step: 0.1)
                         .tint(accent)
+
+                    Divider()
+                    clipAudioControls(clip)
                 }
 
                 HStack {
@@ -1193,6 +1196,139 @@ struct EditorView: View {
         } else {
             Text("Chọn một đoạn trên timeline để chỉnh sửa.")
                 .font(.subheadline).foregroundStyle(.secondary).padding(12)
+        }
+    }
+
+    /// Live volume, mute and fade controls are scoped to the selected video,
+    /// unlike the project's global source-audio switch.
+    private func clipAudioControls(_ clip: TimelineClip) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Âm thanh gốc của đoạn", systemImage: "waveform")
+                    .font(.subheadline.bold())
+                Spacer()
+                Button {
+                    model.setClipAudioMuted(clip.id,
+                                            muted: !clip.sourceAudioMuted)
+                } label: {
+                    Label(clip.sourceAudioMuted ? "Bật tiếng" : "Tắt tiếng",
+                          systemImage: clip.sourceAudioMuted ?
+                            "speaker.slash.fill" : "speaker.wave.2.fill")
+                        .font(.caption.bold())
+                }
+                .buttonStyle(.bordered)
+                .tint(clip.sourceAudioMuted ? .orange : accent)
+            }
+
+            HStack {
+                Text("Âm lượng đoạn")
+                Spacer()
+                Text("\(Int(clip.sourceAudioVolume * 100))%")
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioVolumeBinding(clip.id),
+                   in: 0...1, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+                .disabled(clip.sourceAudioMuted)
+            HStack(spacing: 5) {
+                ForEach([0, 25, 50, 100], id: \.self) { level in
+                    Button("\(level)%") {
+                        model.beginClipAudioEdit()
+                        if let index = model.clips.firstIndex(
+                            where: { $0.id == clip.id }
+                        ) {
+                            model.clips[index].sourceAudioVolume =
+                                Float(level) / 100
+                        }
+                    }
+                    .font(.caption2.bold())
+                    .frame(maxWidth: .infinity)
+                    .buttonStyle(.bordered)
+                    .disabled(clip.sourceAudioMuted)
+                }
+            }
+
+            HStack {
+                Label("Fade vào", systemImage: "arrow.up.right")
+                Spacer()
+                Text(String(format: "%.2fs", clip.sourceAudioFadeIn))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioFadeBinding(clip.id, fadeIn: true),
+                   in: 0...3, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+
+            HStack {
+                Label("Fade ra", systemImage: "arrow.down.right")
+                Spacer()
+                Text(String(format: "%.2fs", clip.sourceAudioFadeOut))
+                    .monospacedDigit()
+            }
+            .font(.caption)
+            Slider(value: sourceAudioFadeBinding(clip.id, fadeIn: false),
+                   in: 0...3, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginClipAudioEdit() }
+                   })
+                .tint(accent)
+            HStack {
+                Text("Áp dụng riêng cho clip đã chọn, cả preview và MP4.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("Đặt lại") {
+                    model.resetClipAudio(clip.id)
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+            }
+            if !model.keepOriginalAudio {
+                Label("Đang tắt toàn bộ tiếng gốc trong Âm thanh. Bật lại để nghe riêng clip này.",
+                      systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
+        }
+    }
+
+    private func sourceAudioVolumeBinding(_ id: UUID) -> Binding<Double> {
+        Binding {
+            Double(model.clips.first(where: { $0.id == id })?
+                .sourceAudioVolume ?? 1)
+        } set: { value in
+            guard let index = model.clips.firstIndex(
+                where: { $0.id == id }
+            ) else { return }
+            model.clips[index].sourceAudioVolume =
+                ClipAudioEnvelope.safeVolume(Float(value))
+        }
+    }
+
+    private func sourceAudioFadeBinding(
+        _ id: UUID, fadeIn: Bool
+    ) -> Binding<Double> {
+        Binding {
+            guard let clip = model.clips.first(where: { $0.id == id })
+            else { return 0 }
+            return fadeIn ? clip.sourceAudioFadeIn : clip.sourceAudioFadeOut
+        } set: { value in
+            guard let index = model.clips.firstIndex(
+                where: { $0.id == id }
+            ) else { return }
+            let safe = ClipAudioEnvelope.safeFade(value)
+            if fadeIn {
+                model.clips[index].sourceAudioFadeIn = safe
+            } else {
+                model.clips[index].sourceAudioFadeOut = safe
+            }
         }
     }
 
