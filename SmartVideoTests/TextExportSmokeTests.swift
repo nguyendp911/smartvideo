@@ -127,7 +127,83 @@ final class TextExportSmokeTests: XCTestCase {
         )
     }
 
+    func testFrontTitleLayersHaveVisiblePixels() throws {
+        let surface = CALayer()
+        surface.frame = CGRect(origin: .zero, size: canvas)
+        var title = TextOverlayClip()
+        title.text = "VISIBLE"
+        title.fontSize = 68
+        title.colorHex = "FFFFFF"
+        title.useBackground = false
+        title.start = 0
+        title.duration = 1.5
+        TextOverlayRenderer.attach(
+            [title], to: surface, canvas: canvas,
+            duration: 1.5
+        )
+        XCTAssertEqual(surface.sublayers?.count, 1)
+        guard let gate = surface.sublayers?.first,
+              let outer = gate.sublayers?.first else {
+            XCTFail("Title composition did not create overlay layers")
+            return
+        }
+        // .render(in:) evaluates model layer values rather than animations;
+        // make the gate opaque to check the actual unanimated title content.
+        gate.opacity = 1
+        XCTAssertTrue(outer.sublayers?.contains {
+            $0 is CATextLayer
+        } ?? false, "Legacy solid text must use CATextLayer")
+        let snapshot = UIGraphicsImageRenderer(
+            size: canvas
+        ).image { context in
+            surface.render(in: context.cgContext)
+        }
+        guard let bitmap = snapshot.cgImage else {
+            XCTFail("Layer tree cannot rasterize text")
+            return
+        }
+        XCTAssertGreaterThan(
+            brightPixelCount(bitmap), 500,
+            "Plain title pixels disappeared in actual layer tree"
+        )
+
+        title.fillMode = .gradient
+        let gradientSurface = CALayer()
+        gradientSurface.frame = CGRect(
+            origin: .zero, size: canvas
+        )
+        TextOverlayRenderer.attach(
+            [title], to: gradientSurface,
+            canvas: canvas, duration: 1.5
+        )
+        guard let gradientGate = gradientSurface.sublayers?.first
+        else {
+            XCTFail("Gradient text layer is missing")
+            return
+        }
+        gradientGate.opacity = 1
+        let gradientImage = UIGraphicsImageRenderer(
+            size: canvas
+        ).image { context in
+            gradientSurface.render(in: context.cgContext)
+        }
+        if let bitmap = gradientImage.cgImage {
+            XCTAssertGreaterThan(
+                brightPixelCount(bitmap), 500,
+                "Gradient glyph layer is invisible"
+            )
+        }
+    }
+
+    /// Requires a physical device with a supported H.264 encoder. On the
+    /// GitHub iOS Simulator, VideoToolbox returned -12900 and terminated
+    /// the XCTest runner before the resulting MP4 could be inspected.
     func testFrontTitleIsVisibleInActualExportedMP4() async throws {
+        #if targetEnvironment(simulator)
+        throw XCTSkip(
+            "MP4 hardware encoding is unavailable on this Simulator; title layer pixels and Vision/CoreImage depth are tested separately"
+        )
+        #endif
         let temp = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString,
                                     isDirectory: true)
