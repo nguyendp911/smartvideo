@@ -81,7 +81,15 @@ struct TextOverlayStudioPanel: View {
                 }
                 .pickerStyle(.segmented)
                 if item.depthMode == .behindPerson {
-                    Text("Chữ sẽ được ghép sau người bằng Vision khi xuất video hoặc Xem thử 720p. Chỉ tách người, chưa tách các loại vật thể khác. Preview nhanh là lớp hướng dẫn vị trí.")
+                    Toggle(
+                        "Tự mở rộng chữ để không bị người che hết",
+                        isOn: $model.textOverlays[idx].behindVisibilityAssist
+                    )
+                    .font(.caption)
+                    Text("Khi chữ nhỏ nằm đúng giữa người, cơ thể có thể che toàn bộ ký tự. Tùy chọn này tự phóng rộng chữ về hai bên người khi xuất video. Tắt để giữ nguyên cỡ chữ đã chọn.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("Chữ sẽ được ghép sau người bằng Vision khi xuất video hoặc Xem thử 720p. Chỉ tách người, chưa tách các loại vật thể khác.")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

@@ -94,8 +94,12 @@ final class VideoRenderer {
             let clipStart = clipStarts[index]
             let behindTitles = textOverlays.filter {
                 $0.depthMode == .behindPerson &&
-                $0.end > clipStart &&
-                $0.start < clipStart + clip.renderedDuration
+                TextTitleRenderTime.intersects(
+                    titleStart: $0.start,
+                    titleDuration: $0.duration,
+                    clipStart: clipStart,
+                    clipDuration: clip.renderedDuration
+                )
             }
             if clip.kind == .image {
                 let temporary = MediaStorage.newTemporaryVideoURL()

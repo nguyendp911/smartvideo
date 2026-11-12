@@ -53,6 +53,8 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
     var fauxDepth: Double = 0
     /// Optional continuous subtle breathing animation.
     var pulseEnabled = false
+    /// Ensure large, readable letter edges can remain around the person.
+    var behindVisibilityAssist = true
 
     var end: Double { start + duration }
 
@@ -63,7 +65,7 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
         case depthMode, fillMode, fillAssetURL, maskScale,
              maskOffsetX, maskOffsetY, maskFit, gradientEndHex,
              strokeWidth, strokeHex, shadowOpacity, glowRadius,
-             fauxDepth, pulseEnabled
+             fauxDepth, pulseEnabled, behindVisibilityAssist
     }
 
     init() {}
@@ -108,5 +110,8 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
         fauxDepth = min(20, max(0,
             try c.decodeIfPresent(Double.self, forKey: .fauxDepth) ?? 0))
         pulseEnabled = try c.decodeIfPresent(Bool.self, forKey: .pulseEnabled) ?? false
+        behindVisibilityAssist = try c.decodeIfPresent(
+            Bool.self, forKey: .behindVisibilityAssist
+        ) ?? true
     }
 }
