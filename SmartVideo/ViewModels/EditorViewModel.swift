@@ -15,6 +15,7 @@ final class EditorViewModel: ObservableObject {
     @Published var objectTrackingMessage: String?
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
+    @Published var mockupOverlays: [MockupOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
     @Published var musicRegions: [SoundEffectClip] = []
     @Published var musicRegionMode = false
@@ -66,6 +67,7 @@ final class EditorViewModel: ObservableObject {
         var clips: [TimelineClip]
         var soundEffects: [SoundEffectClip]
         var musicRegions: [SoundEffectClip]
+        var mockupOverlays: [MockupOverlayClip]
         var musicRegionMode: Bool
         var projectID: UUID
         var musicTimelineOffset: Double
@@ -78,7 +80,8 @@ final class EditorViewModel: ObservableObject {
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
             clips: clips, soundEffects: soundEffects,
-            musicRegions: musicRegions, musicRegionMode: musicRegionMode,
+            musicRegions: musicRegions, mockupOverlays: mockupOverlays,
+            musicRegionMode: musicRegionMode,
             projectID: projectID,
             musicTimelineOffset: musicTimelineOffset,
             voiceoverOffset: voiceoverOffset,
@@ -1965,6 +1968,178 @@ final class EditorViewModel: ObservableObject {
         else { voiceVolumeKeyframes = [] }
     }
 
+    // MARK: - Light & Shadow Mockup Studio
+
+    @discardableResult
+    func addMockup(_ definition: MockupDefinition) -> UUID? {
+        guard totalDuration > 0.05 else {
+            errorText = "Hãy thêm ảnh hoặc video trước khi dùng Mockup."
+            return nil
+        }
+        guard mockupOverlays.count < 12 else {
+            errorText = "Một dự án hỗ trợ tối đa 12 lớp Mockup."
+            return nil
+        }
+        checkpoint()
+        let position = min(
+            max(0, timelineSecond),
+            max(0, totalDuration - 0.15)
+        )
+        let item = definition.makeClip(
+            start: position,
+            duration: max(0.15,
+                          min(4, totalDuration - position))
+        )
+        mockupOverlays.append(item)
+        return item.id
+    }
+
+    @discardableResult
+    func applyMockupMood(_ preset: MockupMoodPreset) -> UUID? {
+        guard totalDuration > 0.05 else {
+            errorText = "Hãy thêm ảnh/video trước."
+            return nil
+        }
+        let defs = preset.effectIDs.compactMap {
+            MockupAssetLibrary.find($0)
+        }
+        guard mockupOverlays.count + defs.count <= 12 else {
+            errorText = "Không đủ lớp trống (tối đa 12)."
+            return nil
+        }
+        checkpoint()
+        let start = min(max(0, timelineSecond),
+                        max(0, totalDuration - 0.15))
+        var last: UUID?
+        for def in defs {
+            var item = def.makeClip(
+                start: start,
+                duration: min(5, max(0.15,
+                                    totalDuration - start))
+            )
+            item.opacity *= 0.80
+            mockupOverlays.append(item)
+            last = item.id
+        }
+        return last
+    }
+
+    func removeMockup(_ id: UUID) {
+        guard mockupOverlays.contains(where: { $0.id == id })
+        else { return }
+        checkpoint()
+        mockupOverlays.removeAll { $0.id == id }
+    }
+
+    @discardableResult
+    func duplicateMockup(_ id: UUID) -> UUID? {
+        guard let item = mockupOverlays.first(where: {
+            $0.id == id
+        }), mockupOverlays.count < 12 else {
+            return nil
+        }
+        checkpoint()
+        var clone = item
+        clone.id = UUID()
+        clone.start = min(
+            max(0, totalDuration - 0.15),
+            item.start + 0.3
+        )
+        clone.duration = min(
+            clone.duration,
+            max(0.15, totalDuration - clone.start)
+        )
+        mockupOverlays.append(clone)
+        return clone.id
+    }
+
+    func importMockupArtwork(
+        from source: URL, for id: UUID
+    ) {
+        guard mockupOverlays.contains(where: {
+            $0.id == id
+        }) else {
+            errorText = "Chọn một Mockup trước khi nhập PNG."
+            return
+        }
+        do {
+            let local = try copyScoped(
+                source, fallbackExtension: "png"
+            )
+            guard UIImage(contentsOfFile: local.path) != nil
+            else {
+                try? FileManager.default.removeItem(at: local)
+                throw SmartVideoError.invalidMedia(
+                    "Không đọc được ảnh mockup PNG/JPEG."
+                )
+            }
+            guard let index = mockupOverlays.firstIndex(
+                where: { $0.id == id }
+            ) else { return }
+            checkpoint()
+            mockupOverlays[index].assetURL = local
+            mockupOverlays[index].name = "Ảnh tự chọn"
+            // Custom transparent PNG has no built-in processing category.
+        } catch {
+            errorText = "Không thể nhập Mockup: \(error.localizedDescription)"
+        }
+    }
+
+    func autoFitMockup(_ id: UUID, clip: TimelineClip?) {
+        guard let clip else {
+            errorText = "Chọn ảnh hoặc video trên timeline."
+            return
+        }
+        guard mockupOverlays.contains(where: { $0.id == id })
+        else { return }
+        Task {
+            do {
+                let image: CGImage
+                if clip.kind == .image {
+                    guard let cg = UIImage(
+                        contentsOfFile: clip.fileURL.path
+                    )?.cgImage else {
+                        throw SmartVideoError.invalidMedia(
+                            "Không đọc được ảnh."
+                        )
+                    }
+                    image = cg
+                } else {
+                    let asset = AVURLAsset(url: clip.fileURL)
+                    let generator = AVAssetImageGenerator(
+                        asset: asset
+                    )
+                    generator.appliesPreferredTrackTransform = true
+                    generator.maximumSize = CGSize(
+                        width: 800, height: 800
+                    )
+                    image = try generator.copyCGImage(
+                        at: CMTime(
+                            seconds: max(0, clip.startTime),
+                            preferredTimescale: 600
+                        ),
+                        actualTime: nil
+                    )
+                }
+                guard let index = mockupOverlays.firstIndex(
+                    where: { $0.id == id }
+                ) else { return }
+                let advice = MockupFaceAwareLayout.suggest(
+                    image: image,
+                    category: mockupOverlays[index].category
+                )
+                checkpoint()
+                mockupOverlays[index].centerX = advice.x
+                mockupOverlays[index].centerY = advice.y
+                mockupOverlays[index].rotationDegrees = advice.rotation
+                mockupOverlays[index].opacity = advice.opacity
+                mockupOverlays[index].avoidFace = true
+            } catch {
+                errorText = "Không phân tích được ảnh cho Mockup: \(error.localizedDescription)"
+            }
+        }
+    }
+
     // MARK: - Local Projects
 
     func refreshProjects() {
@@ -2017,7 +2192,8 @@ final class EditorViewModel: ObservableObject {
                 musicVolumeKeyframes: musicVolumeKeyframes,
                 voiceVolumeKeyframes: voiceVolumeKeyframes,
                 musicRegions: musicRegions,
-                musicRegionMode: musicRegionMode
+                musicRegionMode: musicRegionMode,
+                mockupOverlays: mockupOverlays
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -2042,6 +2218,13 @@ final class EditorViewModel: ObservableObject {
             let overlayFiles = p.imageOverlays.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
+            let mockupFiles = p.mockupOverlays.compactMap {
+                $0.assetURL.map { url in
+                    MediaStorage.mediaDirectory.appendingPathComponent(
+                        url.lastPathComponent
+                    )
+                }
+            }
             let textFillFiles = p.textOverlays.compactMap {
                 $0.fillAssetURL.map { url in
                     MediaStorage.mediaDirectory.appendingPathComponent(
@@ -2056,7 +2239,8 @@ final class EditorViewModel: ObservableObject {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
             let allFiles = restoredClips.map(\.fileURL) +
-                overlayFiles + textFillFiles + pipFiles + sfxFiles + musicFiles +
+                overlayFiles + textFillFiles + mockupFiles +
+                pipFiles + sfxFiles + musicFiles +
                 [restoredMusic, restoredVoice, restoredOriginalVoice,
                  restoredOriginalMusic].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
@@ -2090,6 +2274,14 @@ final class EditorViewModel: ObservableObject {
                 if let url = result.fillAssetURL {
                     result.fillAssetURL = MediaStorage.mediaDirectory
                         .appendingPathComponent(url.lastPathComponent)
+                }
+                return result
+            }
+            mockupOverlays = p.mockupOverlays.map { element in
+                var result = element
+                if let asset = result.assetURL {
+                    result.assetURL = MediaStorage.mediaDirectory
+                        .appendingPathComponent(asset.lastPathComponent)
                 }
                 return result
             }
@@ -2196,6 +2388,7 @@ final class EditorViewModel: ObservableObject {
         imageOverlays = []
         videoOverlays = []
         textOverlays = []
+        mockupOverlays = []
         soundEffects = []
         musicRegions = []
         musicRegionMode = false
@@ -2263,6 +2456,7 @@ final class EditorViewModel: ObservableObject {
         clips = previous.clips
         soundEffects = previous.soundEffects
         musicRegions = previous.musicRegions
+        mockupOverlays = previous.mockupOverlays
         musicRegionMode = previous.musicRegionMode
         musicTimelineOffset = previous.musicTimelineOffset
         voiceoverOffset = previous.voiceoverOffset
@@ -2283,6 +2477,7 @@ final class EditorViewModel: ObservableObject {
         clips = next.clips
         soundEffects = next.soundEffects
         musicRegions = next.musicRegions
+        mockupOverlays = next.mockupOverlays
         musicRegionMode = next.musicRegionMode
         musicTimelineOffset = next.musicTimelineOffset
         voiceoverOffset = next.voiceoverOffset
@@ -2700,6 +2895,7 @@ final class EditorViewModel: ObservableObject {
         let workImageOverlays = imageOverlays
         let workVideoOverlays = videoOverlays
         let workTextOverlays = textOverlays
+        let workMockups = mockupOverlays
         let workSoundEffects = soundEffects
         let workMusicRegions = musicRegions
         let workMusicRegionMode = musicRegionMode
@@ -2742,6 +2938,7 @@ final class EditorViewModel: ObservableObject {
                         imageOverlays: workImageOverlays,
                         videoOverlays: workVideoOverlays,
                         textOverlays: workTextOverlays,
+                        mockupOverlays: workMockups,
                         soundEffects: workSoundEffects,
                         musicRegions: workMusicRegionMode ? workMusicRegions : [],
                         transition: workTransition,

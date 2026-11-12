@@ -7,6 +7,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case clip = "Đoạn"
     case frame = "Khung"
     case vfx = "VFX"
+    case mockup = "Mockup"
     case presets = "Preset Pro"
     case captions = "Phụ đề"
     case audio = "Âm thanh"
@@ -27,6 +28,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .clip: return "scissors"
         case .frame: return "aspectratio"
         case .vfx: return "wand.and.stars"
+        case .mockup: return "sun.horizon.fill"
         case .presets: return "square.grid.3x3.topleft.filled"
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
@@ -68,6 +70,7 @@ struct EditorView: View {
     @State private var pickedPIP: PhotosPickerItem?
     @State private var selectedPIPID: UUID?
     @State private var selectedTextID: UUID?
+    @State private var selectedMockupID: UUID?
     @State private var selectedSoundID: UUID?
     @State private var selectedMusicRegionID: UUID?
     @State private var compareOriginalFootage = false
@@ -264,6 +267,12 @@ struct EditorView: View {
                 case .subtitles: model.importSubtitles(from: url)
                 case .soundEffect:
                     model.importSoundEffect(from: url)
+                case .mockupArtwork:
+                    if let selectedMockupID {
+                        model.importMockupArtwork(
+                            from: url, for: selectedMockupID
+                        )
+                    }
                 case .textFillImage:
                     if let selectedTextID {
                         model.importTextFill(
@@ -477,6 +486,17 @@ struct EditorView: View {
                             .allowsHitTesting(activeTool == .overlay)
                     }
                 }
+
+                MockupCanvasPreview(
+                    model: model,
+                    selectedID: $selectedMockupID,
+                    second: playheadSecond,
+                    canvas: CGSize(
+                        width: canvasWidth,
+                        height: canvasHeight
+                    ),
+                    editable: activeTool == .mockup
+                )
 
                 TextCanvasPreview(
                     model: model, selectedID: $selectedTextID,
@@ -734,6 +754,11 @@ struct EditorView: View {
                     selectedClipID: selectedClipID,
                     selectedSoundID: $selectedSoundID,
                     selectedMusicRegionID: $selectedMusicRegionID,
+                    selectedMockupID: $selectedMockupID,
+                    onSelectMockup: { item in
+                        selectedMockupID = item.id
+                        activeTool = .mockup
+                    },
                     onSelectMusicRegion: { region in
                         selectedMusicRegionID = region.id
                         activeTool = .audio
@@ -1023,6 +1048,17 @@ struct EditorView: View {
         case .clip: clipPanel
         case .frame: framePanel
         case .vfx: VFXLibraryPanel(model: model)
+        case .mockup: MockupStudioPanel(
+            model: model, selectedID: $selectedMockupID,
+            onScrub: { scrubTimeline(to: $0) },
+            onAutoFit: { id in
+                model.autoFitMockup(id, clip: selectedClip)
+            },
+            onImport: {
+                activeFilePicker = .mockupArtwork
+                showDocumentImporter = true
+            }
+        )
         case .presets: PresetStudioPanel(model: model) { id in
             selectedTextID = id
             activeTool = .title

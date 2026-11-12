@@ -18,6 +18,7 @@ final class VideoRenderer {
         imageOverlays: [ImageOverlayClip],
         videoOverlays: [VideoOverlayClip],
         textOverlays: [TextOverlayClip],
+        mockupOverlays: [MockupOverlayClip],
         soundEffects: [SoundEffectClip],
         musicRegions: [SoundEffectClip],
         transition: VideoTransition,
@@ -101,6 +102,14 @@ final class VideoRenderer {
                     clipDuration: clip.renderedDuration
                 )
             }
+            let clipMockups = mockupOverlays.filter {
+                $0.isVisible && TextTitleRenderTime.intersects(
+                    titleStart: $0.start,
+                    titleDuration: $0.duration,
+                    clipStart: clipStart,
+                    clipDuration: clip.renderedDuration
+                )
+            }
             if clip.kind == .image {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
@@ -119,6 +128,7 @@ final class VideoRenderer {
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical,
                     behindTitles: behindTitles,
+                    mockupOverlays: clipMockups,
                     timelineStart: clipStart,
                     filmstrips: textFilms
                 )
@@ -150,7 +160,8 @@ final class VideoRenderer {
                 if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                     !clip.colorAdjustments.isNeutral ||
                     clip.personBackground != .original ||
-                    !behindTitles.isEmpty {
+                    !behindTitles.isEmpty ||
+                    !clipMockups.isEmpty {
                     // Existing Core Image grading is run AFTER the retime.
                     // Do not discard the grade or apply it twice.
                     let gradeURL = MediaStorage.newTemporaryVideoURL()
@@ -158,6 +169,7 @@ final class VideoRenderer {
                     try await VideoFrameGrader.renderTrimmed(
                         clip: prepared, outputURL: gradeURL,
                         behindTitles: behindTitles,
+                        mockupOverlays: clipMockups,
                         timelineStart: clipStart,
                         filmstrips: textFilms
                     )
@@ -169,12 +181,14 @@ final class VideoRenderer {
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                       !clip.colorAdjustments.isNeutral ||
                       clip.personBackground != .original ||
-                      !behindTitles.isEmpty {
+                      !behindTitles.isEmpty ||
+                      !clipMockups.isEmpty {
                 let temporary = MediaStorage.newTemporaryVideoURL()
                 generatedImageVideos.append(temporary)
                 try await VideoFrameGrader.renderTrimmed(
                     clip: clip, outputURL: temporary,
                     behindTitles: behindTitles,
+                    mockupOverlays: clipMockups,
                     timelineStart: clipStart,
                     filmstrips: textFilms
                 )
@@ -438,6 +452,7 @@ final class VideoRenderer {
         flipHorizontal: Bool,
         flipVertical: Bool,
         behindTitles: [TextOverlayClip] = [],
+        mockupOverlays: [MockupOverlayClip] = [],
         timelineStart: Double = 0,
         filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
     ) async throws {
@@ -474,7 +489,11 @@ final class VideoRenderer {
         let staticFrame = fitted.composited(over: black)
         // Still-image subject segmentation only once for the source
         // photo, even when generating many pan/zoom frames.
-        let staticPersonMask = behindTitles.isEmpty ? nil :
+        let hasBehindMockup = mockupOverlays.contains {
+            $0.depthMode == .behindPerson
+        }
+        let staticPersonMask = behindTitles.isEmpty &&
+            !hasBehindMockup ? nil :
             try PersonCutoutProcessor.personMask(
                 staticFrame, quality: .balanced
             )
@@ -599,10 +618,16 @@ final class VideoRenderer {
                     CGAffineTransform(a: 1, b: 0, c: 0, d: -1,
                                       tx: 0, ty: size.height))
             }
+            let projectSecond = timelineStart +
+                Double(frameIndex) / Double(framesPerSecond)
+            let mockupFrame = try MockupFrameRenderer.apply(
+                to: finalFrame, items: mockupOverlays,
+                projectTime: projectSecond,
+                cachedPersonMask: movingMask
+            )
             let depthFrame = try TextBehindPersonRenderer.apply(
-                to: finalFrame, items: behindTitles,
-                projectTime: timelineStart +
-                    Double(frameIndex) / Double(framesPerSecond),
+                to: mockupFrame, items: behindTitles,
+                projectTime: projectSecond,
                 maskOverride: movingMask,
                 films: filmstrips, quality: .fast
             )

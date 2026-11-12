@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// The file type selection for the single system Files importer.
 enum EditorDocumentKind: String, Identifiable {
     case music, musicRegion, voice, subtitles, soundEffect
-    case textFillImage, textFillVideo
+    case textFillImage, textFillVideo, mockupArtwork
 
     var id: String { rawValue }
 
@@ -17,7 +17,7 @@ enum EditorDocumentKind: String, Identifiable {
                 UTType(filenameExtension: "m4a") ?? .audio,
                 UTType(filenameExtension: "wav") ?? .audio
             ]
-        case .textFillImage:
+        case .textFillImage, .mockupArtwork:
             return [.image]
         case .textFillVideo:
             return [.movie, .video]
