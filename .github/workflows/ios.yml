@@ -70,6 +70,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/TextOverlayClip.swift SmartVideo/Models/TextTitlePreset.swift SmartVideo/Models/TextTitleRenderTime.swift scripts/text-title-pro-tests.swift -o /tmp/text-title-pro-tests
           /tmp/text-title-pro-tests
 
+      - name: Validate 42 offline mockups, 12 moods and animated storage
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupAssetLibrary.swift scripts/mockup-library-tests.swift -o /tmp/mockup-library-tests
+          /tmp/mockup-library-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
@@ -105,6 +110,7 @@ jobs:
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             -only-testing:SmartVideoTests/TextExportSmokeTests \
+            -only-testing:SmartVideoTests/MockupVisualTests \
             test
 
       - name: Package simulator app for inspection
