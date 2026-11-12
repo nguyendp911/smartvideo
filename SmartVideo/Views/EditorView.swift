@@ -264,6 +264,18 @@ struct EditorView: View {
                 case .subtitles: model.importSubtitles(from: url)
                 case .soundEffect:
                     model.importSoundEffect(from: url)
+                case .textFillImage:
+                    if let selectedTextID {
+                        model.importTextFill(
+                            from: url, for: selectedTextID, video: false
+                        )
+                    }
+                case .textFillVideo:
+                    if let selectedTextID {
+                        model.importTextFill(
+                            from: url, for: selectedTextID, video: true
+                        )
+                    }
                 }
             case .failure(let error):
                 model.errorText = "Không thể mở tệp: \(error.localizedDescription)"
@@ -1033,9 +1045,18 @@ struct EditorView: View {
                                        selectedID: $selectedPIPID,
                                        pickerItem: $pickedPIP,
                                        onScrub: { scrubTimeline(to: $0) })
-        case .title: TextOverlayStudioPanel(model: model,
-                                            selectedID: $selectedTextID,
-                                            onScrub: { scrubTimeline(to: $0) })
+        case .title: TextOverlayStudioPanel(
+            model: model,
+            selectedID: $selectedTextID,
+            onScrub: { scrubTimeline(to: $0) },
+            importTextFill: { video in
+                activeFilePicker = video ? .textFillVideo : .textFillImage
+                showDocumentImporter = true
+            },
+            autoPosition: { id in
+                model.autoPositionText(id, clip: selectedClip)
+            }
+        )
         case .sfx: SoundEffectsStudioPanel(model: model,
                                           selectedID: $selectedSoundID) {
             activeFilePicker = .soundEffect
