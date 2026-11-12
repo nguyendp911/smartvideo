@@ -62,7 +62,7 @@ enum TextMaskMedia {
     /// through this alpha mask, not into its bounding rectangle.
     static func glyphMask(
         text: String, size: CGSize, fontSize: CGFloat,
-        strokeWidth: CGFloat = 0
+        strokeWidth: CGFloat = 0, outlineOnly: Bool = false
     ) -> CGImage? {
         let width = max(1, Int(size.width)), height = max(1, Int(size.height))
         let format = UIGraphicsImageRendererFormat()
@@ -80,7 +80,8 @@ enum TextMaskMedia {
                 .font: font,
                 .foregroundColor: UIColor.white,
                 .strokeColor: UIColor.white,
-                .strokeWidth: -strokeWidth,
+                .strokeWidth: outlineOnly ?
+                    max(0.1, strokeWidth) : -strokeWidth,
                 .paragraphStyle: paragraph
             ]
             let bounds = (text as NSString).boundingRect(
