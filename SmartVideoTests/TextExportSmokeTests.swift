@@ -127,6 +127,71 @@ final class TextExportSmokeTests: XCTestCase {
         )
     }
 
+    func testBehindPersonTextAcrossTrimmedClipsAndActualOcclusion()
+        throws {
+        let rect = CGRect(
+            x: 0, y: 0, width: 320, height: 480
+        )
+        let background = CIImage(color: .black).cropped(
+            to: rect
+        )
+        // Simulate a person occupying a full-height central stripe.
+        // Lettering needs to appear around the person's body, but
+        // remain occluded in the area occupied by the subject.
+        let clear = CIImage(color: .black).cropped(to: rect)
+        let person = CIImage(color: .white).cropped(
+            to: CGRect(x: 113, y: 0, width: 94,
+                       height: 480)
+        )
+        let personMask = person.composited(
+            over: clear
+        )
+        var title = TextOverlayClip()
+        title.depthMode = .behindPerson
+        title.text = "VIEPN SMART"
+        title.fontSize = 34
+        title.useBackground = false
+        title.colorHex = "FFFFFF"
+        title.behindVisibilityAssist = true
+        title.start = 7.1
+        title.duration = 2
+        // In the real pipeline source footage has already been
+        // rebased from an original timestamp such as 13.5s to 0s.
+        let t = TextTitleRenderTime.projectSecond(
+            clipStart: 7,
+            trimmedCompositionSecond: 0.5,
+            playbackSpeed: 2
+        )
+        XCTAssertEqual(t, 7.25, accuracy: 0.001)
+        let rendered = try TextBehindPersonRenderer.apply(
+            to: background, items: [title],
+            projectTime: t, maskOverride: personMask
+        )
+        let context = CIContext()
+        guard let bitmap = context.createCGImage(
+            rendered, from: rect
+        ) else {
+            XCTFail("Failed to render person mask title")
+            return
+        }
+        XCTAssertGreaterThan(
+            brightPixelCount(bitmap), 200,
+            "Person occupying center erased every letter"
+        )
+        // Project time BEFORE the title must remain unchanged.
+        let early = try TextBehindPersonRenderer.apply(
+            to: background, items: [title],
+            projectTime: 6, maskOverride: personMask
+        )
+        if let earlyBitmap = context.createCGImage(
+            early, from: rect
+        ) {
+            XCTAssertEqual(
+                brightPixelCount(earlyBitmap), 0
+            )
+        }
+    }
+
     func testFrontTitleLayersHaveVisiblePixels() throws {
         let surface = CALayer()
         surface.frame = CGRect(origin: .zero, size: canvas)
