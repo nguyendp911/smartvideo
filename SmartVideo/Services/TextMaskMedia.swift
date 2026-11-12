@@ -3,9 +3,10 @@ import UIKit
 import AVFoundation
 import QuartzCore
 
-/// Bounded offline filmstrip for a looping *video inside text*.
-    /// AVPlayerLayer is not deterministic in AVVideoCompositionCoreAnimationTool;
-/// discrete CGImage contents frames ARE evaluated on the export timeline.
+/// Render real RGBA glyph pixels *before* Core Animation export.
+/// AVVideoCompositionCoreAnimationTool does not consistently serialize
+/// CALayer.mask chains; opaque layer shapes containing a non-zero alpha
+/// bitmap are reliable both in Simulator and the iPhone AV exporter.
 enum TextMaskMedia {
     struct Filmstrip {
         let frames: [CGImage]
@@ -13,11 +14,13 @@ enum TextMaskMedia {
         var first: CGImage? { frames.first }
         func frame(at second: Double) -> CGImage? {
             guard !frames.isEmpty else { return nil }
-            let t = max(0, second.isFinite ? second : 0)
-            let p = t.truncatingRemainder(dividingBy: max(0.1, loopSeconds))
-            let i = min(frames.count - 1,
-                        max(0, Int(p / loopSeconds * Double(frames.count))))
-            return frames[i]
+            let time = max(0, second.isFinite ? second : 0)
+            let length = max(0.1, loopSeconds)
+            let progress = time.truncatingRemainder(
+                dividingBy: length
+            ) / length
+            return frames[min(frames.count - 1,
+                              Int(progress * Double(frames.count)))]
         }
     }
 
@@ -25,81 +28,203 @@ enum TextMaskMedia {
         url: URL, maxSeconds: Double = 4,
         framesPerSecond: Double = 8
     ) -> Filmstrip? {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
+        guard FileManager.default.fileExists(atPath: url.path)
+        else { return nil }
         let asset = AVURLAsset(url: url)
         let length = CMTimeGetSeconds(asset.duration)
-        guard length.isFinite, length > 0.08 else { return nil }
+        guard length.isFinite, length >= 0.08 else { return nil }
         let loop = min(maxSeconds, length)
-        let amount = min(32, max(1, Int(ceil(loop * framesPerSecond))))
+        let frameCount = min(32, max(1, Int(ceil(loop *
+                                               framesPerSecond))))
         let generator = AVAssetImageGenerator(asset: asset)
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 480, height: 480)
         generator.requestedTimeToleranceBefore = .zero
         generator.requestedTimeToleranceAfter = .zero
         var frames: [CGImage] = []
-        for n in 0..<amount {
-            let moment = Double(n) / Double(amount) * loop
-            if let frame = try? generator.copyCGImage(
-                at: CMTime(seconds: moment, preferredTimescale: 600),
+        for index in 0..<frameCount {
+            let timestamp = Double(index) / Double(frameCount) * loop
+            if let bitmap = try? generator.copyCGImage(
+                at: CMTime(seconds: timestamp,
+                           preferredTimescale: 600),
                 actualTime: nil
             ) {
-                frames.append(frame)
+                frames.append(bitmap)
             }
         }
-        guard !frames.isEmpty else { return nil }
-        return Filmstrip(frames: frames, loopSeconds: loop)
+        return frames.isEmpty ? nil :
+            Filmstrip(frames: frames, loopSeconds: loop)
     }
 
     static func image(url: URL?) -> CGImage? {
-        guard let url, let photo = UIImage(contentsOfFile: url.path)
-        else { return nil }
-        return photo.cgImage
+        guard let url, let bitmap = UIImage(
+            contentsOfFile: url.path
+        ) else { return nil }
+        return bitmap.cgImage
     }
 
-    /// A precise glyph-alpha mask. The caller paints a gradient/image/video
-    /// through this alpha mask, not into its bounding rectangle.
+    /// Generates a glyph alpha image, not a CALayer text mask.
     static func glyphMask(
         text: String, size: CGSize, fontSize: CGFloat,
         strokeWidth: CGFloat = 0, outlineOnly: Bool = false
     ) -> CGImage? {
-        let width = max(1, Int(size.width)), height = max(1, Int(size.height))
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        let image = UIGraphicsImageRenderer(
-            size: CGSize(width: width, height: height),
-            format: format
-        ).image { _ in
-            let font = UIFont.systemFont(ofSize: fontSize, weight: .black)
+        let sz = safeSize(size)
+        let renderer = UIGraphicsImageRenderer(
+            size: sz, format: rgbaFormat()
+        )
+        let result = renderer.image { _ in
+            let font = UIFont.systemFont(
+                ofSize: fontSize, weight: .black
+            )
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
             paragraph.lineBreakMode = .byWordWrapping
-            let attributes: [NSAttributedString.Key: Any] = [
+            var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: UIColor.white,
-                .strokeColor: UIColor.white,
-                .strokeWidth: outlineOnly ?
-                    max(0.1, strokeWidth) : -strokeWidth,
                 .paragraphStyle: paragraph
             ]
-            let bounds = (text as NSString).boundingRect(
-                with: CGSize(width: size.width - 12, height: size.height),
-                options: [.usesLineFragmentOrigin, .usesFontLeading],
+            // Explicit zero stroke width is accepted in UIFont drawing,
+            // but omitting it for normal glyphs avoids inconsistent
+            // system text rendering on different iOS versions.
+            if strokeWidth > 0 {
+                attributes[.strokeColor] = UIColor.white
+                attributes[.strokeWidth] = outlineOnly ?
+                    max(0.1, strokeWidth) : -strokeWidth
+            }
+            let textWidth = max(1, sz.width - 12)
+            let measure = (text as NSString).boundingRect(
+                with: CGSize(width: textWidth, height: sz.height),
+                options: [.usesLineFragmentOrigin,
+                          .usesFontLeading],
                 attributes: attributes, context: nil
             )
-            let rect = CGRect(x: 6,
-                              y: max(0, (size.height - bounds.height) / 2),
-                              width: max(1, size.width - 12),
-                              height: max(1, size.height))
+            let rect = CGRect(
+                x: 6, y: max(0, (sz.height - measure.height) / 2),
+                width: textWidth,
+                height: sz.height
+            )
             (text as NSString).draw(
-                with: rect, options: [.usesLineFragmentOrigin,
-                                      .usesFontLeading],
+                with: rect,
+                options: [.usesLineFragmentOrigin,
+                          .usesFontLeading],
                 attributes: attributes, context: nil
             )
         }
-        return image.cgImage
+        return result.cgImage
+    }
+
+    static func rasterizedGlyph(
+        for item: TextOverlayClip,
+        size: CGSize, videoFrame: CGImage? = nil
+    ) -> CGImage? {
+        let size = safeSize(size)
+        guard let mask = glyphMask(
+            text: item.text, size: size,
+            fontSize: CGFloat(min(180, max(15, item.fontSize)))
+        ) else { return nil }
+        let bitmap = UIGraphicsImageRenderer(
+            size: size, format: rgbaFormat()
+        ).image { drawing in
+            let rect = CGRect(origin: .zero, size: size)
+            switch item.fillMode {
+            case .solid:
+                TextOverlayRenderer.uiColor(hex: item.colorHex)
+                    .setFill()
+                UIRectFill(rect)
+            case .gradient:
+                let cg = drawing.cgContext
+                let colors: [CGColor] = [
+                    TextOverlayRenderer.uiColor(
+                        hex: item.colorHex
+                    ).cgColor,
+                    TextOverlayRenderer.uiColor(
+                        hex: item.gradientEndHex
+                    ).cgColor
+                ]
+                if let gradient = CGGradient(
+                    colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                    colors: colors as CFArray, locations: [0, 1]
+                ) {
+                    cg.drawLinearGradient(
+                        gradient, start: .zero,
+                        end: CGPoint(x: size.width,
+                                     y: size.height),
+                        options: []
+                    )
+                }
+            case .image, .video:
+                let media = item.fillMode == .image ?
+                    image(url: item.fillAssetURL) : videoFrame
+                if let media {
+                    let aspect = CGSize(
+                        width: CGFloat(media.width),
+                        height: CGFloat(media.height)
+                    )
+                    let fit = item.maskFit == .fit ?
+                        min(size.width / aspect.width,
+                            size.height / aspect.height) :
+                        max(size.width / aspect.width,
+                            size.height / aspect.height)
+                    let zoom = CGFloat(min(4, max(0.5,
+                                                item.maskScale)))
+                    let drawn = CGSize(
+                        width: aspect.width * fit * zoom,
+                        height: aspect.height * fit * zoom
+                    )
+                    let dest = CGRect(
+                        x: (size.width - drawn.width) / 2 +
+                           CGFloat(item.maskOffsetX) *
+                           size.width / 2,
+                        y: (size.height - drawn.height) / 2 -
+                           CGFloat(item.maskOffsetY) *
+                           size.height / 2,
+                        width: drawn.width, height: drawn.height
+                    )
+                    UIImage(cgImage: media).draw(in: dest)
+                } else {
+                    // A missing attachment is still a visible title,
+                    // not a fully transparent video export.
+                    TextOverlayRenderer.uiColor(
+                        hex: item.colorHex
+                    ).setFill()
+                    UIRectFill(rect)
+                }
+            }
+
+            // Destination-In retains the fill ONLY where the glyph alpha
+            // is non-zero. In the old implementation, the Core Animation
+            // layer-mask chain could export completely transparent.
+            UIImage(cgImage: mask).draw(
+                in: rect, blendMode: .destinationIn, alpha: 1
+            )
+        }
+        return bitmap.cgImage
+    }
+
+    static func outlineImage(
+        for item: TextOverlayClip, size: CGSize
+    ) -> CGImage? {
+        guard item.strokeWidth > 0,
+              let mask = glyphMask(
+                text: item.text, size: size,
+                fontSize: CGFloat(min(180, max(15, item.fontSize))),
+                strokeWidth: CGFloat(item.strokeWidth),
+                outlineOnly: true
+              ) else { return nil }
+        let size = safeSize(size)
+        return UIGraphicsImageRenderer(
+            size: size, format: rgbaFormat()
+        ).image { _ in
+            TextOverlayRenderer.uiColor(
+                hex: item.strokeHex
+            ).setFill()
+            let rect = CGRect(origin: .zero, size: size)
+            UIRectFill(rect)
+            UIImage(cgImage: mask).draw(
+                in: rect, blendMode: .destinationIn, alpha: 1
+            )
+        }.cgImage
     }
 
     static func contentLayer(
@@ -107,71 +232,55 @@ enum TextMaskMedia {
         begin: Double, duration: Double,
         filmstrip: Filmstrip? = nil
     ) -> CALayer {
-        let container = CALayer()
-        container.bounds = bounds
-        container.position = CGPoint(x: bounds.midX, y: bounds.midY)
-        container.masksToBounds = true
-
-        let fill = CALayer()
-        fill.bounds = bounds
-        fill.position = CGPoint(x: bounds.midX, y: bounds.midY)
-
-        switch item.fillMode {
-        case .solid:
-            fill.backgroundColor = TextOverlayRenderer.uiColor(
-                hex: item.colorHex
-            ).cgColor
-        case .gradient:
-            let gradient = CAGradientLayer()
-            gradient.frame = fill.bounds
-            gradient.colors = [
-                TextOverlayRenderer.uiColor(hex: item.colorHex).cgColor,
-                TextOverlayRenderer.uiColor(hex: item.gradientEndHex).cgColor
-            ]
-            gradient.startPoint = CGPoint(x: 0, y: 0)
-            gradient.endPoint = CGPoint(x: 1, y: 1)
-            fill.addSublayer(gradient)
-        case .image:
-            fill.contents = image(url: item.fillAssetURL)
-            fill.contentsGravity = item.maskFit == .fit ?
-                .resizeAspect : .resizeAspectFill
-        case .video:
-            let film = filmstrip ?? item.fillAssetURL.flatMap {
+        let layer = CALayer()
+        layer.bounds = CGRect(origin: .zero,
+                              size: safeSize(bounds.size))
+        layer.contentsGravity = .resize
+        layer.contentsScale = 1
+        let video = item.fillMode == .video ?
+            (filmstrip ?? item.fillAssetURL.flatMap {
                 load(url: $0)
+            }) : nil
+        layer.contents = rasterizedGlyph(
+            for: item, size: layer.bounds.size,
+            videoFrame: video?.first
+        )
+
+        if let video, video.frames.count > 1 {
+            let animated = video.frames.compactMap {
+                rasterizedGlyph(
+                    for: item, size: layer.bounds.size,
+                    videoFrame: $0
+                )
             }
-            fill.contents = film?.first
-            fill.contentsGravity = item.maskFit == .fit ?
-                .resizeAspect : .resizeAspectFill
-            if let film, film.frames.count >= 2 {
-                let frames = CAKeyframeAnimation(keyPath: "contents")
-                frames.values = film.frames
-                frames.calculationMode = .discrete
-                frames.duration = film.loopSeconds
-                frames.repeatCount = Float.greatestFiniteMagnitude
-                frames.beginTime = AVCoreAnimationBeginTimeAtZero + begin
-                frames.isRemovedOnCompletion = false
-                frames.fillMode = .both
-                fill.add(frames, forKey: "text-video-fill")
+            if animated.count > 1 {
+                let change = CAKeyframeAnimation(
+                    keyPath: "contents"
+                )
+                change.values = animated
+                change.calculationMode = .discrete
+                change.beginTime =
+                    AVCoreAnimationBeginTimeAtZero + begin
+                change.duration = max(0.1, video.loopSeconds)
+                change.repeatCount =
+                    Float.greatestFiniteMagnitude
+                change.isRemovedOnCompletion = false
+                change.fillMode = .both
+                layer.add(change, forKey: "text-video-fill")
             }
         }
-        let safe = CGFloat(min(4, max(0.5, item.maskScale)))
-        fill.transform = CATransform3DMakeScale(safe, safe, 1)
-        fill.position = CGPoint(
-            x: bounds.midX + CGFloat(item.maskOffsetX) * bounds.width * 0.5,
-            y: bounds.midY - CGFloat(item.maskOffsetY) * bounds.height * 0.5
-        )
-        container.addSublayer(fill)
+        return layer
+    }
 
-        let glyph = CALayer()
-        glyph.frame = bounds
-        glyph.contents = glyphMask(
-            text: item.text, size: bounds.size,
-            fontSize: CGFloat(min(180, max(15, item.fontSize))),
-            strokeWidth: CGFloat(item.strokeWidth)
-        )
-        // The entire group is masked, so no rectangular image/gradient is
-        // visible outside glyphs, including transparent holes inside letters.
-        container.mask = glyph
-        return container
+    private static func safeSize(_ size: CGSize) -> CGSize {
+        CGSize(width: CGFloat(max(1, Int(size.width))),
+               height: CGFloat(max(1, Int(size.height))))
+    }
+
+    private static func rgbaFormat() -> UIGraphicsImageRendererFormat {
+        let format = UIGraphicsImageRendererFormat()
+        format.opaque = false
+        format.scale = 1
+        return format
     }
 }
