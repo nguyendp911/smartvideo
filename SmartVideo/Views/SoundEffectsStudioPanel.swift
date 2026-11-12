@@ -294,7 +294,8 @@ struct SoundEffectsStudioPanel: View {
                 title: "Waveform · kéo để cắt nguồn",
                 playheadSource: model.timelineSecond >= item.start &&
                     model.timelineSecond <= item.end ?
-                    item.sourceStart + model.timelineSecond - item.start : nil
+                    item.sourceStart + model.timelineSecond - item.start : nil,
+                onEditBegan: { model.beginSoundEffectsEdit() }
             )
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -356,7 +357,9 @@ struct SoundEffectsStudioPanel: View {
             }.font(.caption)
             Slider(value: $model.soundEffects[index].start,
                    in: 0...max(0.1, model.totalDuration - 0.1),
-                   step: 0.05).tint(.cyan)
+                   step: 0.05, onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   }).tint(.cyan)
 
             HStack {
                 Text("Cắt đầu nguồn")
@@ -372,7 +375,9 @@ struct SoundEffectsStudioPanel: View {
                         min(model.soundEffects[index].duration, remain)
                 }
             ), in: 0...max(0.1, item.originalDuration - 0.1),
-               step: 0.05).tint(.cyan)
+               step: 0.05, onEditingChanged: { editing in
+                   if editing { model.beginSoundEffectsEdit() }
+               }).tint(.cyan)
 
             HStack {
                 Text("Thời lượng phát")
@@ -383,7 +388,9 @@ struct SoundEffectsStudioPanel: View {
                    in: 0.1...max(0.2, min(
                     item.originalDuration - item.sourceStart,
                     model.totalDuration - item.start
-                   )), step: 0.05).tint(.cyan)
+                   )), step: 0.05, onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   }).tint(.cyan)
 
             HStack {
                 Text("Âm lượng")
@@ -391,9 +398,17 @@ struct SoundEffectsStudioPanel: View {
                 Text("\(Int(item.volume * 100))%")
             }.font(.caption)
             Slider(value: $model.soundEffects[index].volume,
-                   in: 0...1, step: 0.05).tint(.cyan)
+                   in: 0...1, step: 0.05, onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   }).tint(.cyan)
             Toggle("Tắt tiếng track này",
-                   isOn: $model.soundEffects[index].muted)
+                   isOn: Binding(
+                       get: { model.soundEffects[index].muted },
+                       set: { newValue in
+                           model.beginSoundEffectsEdit()
+                           model.soundEffects[index].muted = newValue
+                       }
+                   ))
                 .font(.caption)
 
             HStack {
@@ -403,7 +418,9 @@ struct SoundEffectsStudioPanel: View {
             }.font(.caption)
             Slider(value: $model.soundEffects[index].fadeIn,
                    in: 0...min(2, max(0.05, item.duration / 2)),
-                   step: 0.05).tint(.cyan)
+                   step: 0.05, onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   }).tint(.cyan)
 
             HStack {
                 Text("Fade-out")
@@ -412,7 +429,9 @@ struct SoundEffectsStudioPanel: View {
             }.font(.caption)
             Slider(value: $model.soundEffects[index].fadeOut,
                    in: 0...min(2, max(0.05, item.duration / 2)),
-                   step: 0.05).tint(.cyan)
+                   step: 0.05, onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   }).tint(.cyan)
 
             Divider()
             volumeKeyframeEditor(item)
@@ -525,7 +544,10 @@ struct SoundEffectsStudioPanel: View {
                             item.id, frameID: keyframe.id, gain: Float($0)
                         )
                     }
-                ), in: 0...1, step: 0.05)
+                ), in: 0...1, step: 0.05,
+                   onEditingChanged: { editing in
+                       if editing { model.beginSoundEffectsEdit() }
+                   })
                     .tint(.orange)
                 Button(role: .destructive) {
                     model.deleteSoundVolumeKeyframe(
