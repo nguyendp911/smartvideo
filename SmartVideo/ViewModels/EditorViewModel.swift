@@ -2049,7 +2049,7 @@ final class EditorViewModel: ObservableObject {
                 id: projectID, name: name, savedAt: Date(),
                 clips: clips, imageOverlays: imageOverlays,
                 videoOverlays: videoOverlays, textOverlays: textOverlays,
-                soundEffects: soundEffects, mockupOverlays: mockupOverlays,
+                soundEffects: soundEffects,
                 beatSourceTimes: musicBeatSourceTimes,
                 detectedTempoBPM: detectedTempoBPM,
                 subtitles: subtitles,
@@ -2084,7 +2084,8 @@ final class EditorViewModel: ObservableObject {
                 musicVolumeKeyframes: musicVolumeKeyframes,
                 voiceVolumeKeyframes: voiceVolumeKeyframes,
                 musicRegions: musicRegions,
-                musicRegionMode: musicRegionMode
+                musicRegionMode: musicRegionMode,
+                mockupOverlays: mockupOverlays
             )
             try ProjectStore.save(snapshot)
             projectName = name
