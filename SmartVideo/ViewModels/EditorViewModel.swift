@@ -15,6 +15,7 @@ final class EditorViewModel: ObservableObject {
     @Published var objectTrackingMessage: String?
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
+    @Published var mockupOverlays: [MockupOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
     @Published var musicRegions: [SoundEffectClip] = []
     @Published var musicRegionMode = false
@@ -1982,7 +1983,7 @@ final class EditorViewModel: ObservableObject {
                 id: projectID, name: name, savedAt: Date(),
                 clips: clips, imageOverlays: imageOverlays,
                 videoOverlays: videoOverlays, textOverlays: textOverlays,
-                soundEffects: soundEffects,
+                soundEffects: soundEffects, mockupOverlays: mockupOverlays,
                 beatSourceTimes: musicBeatSourceTimes,
                 detectedTempoBPM: detectedTempoBPM,
                 subtitles: subtitles,
@@ -2085,6 +2086,7 @@ final class EditorViewModel: ObservableObject {
                     .appendingPathComponent($0.fileURL.lastPathComponent)
                 return overlay
             }
+            mockupOverlays = p.mockupOverlays
             textOverlays = p.textOverlays.map { text in
                 var result = text
                 if let url = result.fillAssetURL {
@@ -2196,6 +2198,7 @@ final class EditorViewModel: ObservableObject {
         imageOverlays = []
         videoOverlays = []
         textOverlays = []
+        mockupOverlays = []
         soundEffects = []
         musicRegions = []
         musicRegionMode = false
@@ -2700,6 +2703,7 @@ final class EditorViewModel: ObservableObject {
         let workImageOverlays = imageOverlays
         let workVideoOverlays = videoOverlays
         let workTextOverlays = textOverlays
+        let workMockups = mockupOverlays
         let workSoundEffects = soundEffects
         let workMusicRegions = musicRegions
         let workMusicRegionMode = musicRegionMode
@@ -2742,6 +2746,7 @@ final class EditorViewModel: ObservableObject {
                         imageOverlays: workImageOverlays,
                         videoOverlays: workVideoOverlays,
                         textOverlays: workTextOverlays,
+                        mockupOverlays: workMockups,
                         soundEffects: workSoundEffects,
                         musicRegions: workMusicRegionMode ? workMusicRegions : [],
                         transition: workTransition,
