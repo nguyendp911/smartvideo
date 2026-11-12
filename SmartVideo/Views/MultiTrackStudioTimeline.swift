@@ -62,7 +62,8 @@ struct MultiTrackStudioTimeline: View {
                                             )
                                         },
                                         effectID: nil,
-                                        projectAudioLane: .music
+                                        projectAudioLane: .music,
+                                        dragClampDuration: 0.1
                                     )
                                 }
                                 if let voice = model.voiceoverURL {
@@ -93,7 +94,8 @@ struct MultiTrackStudioTimeline: View {
                                             )
                                         },
                                         effectID: nil,
-                                        projectAudioLane: .narration
+                                        projectAudioLane: .narration,
+                                        dragClampDuration: nil
                                     )
                                 }
                                 ForEach(Array(model.soundEffects.enumerated()),
@@ -121,7 +123,8 @@ struct MultiTrackStudioTimeline: View {
                                             )
                                         },
                                         effectID: effect.id,
-                                        projectAudioLane: nil
+                                        projectAudioLane: nil,
+                                        dragClampDuration: nil
                                     )
                                 }
                             }
@@ -268,7 +271,8 @@ struct MultiTrackStudioTimeline: View {
         onBeginMove: (() -> Void)?,
         onMove: ((Double) -> Void)?,
         effectID: UUID?,
-        projectAudioLane: ProjectAudioLane?
+        projectAudioLane: ProjectAudioLane?,
+        dragClampDuration: Double?
     ) -> some View {
         HStack(spacing: 0) {
             Text(tag)
@@ -285,6 +289,7 @@ struct MultiTrackStudioTimeline: View {
                     total: total, trackWidth: width,
                     tint: tint, frames: frames, selected: selected,
                     snapMarkers: snapToBeat ? model.timelineBeatMarkers : [],
+                    dragClampDuration: dragClampDuration,
                     onSelect: onSelect,
                     onBeginMove: onBeginMove, onMove: onMove,
                     onBeginFrame: (effectID != nil ||
@@ -340,6 +345,7 @@ private struct AudioWaveformTimelineRegion: View {
     let frames: [AudioGainKeyframe]
     let selected: Bool
     let snapMarkers: [Double]
+    let dragClampDuration: Double?
     let onSelect: () -> Void
     let onBeginMove: (() -> Void)?
     let onMove: ((Double) -> Void)?
@@ -399,7 +405,8 @@ private struct AudioWaveformTimelineRegion: View {
                         origin: initialDragStart ?? start,
                         translationPoints: Double(value.translation.width),
                         contentWidth: Double(trackWidth),
-                        projectDuration: total, duration: duration,
+                        projectDuration: total,
+                        duration: dragClampDuration ?? duration,
                         snapMarkers: snapMarkers
                     )
                     onMove(seconds)
