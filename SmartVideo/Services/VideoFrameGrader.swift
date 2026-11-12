@@ -32,9 +32,12 @@ enum VideoFrameGrader {
                     source, mode: personBackground, quality: .fast,
                     foreground: graded
                 )
-                let projectSecond = timelineStart +
-                    max(0, (request.compositionTime.seconds -
-                             sourceStart) / max(0.05, speed))
+                let projectSecond = TextTitleRenderTime.projectSecond(
+                    clipStart: timelineStart,
+                    trimmedCompositionSecond:
+                        request.compositionTime.seconds - sourceStart,
+                    playbackSpeed: speed
+                )
                 let composited = try TextBehindPersonRenderer.apply(
                     to: output, items: behindTitles,
                     projectTime: projectSecond, maskSource: source,
