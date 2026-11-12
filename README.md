@@ -4,6 +4,20 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.6.0 – Mockup Light & Shadow Studio
+
+**Triển khai tính năng thật**: tab Mockup trong trình dựng video, 42 thiết kế **procedural tích hợp ứng dụng** (không dùng PNG/MOV tải ngoài), 12 preset kết hợp nhiều lớp. Các mockup không chỉ tồn tại ở UI: được áp vào từng khung hình ảnh/video trước khi đưa vào timeline và đóng gói MP4, có kiểm thử pixel nền sáng/tối.
+
+- **42 mockup trong 6 nhóm:** 8 bóng cửa sổ/rèm, 8 bóng lá/cây/cành, 8 tia sáng/flare/leak, 8 phản chiếu/đèn trong nhà, 6 bụi/bokeh/haze/không khí, 4 biến thể chuyển động. Mỗi mẫu tạo texture RGBA khác nhau bằng Core Graphics, cache texture tránh tạo lặp ở từng frame.
+- **12 preset mood:** nắng cửa sổ, bóng lá sản phẩm, golden hour, cafe, kính, nội thất, laptop, cinematic, neon, thời trang, ánh sáng qua kính, studio. Chọn 1 preset sẽ thêm 2 lớp độc lập để chỉnh tiếp.
+- **Chỉnh từng lớp:** thời điểm/thời lượng, độ mờ, 9 chế độ blend, scale, quay, dịch X/Y, lật, blur và feather, sáng/tương phản/ấm, 6 kiểu animation (tĩnh, drift, flicker, pulse, sway, sweep), tốc độ/biên độ/lặp, trước người/sau người, nhân bản/xoá/ẩn lớp. Tối đa 12 mockup đồng thời trong dự án.
+- **Trước / sau người:** khi nằm sau người, Core Image ghép bóng/ánh sáng vào nền với mặt nạ Vision thật, người tiếp tục nằm ở lớp trước. Với ảnh tĩnh, mặt nạ người được tạo một lần rồi biến đổi cùng pan/zoom/lật; video tính lại theo khung hình và dùng đồng hồ thời gian clip đã được chuẩn hóa từ bản 5.5.2.
+- **AI tự căn tránh mặt:** chạy Vision nhận diện khuôn mặt trong media đã chọn trên iPhone, gợi ý vùng không che mặt; không tải dữ liệu lên mạng. Đây là **gợi ý vị trí**, chưa phải mô hình AI ước lượng nguồn sáng 3D hay phối cảnh vật thể.
+- **Xem trước:** canvas mô phỏng texture và chuyển động; chế độ Sau người được xác nhận trong bản render 720p/MP4, không tách người trực tiếp trên canvas chỉnh sửa nhẹ.
+- **Lưu/đọc:** `mockupOverlays` được lưu theo dự án bằng Codable, mặc định mảng rỗng với dự án cũ. Undo/redo sử dụng snapshot timeline. Không đổi bundle ID `com.nguyendp911.smartvideo`.
+- **Giới hạn rõ ràng:** mockup hiện là **hình sinh bằng thuật toán**, không phải bộ ảnh chụp PNG thực tế; không có import ảnh mockup từ ngoài, phản sáng trên bề mặt 3D theo phối cảnh, relighting vật lý hay shadow catcher 3D. Chế độ sau người chỉ hỗ trợ mặt nạ người, chưa tách mọi đồ vật. Preview nhanh chỉ là mô phỏng, kiểm tra MP4 720p trước khi xuất 4K. Hiệu năng nhiều lớp/độ phân giải cao cần đo trên iPhone thật.
+- **5.6.0, Build 43**, IPA unsigned bằng GitHub Actions, chứng chỉ ký và provisioning profile do người dùng tự cung cấp.
+
 ## ViePN Smart Video v5.5.2 – Fix chữ Sau người trong video thật
 
 - **Sửa mốc thời gian video đã cắt:** trước đây `AVVideoComposition` có thể dùng thời gian gốc khi xuất một phần video và dùng thời gian tương đối khi xử lý đoạn MOV trung gian. Kết quả `projectSecond` bị chệch khiến lớp chữ **Sau người** không có frame nào nằm trong khoảng thời gian hiệu lực. Bản này cắt video và audio vào `AVMutableComposition` **bắt đầu từ 0 giây** trước khi chạy Vision/Core Image. Chuyển đổi thành timeline project bằng `clipStart + trimmedCompositionSecond / playbackSpeed` rõ ràng, cả với video đã cắt ở mốc 13 giây, tốc độ 0,5×/2× và nhiều clip.
