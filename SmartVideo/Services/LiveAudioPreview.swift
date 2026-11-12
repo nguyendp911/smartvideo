@@ -47,11 +47,16 @@ final class LiveAudioPreview: ObservableObject {
             loadedNarrationURL = narrationURL
             narration = makePlayer(url: narrationURL, name: "thuyết minh")
         }
+        // Bounded to 12 FX + 12 independently mixed music regions.
         let current = Dictionary(uniqueKeysWithValues:
-            soundEffects.prefix(12).map { ($0.id, $0.fileURL) }
+            soundEffects.prefix(24).map { ($0.id, $0.fileURL) }
         )
-        for (id, player) in effects where current[id] != loadedEffects[id] {
-            player.stop()
+        // Take a snapshot of IDs before mutating the dictionary.
+        let staleIDs = effects.keys.filter {
+            current[$0] != loadedEffects[$0]
+        }
+        for id in staleIDs {
+            effects[id]?.stop()
             effects.removeValue(forKey: id)
         }
         for (id, url) in current where loadedEffects[id] != url {
