@@ -95,7 +95,7 @@ struct MultiTrackStudioTimeline: View {
                             }
                         }
                         .frame(height: min(CGFloat(audioRowCount) * 47,
-                                           156))
+                                           132))
                     }
                 }
                 .frame(width: trackWidth + labelWidth)
@@ -104,7 +104,7 @@ struct MultiTrackStudioTimeline: View {
             .scrollIndicators(.visible)
         }
         .frame(height: 86 + (audioRowCount > 0 ?
-            min(CGFloat(audioRowCount) * 47, 156) : 0))
+            min(CGFloat(audioRowCount) * 47, 132) : 0))
     }
 
     private func musicSpan(_ total: Double) -> Double {
@@ -119,9 +119,17 @@ struct MultiTrackStudioTimeline: View {
     private func ruler(width: CGFloat, total: Double) -> some View {
         let step = max(1, Int(ceil(total / 24)))
         return HStack(spacing: 0) {
-            Text("s")
-                .font(.system(size: 9, weight: .semibold))
-                .frame(width: labelWidth)
+            Button {
+                snapToBeat.toggle()
+            } label: {
+                Image(systemName: snapToBeat ? "magnet" : "magnet")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(snapToBeat ? Color.cyan : Color.gray)
+                    .frame(width: labelWidth, height: 20)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(snapToBeat ?
+                "Tắt hút vào mốc nhịp" : "Bật hút vào mốc nhịp")
             Canvas { context, size in
                 for i in stride(from: 0, through: 24, by: 1) {
                     let time = min(total, Double(i * step))
