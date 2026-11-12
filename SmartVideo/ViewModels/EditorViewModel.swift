@@ -67,6 +67,7 @@ final class EditorViewModel: ObservableObject {
         var clips: [TimelineClip]
         var soundEffects: [SoundEffectClip]
         var musicRegions: [SoundEffectClip]
+        var mockupOverlays: [MockupOverlayClip]
         var musicRegionMode: Bool
         var projectID: UUID
         var musicTimelineOffset: Double
@@ -79,7 +80,8 @@ final class EditorViewModel: ObservableObject {
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
             clips: clips, soundEffects: soundEffects,
-            musicRegions: musicRegions, musicRegionMode: musicRegionMode,
+            musicRegions: musicRegions, mockupOverlays: mockupOverlays,
+            musicRegionMode: musicRegionMode,
             projectID: projectID,
             musicTimelineOffset: musicTimelineOffset,
             voiceoverOffset: voiceoverOffset,
@@ -2330,6 +2332,7 @@ final class EditorViewModel: ObservableObject {
         clips = previous.clips
         soundEffects = previous.soundEffects
         musicRegions = previous.musicRegions
+        mockupOverlays = previous.mockupOverlays
         musicRegionMode = previous.musicRegionMode
         musicTimelineOffset = previous.musicTimelineOffset
         voiceoverOffset = previous.voiceoverOffset
@@ -2350,6 +2353,7 @@ final class EditorViewModel: ObservableObject {
         clips = next.clips
         soundEffects = next.soundEffects
         musicRegions = next.musicRegions
+        mockupOverlays = next.mockupOverlays
         musicRegionMode = next.musicRegionMode
         musicTimelineOffset = next.musicTimelineOffset
         voiceoverOffset = next.voiceoverOffset
