@@ -194,14 +194,31 @@ final class TextExportSmokeTests: XCTestCase {
             ]
         )
         writer.add(input)
-        XCTAssertTrue(writer.startWriting())
+        guard writer.startWriting() else {
+            throw NSError(
+                domain: "TextSmoke", code: 7,
+                userInfo: [NSLocalizedDescriptionKey:
+                    writer.error?.localizedDescription ??
+                    "AVAssetWriter cannot start on this simulator"]
+            )
+        }
         writer.startSession(atSourceTime: .zero)
         guard let pool = adaptor.pixelBufferPool
         else { throw NSError(
             domain: "TextSmoke", code: 1
         ) }
         for index in 0..<45 {
+            var attempts = 0
             while !input.isReadyForMoreMediaData {
+                attempts += 1
+                guard writer.status == .writing,
+                      attempts < 2_000 else {
+                    throw NSError(
+                        domain: "TextSmoke", code: 8,
+                        userInfo: [NSLocalizedDescriptionKey:
+                            "Video writer did not accept frames within 10 seconds"]
+                    )
+                }
                 try await Task.sleep(
                     nanoseconds: 5_000_000
                 )
