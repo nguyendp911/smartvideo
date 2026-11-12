@@ -207,7 +207,19 @@ struct EditorView: View {
             refreshColorPreview()
         }
         .onChange(of: model.keepOriginalAudio) { _ in
-            previewPlayer?.isMuted = !model.keepOriginalAudio
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioVolume) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioMuted) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioFadeIn) { _ in
+            updateClipAudioPreview()
+        }
+        .onChange(of: selectedClip?.sourceAudioFadeOut) { _ in
+            updateClipAudioPreview()
         }
         .onChange(of: liveAudioEnabled) { enabled in
             if !enabled { audioMonitor.pause() }
@@ -2463,6 +2475,7 @@ struct EditorView: View {
 
         model.timelineSecond = min(model.totalDuration,
             model.timelineStart(of: index) + localSecond)
+        updateClipAudioPreview()
         audioMonitor.sync(
             at: model.timelineSecond, model: model,
             enabled: liveAudioEnabled, actuallyPlaying: isPlaying
@@ -2520,6 +2533,25 @@ struct EditorView: View {
         }
     }
 
+    /// AVPlayer is responsible for just the current original source track.
+    /// Overall music, voice and SFX are monitored separately by LiveAudioPreview.
+    /// The fast preview deliberately omits transition overlap crossfades;
+    /// rendered 720p preview shows the real audio-composition result.
+    private func updateClipAudioPreview() {
+        guard let player = previewPlayer, let clip = selectedClip else {
+            return
+        }
+        player.isMuted = !model.keepOriginalAudio || clip.sourceAudioMuted
+        player.volume = ClipAudioEnvelope.gain(
+            at: min(max(0, localSecond), clip.renderedDuration),
+            duration: clip.renderedDuration,
+            volume: clip.sourceAudioVolume,
+            muted: clip.sourceAudioMuted,
+            fadeIn: clip.sourceAudioFadeIn,
+            fadeOut: clip.sourceAudioFadeOut
+        )
+    }
+
     private func refreshColorPreview() {
         updatePreview(preservingClock: true, resumePlayback: isPlaying)
     }
@@ -2550,7 +2582,7 @@ struct EditorView: View {
             let player = AVPlayer(playerItem:
                 VideoFrameGrader.makePreviewItem(for: previewClip))
             previewPlayer = player
-            player.isMuted = !model.keepOriginalAudio
+            updateClipAudioPreview()
             let seekSecond = ProjectPreviewTiming.sourceTime(
                 localTime: clock, trimStart: clip.startTime,
                 playbackSpeed: clip.playbackSpeed, speedCurveEnabled: false
@@ -2584,8 +2616,8 @@ struct EditorView: View {
                           previewRequestID == requestID,
                           selectedClipID == clip.id else { return }
                     let player = AVPlayer(playerItem: item)
-                    player.isMuted = !model.keepOriginalAudio
                     previewPlayer = player
+                    updateClipAudioPreview()
                     await player.seek(to: CMTime(
                         seconds: min(clock, clip.renderedDuration),
                         preferredTimescale: 600
