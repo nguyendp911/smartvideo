@@ -69,6 +69,7 @@ struct EditorView: View {
     @State private var selectedPIPID: UUID?
     @State private var selectedTextID: UUID?
     @State private var selectedSoundID: UUID?
+    @State private var selectedMusicRegionID: UUID?
     @State private var compareOriginalFootage = false
     /// A stable two-zone editing workspace: preview and timeline never live
     /// inside the vertically scrolling tool panel.
@@ -258,6 +259,7 @@ struct EditorView: View {
                 guard let kind, let url = urls.first else { return }
                 switch kind {
                 case .music: model.importMusic(from: url)
+                case .musicRegion: model.importMusicRegion(from: url)
                 case .voice: model.importVoiceover(from: url)
                 case .subtitles: model.importSubtitles(from: url)
                 case .soundEffect:
@@ -593,7 +595,9 @@ struct EditorView: View {
     /// adds 12 FX tracks: the audio lanes scroll vertically within a cap.
     private var expandedTimelineHeight: CGFloat {
         let lanes = model.soundEffects.count +
-            (model.musicURL == nil ? 0 : 1) +
+            (model.musicRegionMode ?
+                model.musicRegions.count :
+                (model.musicURL == nil ? 0 : 1)) +
             (model.voiceoverURL == nil ? 0 : 1)
         let tracks = lanes > 0 ? min(CGFloat(lanes) * 47, 132) : 0
         let selectedOverlayStrip =
@@ -717,6 +721,11 @@ struct EditorView: View {
                     model: model,
                     selectedClipID: selectedClipID,
                     selectedSoundID: $selectedSoundID,
+                    selectedMusicRegionID: $selectedMusicRegionID,
+                    onSelectMusicRegion: { region in
+                        selectedMusicRegionID = region.id
+                        activeTool = .audio
+                    },
                     onSelectClip: { clip, index in
                         selectClip(clip, at: index)
                         activeTool = .clip
@@ -2002,10 +2011,13 @@ struct EditorView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Button {
-                    activeFilePicker = .music
+                    activeFilePicker = model.musicRegionMode ?
+                        .musicRegion : .music
                     showDocumentImporter = true
                 } label: {
-                    Label("Nhạc MP3", systemImage: "music.note")
+                    Label(model.musicRegionMode ?
+                          "Thêm nhạc" : "Nhạc MP3",
+                          systemImage: "music.note")
                 }
                 .buttonStyle(.bordered)
 
@@ -2025,6 +2037,16 @@ struct EditorView: View {
                 .buttonStyle(.bordered)
             }
             .font(.caption)
+
+            MusicRegionsStudioPanel(
+                model: model,
+                selectedID: $selectedMusicRegionID,
+                importAudio: {
+                    activeFilePicker = .musicRegion
+                    showDocumentImporter = true
+                },
+                onScrub: { scrubTimeline(to: $0) }
+            )
 
             HStack {
                 Button {
@@ -2110,7 +2132,8 @@ struct EditorView: View {
                 }
             }
 
-            if let music = model.musicURL {
+            if !model.musicRegionMode,
+               let music = model.musicURL {
                 AudioWaveformTrimView(
                     url: music,
                     sourceDuration: model.musicDuration,

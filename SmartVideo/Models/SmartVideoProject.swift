@@ -12,6 +12,10 @@ struct SmartVideoProject: Codable {
     var videoOverlays: [VideoOverlayClip]
     var textOverlays: [TextOverlayClip]
     var soundEffects: [SoundEffectClip]
+    /// Additional independent music regions (same non-destructive EDL format).
+    var musicRegions: [SoundEffectClip]
+    /// When true, independent music regions replace the legacy music track.
+    var musicRegionMode: Bool
     var beatSourceTimes: [Double]
     var detectedTempoBPM: Double
     var subtitles: [SubtitleCue]
@@ -75,7 +79,9 @@ struct SmartVideoProject: Codable {
          studioPresetID: String?,
          musicTimelineOffset: Double = 0,
          musicVolumeKeyframes: [AudioGainKeyframe] = [],
-         voiceVolumeKeyframes: [AudioGainKeyframe] = []) {
+         voiceVolumeKeyframes: [AudioGainKeyframe] = [],
+         musicRegions: [SoundEffectClip] = [],
+         musicRegionMode: Bool = false) {
         self.id = id
         self.name = name
         self.savedAt = savedAt
@@ -84,6 +90,8 @@ struct SmartVideoProject: Codable {
         self.videoOverlays = videoOverlays
         self.textOverlays = textOverlays
         self.soundEffects = soundEffects
+        self.musicRegions = Array(musicRegions.prefix(12))
+        self.musicRegionMode = musicRegionMode
         self.beatSourceTimes = beatSourceTimes
         self.detectedTempoBPM = detectedTempoBPM
         self.subtitles = subtitles
@@ -130,7 +138,8 @@ struct SmartVideoProject: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, savedAt, clips, imageOverlays, videoOverlays,
-             textOverlays, soundEffects, beatSourceTimes,
+             textOverlays, soundEffects, musicRegions, musicRegionMode,
+             beatSourceTimes,
              detectedTempoBPM, subtitles, subtitleAppearance, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
              voiceFileName, originalVoiceFileName,
@@ -159,6 +168,12 @@ struct SmartVideoProject: Codable {
                                                   forKey: .textOverlays) ?? []
         soundEffects = try values.decodeIfPresent([SoundEffectClip].self,
                                                   forKey: .soundEffects) ?? []
+        musicRegions = Array((try values.decodeIfPresent(
+            [SoundEffectClip].self, forKey: .musicRegions
+        ) ?? []).prefix(12))
+        musicRegionMode = try values.decodeIfPresent(
+            Bool.self, forKey: .musicRegionMode
+        ) ?? false
         beatSourceTimes = try values.decodeIfPresent([Double].self,
                                                     forKey: .beatSourceTimes) ?? []
         detectedTempoBPM = try values.decodeIfPresent(Double.self,

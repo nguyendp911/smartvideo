@@ -7,7 +7,10 @@ enum SoundEffectsMixer {
     static func add(
         _ effects: [SoundEffectClip],
         to composition: AVMutableComposition,
-        timelineDuration: CMTime
+        timelineDuration: CMTime,
+        /// Absolute project seconds, only when mixing independent music.
+        narrationStart: Double? = nil,
+        narrationEnd: Double? = nil
     ) async throws -> [AVAudioMixInputParameters] {
         let total = timelineDuration.seconds
         guard total.isFinite, total > 0 else { return [] }
@@ -55,11 +58,25 @@ enum SoundEffectsMixer {
             let parameter = AVMutableAudioMixInputParameters(
                 track: destination
             )
-            let points = AudioAutomationMath.envelope(
-                duration: seconds, volume: effect.volume,
-                muted: effect.muted, fadeIn: effect.fadeIn,
-                fadeOut: effect.fadeOut, frames: effect.volumeKeyframes
-            )
+            let points: [(second: Double, gain: Float)]
+            if let narrationStart, let narrationEnd {
+                // Music regions share the same fade, keyframe and
+                // narration-duck math as the project's legacy music.
+                points = ProjectAudioTrackMath.points(
+                    duration: seconds,
+                    volume: effect.muted ? 0 : effect.volume,
+                    fadeIn: effect.fadeIn, fadeOut: effect.fadeOut,
+                    keyframes: effect.volumeKeyframes,
+                    narrationStart: narrationStart - start,
+                    narrationEnd: narrationEnd - start
+                )
+            } else {
+                points = AudioAutomationMath.envelope(
+                    duration: seconds, volume: effect.volume,
+                    muted: effect.muted, fadeIn: effect.fadeIn,
+                    fadeOut: effect.fadeOut, frames: effect.volumeKeyframes
+                )
+            }
             if let first = points.first {
                 parameter.setVolume(first.gain, at: timelineStart)
             }

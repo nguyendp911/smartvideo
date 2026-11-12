@@ -19,6 +19,7 @@ final class VideoRenderer {
         videoOverlays: [VideoOverlayClip],
         textOverlays: [TextOverlayClip],
         soundEffects: [SoundEffectClip],
+        musicRegions: [SoundEffectClip],
         transition: VideoTransition,
         transitionSeconds: Double,
         vfxPresets: [VFXPreset],
@@ -295,6 +296,15 @@ final class VideoRenderer {
                 ))
             }
         }
+
+        // Independent music regions replace the legacy single background
+        // track in multi-music mode; voice ducking is per region.
+        let regionParameters = try await SoundEffectsMixer.add(
+            musicRegions, to: composition, timelineDuration: cursor,
+            narrationStart: narrationStart,
+            narrationEnd: narrationEnd
+        )
+        mixParameters.append(contentsOf: regionParameters)
 
         // Independently mix SFX at chosen global timeline positions.
         let effectParameters = try await SoundEffectsMixer.add(

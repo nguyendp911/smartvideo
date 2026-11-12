@@ -8,6 +8,8 @@ struct MultiTrackStudioTimeline: View {
     @ObservedObject var model: EditorViewModel
     let selectedClipID: UUID?
     @Binding var selectedSoundID: UUID?
+    @Binding var selectedMusicRegionID: UUID?
+    let onSelectMusicRegion: (SoundEffectClip) -> Void
     let onSelectClip: (TimelineClip, Int) -> Void
     let onSelectSound: (SoundEffectClip) -> Void
     let onSelectProjectAudio: (ProjectAudioLane) -> Void
@@ -18,7 +20,9 @@ struct MultiTrackStudioTimeline: View {
     private let labelWidth: CGFloat = 36
 
     private var audioRowCount: Int {
-        (model.musicURL == nil ? 0 : 1) +
+        (model.musicRegionMode ?
+            model.musicRegions.count :
+            (model.musicURL == nil ? 0 : 1)) +
         (model.voiceoverURL == nil ? 0 : 1) +
         model.soundEffects.count
     }
@@ -37,7 +41,8 @@ struct MultiTrackStudioTimeline: View {
                     if audioRowCount > 0 {
                         ScrollView(.vertical) {
                             LazyVStack(alignment: .leading, spacing: 3) {
-                                if let music = model.musicURL {
+                                if !model.musicRegionMode,
+                                   let music = model.musicURL {
                                     trackLane(
                                         tag: "♪", title: model.repeatShortMusic ?
                                             "Nhạc · lặp" : "Nhạc",
@@ -63,8 +68,44 @@ struct MultiTrackStudioTimeline: View {
                                         },
                                         effectID: nil,
                                         projectAudioLane: .music,
+                                        musicRegionID: nil,
                                         dragClampDuration: 0.1
                                     )
+                                }
+                                if model.musicRegionMode {
+                                    ForEach(Array(model.musicRegions.enumerated()),
+                                            id: \.element.id) { index, region in
+                                        trackLane(
+                                            tag: "M\(index + 1)",
+                                            title: region.filename,
+                                            url: region.fileURL,
+                                            sourceStart: region.sourceStart,
+                                            start: region.start,
+                                            duration: region.duration,
+                                            total: total, width: trackWidth,
+                                            tint: .green,
+                                            frames: region.volumeKeyframes,
+                                            selected: selectedMusicRegionID ==
+                                                region.id,
+                                            onSelect: {
+                                                onSelectMusicRegion(region)
+                                            },
+                                            onBeginMove: {
+                                                model.beginSoundEffectsEdit()
+                                                onSelectMusicRegion(region)
+                                            },
+                                            onMove: { position in
+                                                model.moveMusicRegion(
+                                                    region.id, to: position,
+                                                    recordUndo: false
+                                                )
+                                            },
+                                            effectID: nil,
+                                            projectAudioLane: nil,
+                                            musicRegionID: region.id,
+                                            dragClampDuration: nil
+                                        )
+                                    }
                                 }
                                 if let voice = model.voiceoverURL {
                                     trackLane(
@@ -95,6 +136,7 @@ struct MultiTrackStudioTimeline: View {
                                         },
                                         effectID: nil,
                                         projectAudioLane: .narration,
+                                        musicRegionID: nil,
                                         dragClampDuration: nil
                                     )
                                 }
@@ -124,6 +166,7 @@ struct MultiTrackStudioTimeline: View {
                                         },
                                         effectID: effect.id,
                                         projectAudioLane: nil,
+                                        musicRegionID: nil,
                                         dragClampDuration: nil
                                     )
                                 }
@@ -272,6 +315,7 @@ struct MultiTrackStudioTimeline: View {
         onMove: ((Double) -> Void)?,
         effectID: UUID?,
         projectAudioLane: ProjectAudioLane?,
+        musicRegionID: UUID?,
         dragClampDuration: Double?
     ) -> some View {
         HStack(spacing: 0) {
@@ -301,11 +345,13 @@ struct MultiTrackStudioTimeline: View {
                     onSelect: onSelect,
                     onBeginMove: onBeginMove, onMove: onMove,
                     onBeginFrame: (effectID != nil ||
-                        projectAudioLane != nil) ? {
+                        projectAudioLane != nil ||
+                        musicRegionID != nil) ? {
                         model.beginSoundEffectsEdit()
                     } : nil,
                     onMoveFrame: (effectID != nil ||
-                        projectAudioLane != nil) ? {
+                        projectAudioLane != nil ||
+                        musicRegionID != nil) ? {
                         (frame: UUID, progress: Double, gain: Float) in
                         if let id = effectID {
                             model.moveSoundVolumeKeyframe(
@@ -315,6 +361,11 @@ struct MultiTrackStudioTimeline: View {
                         } else if let lane = projectAudioLane {
                             model.moveProjectAudioKeyframe(
                                 lane, id: frame,
+                                progress: progress, gain: gain
+                            )
+                        } else if let id = musicRegionID {
+                            model.moveMusicRegionKeyframe(
+                                id, frameID: frame,
                                 progress: progress, gain: gain
                             )
                         }

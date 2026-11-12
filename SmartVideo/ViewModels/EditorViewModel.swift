@@ -14,6 +14,10 @@ final class EditorViewModel: ObservableObject {
     @Published var videoOverlays: [VideoOverlayClip] = []
     @Published var textOverlays: [TextOverlayClip] = []
     @Published var soundEffects: [SoundEffectClip] = []
+    @Published var musicRegions: [SoundEffectClip] = []
+    @Published var musicRegionMode = false
+    @Published var isImportingMusicRegion = false
+    private var copiedMusicRegion: SoundEffectClip?
     @Published var isImportingSoundEffects = false
     @Published var isDetectingBeats = false
     @Published var musicBeatSourceTimes: [Double] = []
@@ -23,7 +27,8 @@ final class EditorViewModel: ObservableObject {
 
     /// Mapped to the video timeline (not source media clock).
     var timelineBeatMarkers: [Double] {
-        guard !musicBeatSourceTimes.isEmpty, musicDuration > 0, totalDuration > 0 else {
+        guard !musicRegionMode,
+              !musicBeatSourceTimes.isEmpty, musicDuration > 0, totalDuration > 0 else {
             return []
         }
         let start = min(max(0, musicStartSeconds), musicDuration)
@@ -58,6 +63,8 @@ final class EditorViewModel: ObservableObject {
     private struct TimelineSnapshot {
         var clips: [TimelineClip]
         var soundEffects: [SoundEffectClip]
+        var musicRegions: [SoundEffectClip]
+        var musicRegionMode: Bool
         var projectID: UUID
         var musicTimelineOffset: Double
         var voiceoverOffset: Double
@@ -68,7 +75,9 @@ final class EditorViewModel: ObservableObject {
     private var redoStack: [TimelineSnapshot] = []
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
-            clips: clips, soundEffects: soundEffects, projectID: projectID,
+            clips: clips, soundEffects: soundEffects,
+            musicRegions: musicRegions, musicRegionMode: musicRegionMode,
+            projectID: projectID,
             musicTimelineOffset: musicTimelineOffset,
             voiceoverOffset: voiceoverOffset,
             musicVolumeKeyframes: musicVolumeKeyframes,
@@ -1488,6 +1497,252 @@ final class EditorViewModel: ObservableObject {
         return right.id
     }
 
+    // MARK: - Multi-music regions (5.4)
+
+    /// Legacy music remains in the project until the user explicitly chooses
+    /// its mode. Only one music mode is audible in preview and MP4.
+    func selectMusicRegionMode(_ enabled: Bool) {
+        guard enabled != musicRegionMode else { return }
+        checkpoint()
+        musicRegionMode = enabled
+    }
+
+    /// Creates a non-destructive region from the current legacy background
+    /// music, retaining the selected source trim and volume automation.
+    @discardableResult
+    func addCurrentMusicAsRegion() -> UUID? {
+        guard let musicURL, musicDuration > 0.1,
+              !clips.isEmpty, musicRegions.count < 12 else {
+            errorText = "Chọn nhạc nền hợp lệ, thêm video và còn chỗ trống (tối đa 12 đoạn)."
+            return nil
+        }
+        guard let region = MusicRegionEditMath.fromLegacy(
+            url: musicURL, fileDuration: musicDuration,
+            sourceStart: musicStartSeconds,
+            highlightDuration: musicHighlightDuration,
+            timelineStart: musicTimelineOffset,
+            projectDuration: totalDuration,
+            volume: musicVolume,
+            fadeIn: musicFadeIn, fadeOut: musicFadeOut,
+            frames: musicVolumeKeyframes
+        ) else {
+            errorText = "Đoạn nguồn quá ngắn hoặc thời lượng nhạc không hợp lệ."
+            return nil
+        }
+        checkpoint()
+        musicRegions.append(region)
+        musicRegionMode = true
+        return region.id
+    }
+
+    func importMusicRegion(from sourceURL: URL) {
+        guard !isImportingMusicRegion,
+              !clips.isEmpty, musicRegions.count < 12 else {
+            errorText = "Cần có video và còn chỗ trống (tối đa 12 đoạn nhạc)."
+            return
+        }
+        isImportingMusicRegion = true
+        do {
+            let local = try copyScoped(
+                sourceURL, fallbackExtension: "m4a"
+            )
+            Task {
+                defer { isImportingMusicRegion = false }
+                do {
+                    let asset = AVURLAsset(url: local)
+                    guard !(try await asset.loadTracks(
+                        withMediaType: .audio
+                    )).isEmpty else {
+                        throw SmartVideoError.invalidMedia(
+                            "Tệp nhạc không có âm thanh."
+                        )
+                    }
+                    let seconds = try await asset.load(.duration).seconds
+                    guard seconds.isFinite && seconds > 0.1 else {
+                        throw SmartVideoError.invalidMedia(
+                            "Thời lượng nhạc không hợp lệ."
+                        )
+                    }
+                    guard musicRegions.count < 12 else {
+                        try? FileManager.default.removeItem(at: local)
+                        return
+                    }
+                    var region = SoundEffectClip.create(
+                        url: local, audioDuration: seconds,
+                        timelineStart: timelineSecond,
+                        timelineEnd: totalDuration
+                    )
+                    region.duration = min(
+                        max(0.1, seconds),
+                        max(0.1, totalDuration - region.start)
+                    )
+                    region.volume = 0.38
+                    region.fadeIn = 0.20
+                    region.fadeOut = 0.35
+                    checkpoint()
+                    musicRegions.append(region)
+                    musicRegionMode = true
+                } catch {
+                    try? FileManager.default.removeItem(at: local)
+                    errorText = "Không nhập được đoạn nhạc: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            isImportingMusicRegion = false
+            errorText = "Không mở được nhạc từ Tệp: \(error.localizedDescription)"
+        }
+    }
+
+    func moveMusicRegion(
+        _ id: UUID, to second: Double,
+        recordUndo: Bool = true
+    ) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), second.isFinite else { return }
+        let region = musicRegions[index]
+        let target = AudioTimelineMath.clampStart(
+            second, duration: region.duration,
+            projectDuration: totalDuration
+        )
+        guard abs(target - region.start) > 0.0001 else { return }
+        if recordUndo { checkpoint() }
+        musicRegions[index].start = target
+    }
+
+    @discardableResult
+    func duplicateMusicRegion(_ id: UUID, at second: Double? = nil) -> UUID? {
+        guard musicRegions.count < 12,
+              let region = musicRegions.first(where: {
+                  $0.id == id
+              }) else { return nil }
+        let next = MusicRegionEditMath.duplicate(
+            region, at: second ?? region.end,
+            projectDuration: totalDuration
+        )
+        checkpoint()
+        musicRegions.append(next)
+        musicRegionMode = true
+        return next.id
+    }
+
+    func copyMusicRegion(_ id: UUID) {
+        copiedMusicRegion = musicRegions.first(where: { $0.id == id })
+    }
+
+    @discardableResult
+    func pasteMusicRegionAtPlayhead() -> UUID? {
+        guard let copiedMusicRegion else {
+            errorText = "Sao chép một đoạn nhạc trước khi dán."
+            return nil
+        }
+        guard musicRegions.count < 12 else {
+            errorText = "Tối đa 12 đoạn nhạc."
+            return nil
+        }
+        let region = MusicRegionEditMath.duplicate(
+            copiedMusicRegion, at: timelineSecond,
+            projectDuration: totalDuration
+        )
+        checkpoint()
+        musicRegions.append(region)
+        musicRegionMode = true
+        return region.id
+    }
+
+    @discardableResult
+    func splitMusicRegionAtPlayhead(_ id: UUID) -> UUID? {
+        guard musicRegions.count < 12,
+              let index = musicRegions.firstIndex(where: {
+                  $0.id == id
+              }) else {
+            errorText = "Tối đa 12 đoạn nhạc hoặc không tìm thấy đoạn."
+            return nil
+        }
+        let original = musicRegions[index]
+        guard let pieces = MusicRegionEditMath.split(
+            original, at: timelineSecond
+        ) else {
+            errorText = "Đặt con trỏ cách hai mép đoạn nhạc ít nhất 0,1 giây."
+            return nil
+        }
+        checkpoint()
+        musicRegions.replaceSubrange(
+            index...index, with: [pieces.left, pieces.right]
+        )
+        return pieces.right.id
+    }
+
+    func removeMusicRegion(_ id: UUID) {
+        guard musicRegions.contains(where: { $0.id == id }) else { return }
+        checkpoint()
+        musicRegions.removeAll { $0.id == id }
+        // Keep clip mode even if empty to avoid unexpectedly re-enabling
+        // the legacy full-length music when the last clip is deleted.
+    }
+
+    @discardableResult
+    func addMusicRegionKeyframe(_ id: UUID) -> UUID? {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }) else { return nil }
+        let region = musicRegions[index]
+        let p = (timelineSecond - region.start) /
+            max(0.1, region.duration)
+        guard p >= 0 && p <= 1 else {
+            errorText = "Đặt con trỏ nằm trong đoạn nhạc."
+            return nil
+        }
+        if let existing = region.volumeKeyframes.first(where: {
+            abs($0.progress - p) < 0.012
+        }) { return existing.id }
+        guard region.volumeKeyframes.count < 16 else {
+            errorText = "Tối đa 16 keyframe cho mỗi đoạn nhạc."
+            return nil
+        }
+        let gain = AudioAutomationMath.factor(
+            at: p, frames: region.volumeKeyframes
+        )
+        let frame = AudioGainKeyframe(progress: p, gain: gain)
+        checkpoint()
+        musicRegions[index].volumeKeyframes = AudioAutomationMath.normalized(
+            region.volumeKeyframes + [frame]
+        )
+        return frame.id
+    }
+
+    func moveMusicRegionKeyframe(
+        _ id: UUID, frameID: UUID,
+        progress: Double, gain: Float
+    ) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), let frameIndex = musicRegions[index].volumeKeyframes.firstIndex(
+            where: { $0.id == frameID }
+        ) else { return }
+        let frames = musicRegions[index].volumeKeyframes
+        let lower = frameIndex == 0 ?
+            0 : frames[frameIndex - 1].progress + 0.01
+        let upper = frameIndex == frames.count - 1 ?
+            1 : frames[frameIndex + 1].progress - 0.01
+        musicRegions[index].volumeKeyframes[frameIndex].progress =
+            max(lower, min(upper, AudioAutomationMath.clampProgress(progress)))
+        musicRegions[index].volumeKeyframes[frameIndex].gain =
+            AudioAutomationMath.clampGain(gain)
+    }
+
+    func deleteMusicRegionKeyframe(_ id: UUID, frameID: UUID) {
+        guard let index = musicRegions.firstIndex(where: {
+            $0.id == id
+        }), musicRegions[index].volumeKeyframes.contains(where: {
+            $0.id == frameID
+        }) else { return }
+        checkpoint()
+        musicRegions[index].volumeKeyframes.removeAll {
+            $0.id == frameID
+        }
+    }
+
     // MARK: - Project music and narration keyframe automation
 
     func projectAudioStart(_ lane: ProjectAudioLane) -> Double {
@@ -1653,7 +1908,9 @@ final class EditorViewModel: ObservableObject {
                 studioPresetID: appliedStudioPresetID,
                 musicTimelineOffset: musicTimelineOffset,
                 musicVolumeKeyframes: musicVolumeKeyframes,
-                voiceVolumeKeyframes: voiceVolumeKeyframes
+                voiceVolumeKeyframes: voiceVolumeKeyframes,
+                musicRegions: musicRegions,
+                musicRegionMode: musicRegionMode
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -1681,7 +1938,11 @@ final class EditorViewModel: ObservableObject {
             let sfxFiles = p.soundEffects.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
-            let allFiles = restoredClips.map(\.fileURL) + overlayFiles + pipFiles + sfxFiles +
+            let musicFiles = p.musicRegions.map {
+                MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
+            }
+            let allFiles = restoredClips.map(\.fileURL) +
+                overlayFiles + pipFiles + sfxFiles + musicFiles +
                 [restoredMusic, restoredVoice, restoredOriginalVoice,
                  restoredOriginalMusic].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
@@ -1721,6 +1982,15 @@ final class EditorViewModel: ObservableObject {
                 )
                 return effect
             }
+            musicRegions = p.musicRegions.map {
+                var item = $0
+                item.fileURL = MediaStorage.mediaDirectory.appendingPathComponent(
+                    $0.fileURL.lastPathComponent
+                )
+                return item
+            }
+            musicRegionMode = p.musicRegionMode
+            copiedMusicRegion = nil
             subtitles = p.subtitles
             subtitleAppearance = p.subtitleAppearance
             autoCaptionStatus = ""
@@ -1806,6 +2076,9 @@ final class EditorViewModel: ObservableObject {
         videoOverlays = []
         textOverlays = []
         soundEffects = []
+        musicRegions = []
+        musicRegionMode = false
+        copiedMusicRegion = nil
         musicBeatSourceTimes = []
         detectedTempoBPM = 0
         subtitles = []
@@ -1868,6 +2141,8 @@ final class EditorViewModel: ObservableObject {
         redoStack.append(currentSnapshot)
         clips = previous.clips
         soundEffects = previous.soundEffects
+        musicRegions = previous.musicRegions
+        musicRegionMode = previous.musicRegionMode
         musicTimelineOffset = previous.musicTimelineOffset
         voiceoverOffset = previous.voiceoverOffset
         musicVolumeKeyframes = previous.musicVolumeKeyframes
@@ -1886,6 +2161,8 @@ final class EditorViewModel: ObservableObject {
         undoStack.append(currentSnapshot)
         clips = next.clips
         soundEffects = next.soundEffects
+        musicRegions = next.musicRegions
+        musicRegionMode = next.musicRegionMode
         musicTimelineOffset = next.musicTimelineOffset
         voiceoverOffset = next.voiceoverOffset
         musicVolumeKeyframes = next.musicVolumeKeyframes
@@ -2303,6 +2580,8 @@ final class EditorViewModel: ObservableObject {
         let workVideoOverlays = videoOverlays
         let workTextOverlays = textOverlays
         let workSoundEffects = soundEffects
+        let workMusicRegions = musicRegions
+        let workMusicRegionMode = musicRegionMode
         let workTransition = transition
         let workTransitionSeconds = transitionSeconds
         let workVFX = VFXPreset.allCases.filter { vfxPresets.contains($0) }
@@ -2310,7 +2589,7 @@ final class EditorViewModel: ObservableObject {
         let workVFXCoverage = vfxCoverage
         let workVFXStartTime = vfxStartTime
         let workVFXEndTime = vfxEndTime
-        let workMusic = musicURL
+        let workMusic = musicRegionMode ? nil : musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
         let workMusicOffset = musicTimelineOffset
@@ -2343,6 +2622,7 @@ final class EditorViewModel: ObservableObject {
                         videoOverlays: workVideoOverlays,
                         textOverlays: workTextOverlays,
                         soundEffects: workSoundEffects,
+                        musicRegions: workMusicRegionMode ? workMusicRegions : [],
                         transition: workTransition,
                         transitionSeconds: workTransitionSeconds,
                         vfxPresets: workVFX,
