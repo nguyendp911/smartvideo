@@ -15,6 +15,7 @@ enum VideoFrameGrader {
         adjustments: ColorAdjustments = .neutral,
         personBackground: PersonBackground = .original,
         behindTitles: [TextOverlayClip] = [],
+        mockupOverlays: [MockupOverlayClip] = [],
         timelineStart: Double = 0,
         sourceStart: Double = 0,
         speed: Double = 1,
@@ -38,8 +39,12 @@ enum VideoFrameGrader {
                         request.compositionTime.seconds - sourceStart,
                     playbackSpeed: speed
                 )
+                let withMockups = try MockupFrameRenderer.apply(
+                    to: output, items: mockupOverlays,
+                    projectTime: projectSecond, maskSource: source
+                )
                 let composited = try TextBehindPersonRenderer.apply(
-                    to: output, items: behindTitles,
+                    to: withMockups, items: behindTitles,
                     projectTime: projectSecond, maskSource: source,
                     films: filmstrips, quality: .fast
                 )
@@ -74,6 +79,7 @@ enum VideoFrameGrader {
     static func renderTrimmed(
         clip: TimelineClip, outputURL: URL,
         behindTitles: [TextOverlayClip] = [],
+        mockupOverlays: [MockupOverlayClip] = [],
         timelineStart: Double = 0,
         filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
     ) async throws {
@@ -81,7 +87,8 @@ enum VideoFrameGrader {
               ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                 !clip.colorAdjustments.isNeutral ||
                 clip.personBackground != .original ||
-                !behindTitles.isEmpty) else {
+                !behindTitles.isEmpty ||
+                !mockupOverlays.isEmpty) else {
             throw SmartVideoError.invalidMedia(
                 "Không có bộ màu video cần xử lý."
             )
@@ -167,6 +174,7 @@ enum VideoFrameGrader {
             adjustments: clip.colorAdjustments,
             personBackground: clip.personBackground,
             behindTitles: behindTitles,
+            mockupOverlays: mockupOverlays,
             timelineStart: timelineStart,
             sourceStart: 0,
             speed: clip.playbackSpeed,
