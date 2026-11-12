@@ -55,6 +55,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/AudioTimelineMath.swift scripts/multitrack-audio-tests.swift -o /tmp/multitrack-audio-tests
           /tmp/multitrack-audio-tests
 
+      - name: Validate movable music and narration gain automation
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
+          /tmp/project-audio-track-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
