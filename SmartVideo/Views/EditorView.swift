@@ -7,6 +7,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case clip = "Đoạn"
     case frame = "Khung"
     case vfx = "VFX"
+    case mockup = "Mockup"
     case presets = "Preset Pro"
     case captions = "Phụ đề"
     case audio = "Âm thanh"
@@ -27,6 +28,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .clip: return "scissors"
         case .frame: return "aspectratio"
         case .vfx: return "wand.and.stars"
+        case .mockup: return "sun.horizon.fill"
         case .presets: return "square.grid.3x3.topleft.filled"
         case .captions: return "captions.bubble"
         case .audio: return "waveform"
@@ -404,6 +406,14 @@ struct EditorView: View {
                         .multilineTextAlignment(.center)
                         .padding(6)
                 }
+
+                MockupCanvasPreview(
+                    mockups: model.mockupOverlays,
+                    second: playheadSecond,
+                    canvas: CGSize(
+                        width: canvasWidth, height: canvasHeight
+                    )
+                )
 
                 VideoPIPCanvasPreview(
                     model: model, selectedID: $selectedPIPID,
@@ -1023,6 +1033,7 @@ struct EditorView: View {
         case .clip: clipPanel
         case .frame: framePanel
         case .vfx: VFXLibraryPanel(model: model)
+        case .mockup: MockupStudioPanel(model: model)
         case .presets: PresetStudioPanel(model: model) { id in
             selectedTextID = id
             activeTool = .title

@@ -11,6 +11,7 @@ struct SmartVideoProject: Codable {
     var imageOverlays: [ImageOverlayClip]
     var videoOverlays: [VideoOverlayClip]
     var textOverlays: [TextOverlayClip]
+    var mockupOverlays: [MockupOverlayClip]
     var soundEffects: [SoundEffectClip]
     /// Additional independent music regions (same non-destructive EDL format).
     var musicRegions: [SoundEffectClip]
@@ -81,7 +82,8 @@ struct SmartVideoProject: Codable {
          musicVolumeKeyframes: [AudioGainKeyframe] = [],
          voiceVolumeKeyframes: [AudioGainKeyframe] = [],
          musicRegions: [SoundEffectClip] = [],
-         musicRegionMode: Bool = false) {
+         musicRegionMode: Bool = false,
+         mockupOverlays: [MockupOverlayClip] = []) {
         self.id = id
         self.name = name
         self.savedAt = savedAt
@@ -89,6 +91,7 @@ struct SmartVideoProject: Codable {
         self.imageOverlays = imageOverlays
         self.videoOverlays = videoOverlays
         self.textOverlays = textOverlays
+        self.mockupOverlays = Array(mockupOverlays.prefix(12))
         self.soundEffects = soundEffects
         self.musicRegions = Array(musicRegions.prefix(12))
         self.musicRegionMode = musicRegionMode
@@ -138,7 +141,7 @@ struct SmartVideoProject: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, savedAt, clips, imageOverlays, videoOverlays,
-             textOverlays, soundEffects, musicRegions, musicRegionMode,
+             textOverlays, mockupOverlays, soundEffects, musicRegions, musicRegionMode,
              beatSourceTimes,
              detectedTempoBPM, subtitles, subtitleAppearance, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
@@ -166,6 +169,9 @@ struct SmartVideoProject: Codable {
                                                    forKey: .videoOverlays) ?? []
         textOverlays = try values.decodeIfPresent([TextOverlayClip].self,
                                                   forKey: .textOverlays) ?? []
+        mockupOverlays = Array((try values.decodeIfPresent(
+            [MockupOverlayClip].self, forKey: .mockupOverlays
+        ) ?? []).prefix(12))
         soundEffects = try values.decodeIfPresent([SoundEffectClip].self,
                                                   forKey: .soundEffects) ?? []
         musicRegions = Array((try values.decodeIfPresent(
