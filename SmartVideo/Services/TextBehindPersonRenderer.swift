@@ -90,24 +90,38 @@ enum TextBehindPersonRenderer {
         let bounds = CGRect(x: -wide / 2, y: -tall / 2,
                             width: wide, height: tall)
         let imageSize = bounds.insetBy(dx: 9, dy: 5).size
-        guard imageSize.width > 0, imageSize.height > 0,
-              let mask = TextMaskMedia.glyphMask(
-                text: item.text, size: imageSize,
-                fontSize: fontSize,
-                strokeWidth: CGFloat(item.strokeWidth)
-              ) else { return }
+        guard imageSize.width > 0,
+              imageSize.height > 0 else { return }
+
+        let image = TextMaskMedia.rasterizedGlyph(
+            for: item, size: imageSize,
+            videoFrame: item.fillMode == .video ?
+                film?.frame(at: localSecond) : nil
+        )
+        guard let image else { return }
 
         ctx.saveGState()
-        ctx.setAlpha(CGFloat(min(1, max(0, frame.opacity))))
-        ctx.translateBy(x: CGFloat(frame.x) * canvas.width,
-                        y: CGFloat(frame.y) * canvas.height)
-        ctx.rotate(by: CGFloat(frame.rotationDegrees) * .pi / 180)
-        ctx.scaleBy(x: ratio * pulse, y: ratio * pulse)
+        ctx.setAlpha(CGFloat(
+            min(1, max(0, frame.opacity))
+        ))
+        ctx.translateBy(
+            x: CGFloat(frame.x) * canvas.width,
+            y: CGFloat(frame.y) * canvas.height
+        )
+        ctx.rotate(by:
+            CGFloat(frame.rotationDegrees) * .pi / 180
+        )
+        ctx.scaleBy(
+            x: ratio * pulse, y: ratio * pulse
+        )
 
         if item.useBackground {
-            ctx.setFillColor(UIColor.black.withAlphaComponent(0.38).cgColor)
+            ctx.setFillColor(
+                UIColor.black.withAlphaComponent(0.38).cgColor
+            )
             let path = UIBezierPath(
-                roundedRect: bounds, cornerRadius: fontSize * 0.17
+                roundedRect: bounds,
+                cornerRadius: fontSize * 0.17
             )
             ctx.addPath(path.cgPath)
             ctx.fillPath()
@@ -116,92 +130,44 @@ enum TextBehindPersonRenderer {
         let region = CGRect(
             x: -imageSize.width / 2,
             y: -imageSize.height / 2,
-            width: imageSize.width, height: imageSize.height
+            width: imageSize.width,
+            height: imageSize.height
         )
-        ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-        // UIKit-oriented glyph alpha; sourceIn paints inside the letters.
-        UIImage(cgImage: mask).draw(in: region)
-        ctx.setBlendMode(.sourceIn)
-        switch item.fillMode {
-        case .solid:
-            ctx.setFillColor(TextOverlayRenderer.uiColor(
-                hex: item.colorHex
-            ).cgColor)
-            ctx.fill(region)
-        case .gradient:
-            let colors = [
-                TextOverlayRenderer.uiColor(hex: item.colorHex).cgColor,
-                TextOverlayRenderer.uiColor(
-                    hex: item.gradientEndHex
-                ).cgColor
-            ] as CFArray
-            let space = CGColorSpaceCreateDeviceRGB()
-            if let gradient = CGGradient(
-                colorsSpace: space, colors: colors,
-                locations: [0, 1]
+        // Pre-rasterized glyph bitmap contains real nonzero RGBA pixels.
+        // The previous nested source-in transparency blend could silently
+        // produce a completely transparent title during video rendering.
+        if item.fauxDepth > 0 {
+            var shadowItem = item
+            shadowItem.fillMode = .solid
+            shadowItem.colorHex = "242424"
+            if let depth = TextMaskMedia.rasterizedGlyph(
+                for: shadowItem, size: imageSize
             ) {
-                ctx.drawLinearGradient(
-                    gradient,
-                    start: CGPoint(x: region.minX, y: region.minY),
-                    end: CGPoint(x: region.maxX, y: region.maxY),
-                    options: []
+                let shifted = region.offsetBy(
+                    dx: CGFloat(item.fauxDepth),
+                    dy: CGFloat(item.fauxDepth)
                 )
-            }
-        case .image, .video:
-            let picture: CGImage? = item.fillMode == .image ?
-                TextMaskMedia.image(url: item.fillAssetURL) :
-                film?.frame(at: localSecond)
-            if let picture {
-                let sourceAspect = CGFloat(picture.width) /
-                    CGFloat(max(1, picture.height))
-                let targetAspect = region.width /
-                    max(1, region.height)
-                let factor = item.maskFit == .fit ?
-                    (sourceAspect > targetAspect ?
-                        region.width / CGFloat(picture.width) :
-                        region.height / CGFloat(picture.height)) :
-                    (sourceAspect > targetAspect ?
-                        region.height / CGFloat(picture.height) :
-                        region.width / CGFloat(picture.width))
-                let scale = factor * CGFloat(min(4, max(0.5,
-                    item.maskScale)))
-                let size = CGSize(
-                    width: CGFloat(picture.width) * scale,
-                    height: CGFloat(picture.height) * scale
-                )
-                let photoRect = CGRect(
-                    x: region.midX - size.width / 2 +
-                       CGFloat(item.maskOffsetX) * region.width * 0.5,
-                    y: region.midY - size.height / 2 +
-                       CGFloat(item.maskOffsetY) * region.height * 0.5,
-                    width: size.width, height: size.height
-                )
-                UIImage(cgImage: picture).draw(in: photoRect)
-            } else {
-                ctx.setFillColor(UIColor.white.cgColor)
-                ctx.fill(region)
+                UIImage(cgImage: depth).draw(in: shifted)
             }
         }
-        ctx.endTransparencyLayer()
+        if item.shadowOpacity > 0 {
+            ctx.setShadow(
+                offset: CGSize(width: 1.5, height: 2),
+                blur: CGFloat(min(20, max(0, item.glowRadius))),
+                color: UIColor.black.withAlphaComponent(
+                    CGFloat(min(1, max(0, item.shadowOpacity)))
+                ).cgColor
+            )
+        }
+        UIImage(cgImage: image).draw(in: region)
+        ctx.setShadow(
+            offset: .zero, blur: 0, color: nil
+        )
 
-        // Draw a separate colorable outer stroke, rather than merely
-        // widening the image glyph alpha. The stroke is also behind Vision's
-        // foreground person because it participates in this scene layer.
-        if item.strokeWidth > 0,
-           let edge = TextMaskMedia.glyphMask(
-                text: item.text, size: imageSize,
-                fontSize: fontSize,
-                strokeWidth: CGFloat(item.strokeWidth),
-                outlineOnly: true
-           ) {
-            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
-            UIImage(cgImage: edge).draw(in: region)
-            ctx.setBlendMode(.sourceIn)
-            ctx.setFillColor(TextOverlayRenderer.uiColor(
-                hex: item.strokeHex
-            ).cgColor)
-            ctx.fill(region)
-            ctx.endTransparencyLayer()
+        if let outline = TextMaskMedia.outlineImage(
+            for: item, size: imageSize
+        ) {
+            UIImage(cgImage: outline).draw(in: region)
         }
         ctx.restoreGState()
     }
