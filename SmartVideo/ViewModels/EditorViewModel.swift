@@ -1746,6 +1746,70 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Mockup Light & Shadow
+
+    /// On-device face detection for a single media frame at the playhead.
+    /// User can override the proposed position with the X/Y sliders.
+    func autoFitMockup(_ id: UUID) {
+        guard let selected = mockupOverlays.firstIndex(where: {
+            $0.id == id
+        }), !clips.isEmpty else {
+            errorText = "Hãy chọn mockup và thêm ảnh/video."
+            return
+        }
+        let snapshot = mockupOverlays[selected]
+        let playTime = max(0, timelineSecond)
+        guard let selectedClip = clipAtTimeline(playTime) else {
+            errorText = "Không tìm thấy ảnh/video tại vị trí con trỏ."
+            return
+        }
+        let clip = clips[selectedClip.index]
+        Task {
+            do {
+                let image: CGImage
+                if clip.kind == .image,
+                   let still = UIImage(contentsOfFile: clip.fileURL.path)?
+                    .cgImage {
+                    image = still
+                } else {
+                    let generator = AVAssetImageGenerator(
+                        asset: AVURLAsset(url: clip.fileURL)
+                    )
+                    generator.appliesPreferredTrackTransform = true
+                    let at = clip.startTime +
+                        selectedClip.local * clip.playbackSpeed
+                    image = try generator.copyCGImage(
+                        at: CMTime(seconds: max(0, at),
+                                   preferredTimescale: 600),
+                        actualTime: nil
+                    )
+                }
+                let request = VNDetectFaceRectanglesRequest()
+                try VNImageRequestHandler(
+                    cgImage: image, options: [:]
+                ).perform([request])
+                let faces = request.results?.map {
+                    CGRect(x: $0.boundingBox.minX,
+                           y: 1 - $0.boundingBox.maxY,
+                           width: $0.boundingBox.width,
+                           height: $0.boundingBox.height)
+                } ?? []
+                let location = TextAutoPlacement.bestPosition(
+                    normalizedFaceBoxes: faces
+                )
+                guard let index = mockupOverlays.firstIndex(where: {
+                    $0.id == id
+                }), mockupOverlays[index] == snapshot else { return }
+                checkpoint()
+                mockupOverlays[index].centerX = location.x
+                mockupOverlays[index].centerY = location.y
+                mockupOverlays[index].avoidFace = true
+            } catch {
+                errorText = "Không thể tự căn mockup: \(error.localizedDescription)"
+            }
+        }
+    }
+
     // MARK: - Text glyph media and AI layout
 
     func importTextFill(
