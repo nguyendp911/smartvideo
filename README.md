@@ -4,6 +4,14 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.5.2 – Fix chữ Sau người trong video thật
+
+- **Sửa mốc thời gian video đã cắt:** trước đây `AVVideoComposition` có thể dùng thời gian gốc khi xuất một phần video và dùng thời gian tương đối khi xử lý đoạn MOV trung gian. Kết quả `projectSecond` bị chệch khiến lớp chữ **Sau người** không có frame nào nằm trong khoảng thời gian hiệu lực. Bản này cắt video và audio vào `AVMutableComposition` **bắt đầu từ 0 giây** trước khi chạy Vision/Core Image. Chuyển đổi thành timeline project bằng `clipStart + trimmedCompositionSecond / playbackSpeed` rõ ràng, cả với video đã cắt ở mốc 13 giây, tốc độ 0,5×/2× và nhiều clip.
+- **Giữ âm thanh & chiều xoay:** track video trung gian vẫn giữ `preferredTransform`, audio được copy với offset tương đối để đồng bộ, và MOV nguồn được đưa lại vào pipeline cũ (chuyển cảnh, PIP, âm thanh, MP4).
+- **Tự mở rộng chữ nằm sau người:** thêm `behindVisibilityAssist` (mặc định bật, tắt được trong tab Chữ). Người ở chính giữa có thể che toàn bộ chữ kích thước nhỏ; tính năng phóng chữ vừa đủ để nét kéo sang hai phía và vẫn được người che đúng nơi giao nhau, không đặt cả chữ lên người. Kích thước chữ chính xác khi xuất phụ thuộc độ lớn nhân vật; có thể tắt nếu muốn giữ thiết kế gốc.
+- **Kiểm thử phòng ngừa:** thời gian nguồn chuẩn hóa, hiệu ứng tốc độ, khoảng thời gian giữa title và clip, và dữ liệu dự án từ các bản cũ; iOS Simulator kiểm tra ảnh chữ trong cả trạng thái người che một phần và không có người. Bộ kiểm tra MP4 H.264 cuối vẫn cần iPhone thật (trình mã hóa VideoToolbox trên Simulator trả lỗi `-12900`).
+- Version **5.5.2 – Build 42**, bundle ID `com.nguyendp911.smartvideo` không thay đổi; IPA chưa ký như trước.
+
 ## ViePN Smart Video v5.5.1 – Hotfix Invisible Exported Text
 
 - **Sửa mất chữ khi xuất MP4**: khôi phục `CATextLayer` đã hoạt động ở bản trước cho lớp chữ màu đơn và dựng sẵn bitmap RGBA chứa đúng nét chữ cho gradient/ảnh/video trong chữ. Không đưa `CALayer.mask` lồng nhau hoặc `sourceIn` transparency group chưa được rasterize vào quá trình xuất nữa.
