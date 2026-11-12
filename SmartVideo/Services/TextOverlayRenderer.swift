@@ -79,6 +79,25 @@ enum TextOverlayRenderer {
                 outer.addSublayer(depth)
             }
             outer.addSublayer(content)
+            if item.strokeWidth > 0 {
+                let outline = CALayer()
+                outline.bounds = content.bounds
+                outline.position = content.position
+                outline.backgroundColor = uiColor(
+                    hex: item.strokeHex
+                ).cgColor
+                let outlineMask = CALayer()
+                outlineMask.frame = outline.bounds
+                outlineMask.contents = TextMaskMedia.glyphMask(
+                    text: item.text,
+                    size: outline.bounds.size,
+                    fontSize: fontSize,
+                    strokeWidth: CGFloat(item.strokeWidth),
+                    outlineOnly: true
+                )
+                outline.mask = outlineMask
+                outer.addSublayer(outline)
+            }
             if item.pulseEnabled {
                 let pulse = CABasicAnimation(keyPath: "transform.scale")
                 pulse.fromValue = 1
