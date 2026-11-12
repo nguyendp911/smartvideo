@@ -10,6 +10,11 @@ struct OverlayKeyframe: Codable, Equatable {
 
 @main
 struct TextTitleProTests {
+    static func near(_ actual: Double, _ expected: Double) {
+        precondition(abs(actual - expected) < 0.0001,
+                     "Timeline should be \(expected) but was \(actual)")
+    }
+
     static func main() throws {
         let base = TextOverlayClip()
         precondition(base.depthMode == .front)
@@ -41,6 +46,33 @@ struct TextTitleProTests {
         precondition(oldTitle.fillAssetURL == nil)
         precondition(oldTitle.maskScale == 1)
         precondition(oldTitle.text == base.text)
+        precondition(oldTitle.behindVisibilityAssist)
+        // Regression: original source video begins at 13s but the
+        // zero-based trimmed MOV begins at 0. For the second source clip
+        // starting at 7s on the project timeline at 2x playback speed,
+        // half a second in the MOV means project second 7.25.
+        near(
+            TextTitleRenderTime.projectSecond(
+                clipStart: 7,
+                trimmedCompositionSecond: 0.5,
+                playbackSpeed: 2
+            ), 7.25
+        )
+        near(
+            TextTitleRenderTime.projectSecond(
+                clipStart: 4,
+                trimmedCompositionSecond: 2,
+                playbackSpeed: 0.5
+            ), 8
+        )
+        precondition(TextTitleRenderTime.intersects(
+            titleStart: 7.1, titleDuration: 1.5,
+            clipStart: 7, clipDuration: 3
+        ))
+        precondition(!TextTitleRenderTime.intersects(
+            titleStart: 10.1, titleDuration: 1,
+            clipStart: 7, clipDuration: 3
+        ))
 
         for preset in TextTitlePreset.allCases {
             var title = TextOverlayClip()
