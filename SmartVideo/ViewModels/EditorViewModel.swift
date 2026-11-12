@@ -39,7 +39,7 @@ final class EditorViewModel: ObservableObject {
             for beat in musicBeatSourceTimes {
                 let relative = beat - start
                 if relative >= 0, relative < segment {
-                    let timeline = relative + offset
+                    let timeline = relative + offset + musicTimelineOffset
                     if timeline <= totalDuration {
                         markers.append(timeline)
                     }
@@ -59,12 +59,20 @@ final class EditorViewModel: ObservableObject {
         var clips: [TimelineClip]
         var soundEffects: [SoundEffectClip]
         var projectID: UUID
+        var musicTimelineOffset: Double
+        var voiceoverOffset: Double
+        var musicVolumeKeyframes: [AudioGainKeyframe]
+        var voiceVolumeKeyframes: [AudioGainKeyframe]
     }
     private var undoStack: [TimelineSnapshot] = []
     private var redoStack: [TimelineSnapshot] = []
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
-            clips: clips, soundEffects: soundEffects, projectID: projectID
+            clips: clips, soundEffects: soundEffects, projectID: projectID,
+            musicTimelineOffset: musicTimelineOffset,
+            voiceoverOffset: voiceoverOffset,
+            musicVolumeKeyframes: musicVolumeKeyframes,
+            voiceVolumeKeyframes: voiceVolumeKeyframes
         )
     }
     var canUndo: Bool { !undoStack.isEmpty }
@@ -121,6 +129,9 @@ final class EditorViewModel: ObservableObject {
     @Published var masteringMessage = ""
     @Published var musicVolume: Float = 0.38
     @Published var musicStartSeconds: Double = 0
+    @Published var musicTimelineOffset: Double = 0
+    @Published var musicVolumeKeyframes: [AudioGainKeyframe] = []
+    @Published var voiceVolumeKeyframes: [AudioGainKeyframe] = []
     @Published var musicDuration: Double = 0
     @Published var isImportingAudio = false
     @Published var isScanningMusic = false
@@ -280,7 +291,9 @@ final class EditorViewModel: ObservableObject {
                     detectedTempoBPM = 0
                     beatConfidence = 0
                     musicStartSeconds = 0
-            musicHighlightDuration = 0
+                    musicTimelineOffset = 0
+                    musicVolumeKeyframes = []
+                    musicHighlightDuration = 0
             musicHighlights = []
             exportedMusicHighlightURL = nil
                     musicURL = localURL
@@ -1521,7 +1534,10 @@ final class EditorViewModel: ObservableObject {
                 subtitleX: subtitleX, subtitleY: subtitleY,
                 stripMetadata: stripMetadata,
                 addMetadata: addCustomMetadata, metadata: metadata,
-                studioPresetID: appliedStudioPresetID
+                studioPresetID: appliedStudioPresetID,
+                musicTimelineOffset: musicTimelineOffset,
+                musicVolumeKeyframes: musicVolumeKeyframes,
+                voiceVolumeKeyframes: voiceVolumeKeyframes
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -1616,6 +1632,11 @@ final class EditorViewModel: ObservableObject {
             masteringMessage = ""
             musicVolume = p.musicVolume
             musicStartSeconds = p.musicStartSeconds
+            musicTimelineOffset = ProjectAudioTrackMath.safeStart(
+                p.musicTimelineOffset, projectDuration: totalDuration
+            )
+            musicVolumeKeyframes = p.musicVolumeKeyframes
+            voiceVolumeKeyframes = p.voiceVolumeKeyframes
             musicHighlightDuration = p.musicHighlightDuration
             musicFadeIn = p.musicFadeIn
             musicFadeOut = p.musicFadeOut
@@ -1675,6 +1696,9 @@ final class EditorViewModel: ObservableObject {
         subtitleAppearance = SubtitleAppearance()
         autoCaptionStatus = ""
         musicURL = nil
+        musicTimelineOffset = 0
+        musicVolumeKeyframes = []
+        voiceVolumeKeyframes = []
         originalMusicURL = nil
         musicMasteringSettings = VoiceMasteringSettings(
             bassDB: 0, midDB: 0, trebleDB: 0, compressorThreshold: -20,
@@ -1727,6 +1751,10 @@ final class EditorViewModel: ObservableObject {
         redoStack.append(currentSnapshot)
         clips = previous.clips
         soundEffects = previous.soundEffects
+        musicTimelineOffset = previous.musicTimelineOffset
+        voiceoverOffset = previous.voiceoverOffset
+        musicVolumeKeyframes = previous.musicVolumeKeyframes
+        voiceVolumeKeyframes = previous.voiceVolumeKeyframes
         timelineSecond = min(timelineSecond, totalDuration)
         objectWillChange.send()
     }
@@ -1741,6 +1769,10 @@ final class EditorViewModel: ObservableObject {
         undoStack.append(currentSnapshot)
         clips = next.clips
         soundEffects = next.soundEffects
+        musicTimelineOffset = next.musicTimelineOffset
+        voiceoverOffset = next.voiceoverOffset
+        musicVolumeKeyframes = next.musicVolumeKeyframes
+        voiceVolumeKeyframes = next.voiceVolumeKeyframes
         timelineSecond = min(timelineSecond, totalDuration)
         objectWillChange.send()
     }
@@ -2164,6 +2196,9 @@ final class EditorViewModel: ObservableObject {
         let workMusic = musicURL
         let workMusicVolume = musicVolume
         let workMusicStart = musicStartSeconds
+        let workMusicOffset = musicTimelineOffset
+        let workMusicFrames = musicVolumeKeyframes
+        let workVoiceFrames = voiceVolumeKeyframes
         let workLoop = repeatShortMusic
         let workHighlightLength = musicHighlightDuration
         let workVoiceOffset = voiceoverOffset
@@ -2201,6 +2236,9 @@ final class EditorViewModel: ObservableObject {
                         musicURL: workMusic,
                         musicVolume: workMusicVolume,
                         musicStartSeconds: workMusicStart,
+                        musicTimelineOffset: workMusicOffset,
+                        musicVolumeKeyframes: workMusicFrames,
+                        voiceVolumeKeyframes: workVoiceFrames,
                         repeatShortMusic: workLoop,
                         musicHighlightDuration: workHighlightLength,
                         voiceoverURL: workVoice,
