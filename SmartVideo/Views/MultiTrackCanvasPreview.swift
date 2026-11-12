@@ -123,6 +123,7 @@ struct TextCanvasPreview: View {
 }
 
 private struct TextOverlayPreviewItem: View {
+    @State private var fillPoster: UIImage?
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
     let item: TextOverlayClip
@@ -148,11 +149,50 @@ private struct TextOverlayPreviewItem: View {
         item.useBackground ? Color.black.opacity(0.50) : .clear
     }
 
-    var body: some View {
-        Text(item.text)
-            .font(.system(size: fontPoints, weight: .bold))
-            .foregroundStyle(titleColor)
+    @ViewBuilder
+    private var styledTitle: some View {
+        let base = Text(item.text)
+            .font(.system(size: fontPoints, weight: .black))
             .multilineTextAlignment(.center)
+        switch item.fillMode {
+        case .solid:
+            base.foregroundStyle(titleColor)
+        case .gradient:
+            base.foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        titleColor,
+                        Color(uiColor: TextOverlayRenderer.uiColor(
+                            hex: item.gradientEndHex
+                        ))
+                    ],
+                    startPoint: .topLeading, endPoint: .bottomTrailing
+                )
+            )
+        case .image, .video:
+            if let fillPoster {
+                Image(uiImage: fillPoster)
+                    .resizable()
+                    .aspectRatio(contentMode: item.maskFit == .fit ?
+                        .fit : .fill)
+                    .scaleEffect(item.maskScale)
+                    .offset(x: canvas.width * CGFloat(item.maskOffsetX) * 0.25,
+                            y: canvas.height * CGFloat(item.maskOffsetY) * 0.25)
+                    .frame(width: canvas.width * 0.75,
+                           height: max(36, fontPoints * 2.5))
+                    .clipped()
+                    .mask(
+                        base.frame(width: canvas.width * 0.75,
+                                   height: max(36, fontPoints * 2.5))
+                    )
+            } else {
+                base.foregroundStyle(titleColor)
+            }
+        }
+    }
+
+    var body: some View {
+        styledTitle
             .padding(5)
             .frame(width: canvas.width * 0.85)
             .background(
@@ -179,6 +219,23 @@ private struct TextOverlayPreviewItem: View {
                     }
             )
             .allowsHitTesting(editable)
+            .task(id: "\(item.fillMode.rawValue)|\(item.fillAssetURL?.path ?? "")") {
+                fillPoster = nil
+                guard let url = item.fillAssetURL else { return }
+                if item.fillMode == .image {
+                    fillPoster = UIImage(contentsOfFile: url.path)
+                } else if item.fillMode == .video {
+                    let first = await Task.detached(priority: .utility) {
+                        TextMaskMedia.load(
+                            url: url, maxSeconds: 0.13,
+                            framesPerSecond: 8
+                        )?.first
+                    }.value
+                    if let first {
+                        fillPoster = UIImage(cgImage: first)
+                    }
+                }
+            }
     }
 
     private func moveText(to point: CGPoint) {

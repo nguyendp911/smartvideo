@@ -27,6 +27,45 @@ enum PersonBackground: String, CaseIterable, Codable, Identifiable {
 }
 
 enum PersonCutoutProcessor {
+    /// Reusable normalized subject matte, mapped exactly to CI coordinates.
+    static func personMask(
+        _ source: CIImage,
+        quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced
+    ) throws -> CIImage {
+        let extent = source.extent
+        guard extent.width > 0 && extent.height > 0 else {
+            throw SmartVideoError.invalidMedia("Khung hình không hợp lệ.")
+        }
+        let request = VNGeneratePersonSegmentationRequest()
+        request.qualityLevel = quality
+        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
+        try VNImageRequestHandler(ciImage: source, options: [:])
+            .perform([request])
+        guard let maskBuffer = request.results?.first?.pixelBuffer else {
+            throw SmartVideoError.invalidMedia(
+                "Vision chưa tách được mặt nạ người."
+            )
+        }
+        let raw = CIImage(cvPixelBuffer: maskBuffer)
+        let m = raw.extent.size
+        guard m.width > 0 && m.height > 0 else {
+            throw SmartVideoError.invalidMedia("Mặt nạ người bị rỗng.")
+        }
+        return raw
+            .transformed(by: CGAffineTransform(
+                translationX: -raw.extent.minX,
+                y: -raw.extent.minY
+            ))
+            .transformed(by: CGAffineTransform(
+                scaleX: extent.width / m.width,
+                y: extent.height / m.height
+            ))
+            .transformed(by: CGAffineTransform(
+                translationX: extent.minX, y: extent.minY
+            ))
+            .cropped(to: extent)
+    }
+
     /// Returns image with an opaque background (MP4/H.264 has no alpha).
     /// The same function is used by the live Core Image preview and export.
     static func apply(
@@ -40,36 +79,7 @@ enum PersonCutoutProcessor {
             throw SmartVideoError.invalidMedia("Khung hình không hợp lệ để tách nền.")
         }
 
-        // Vision is evaluated on the unaltered source; Core Image grading is
-        // applied afterward to preserve a consistent background replacement.
-        let request = VNGeneratePersonSegmentationRequest()
-        request.qualityLevel = quality
-        request.outputPixelFormat = kCVPixelFormatType_OneComponent8
-        try VNImageRequestHandler(ciImage: source, options: [:])
-            .perform([request])
-        guard let maskBuffer = request.results?.first?.pixelBuffer else {
-            throw SmartVideoError.invalidMedia(
-                "Vision chưa tạo được mặt nạ người cho khung hình."
-            )
-        }
-
-        let originalMask = CIImage(cvPixelBuffer: maskBuffer)
-        let maskSize = originalMask.extent.size
-        guard maskSize.width > 0, maskSize.height > 0 else {
-            throw SmartVideoError.invalidMedia("Mặt nạ tách nền bị rỗng.")
-        }
-        let scaleX = extent.width / maskSize.width
-        let scaleY = extent.height / maskSize.height
-        let mask = originalMask
-            .transformed(by: CGAffineTransform(
-                translationX: -originalMask.extent.minX,
-                y: -originalMask.extent.minY
-            ))
-            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-            .transformed(by: CGAffineTransform(
-                translationX: extent.minX, y: extent.minY
-            ))
-            .cropped(to: extent)
+        let mask = try personMask(source, quality: quality)
 
         let background: CIImage
         switch mode {

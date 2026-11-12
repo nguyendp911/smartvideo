@@ -4,6 +4,21 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.5.0 – Text Layer Pro
+
+### Chữ trước/sau người, ảnh/video nằm ngay trong nét chữ, preset điện ảnh
+
+- **Trước chủ thể / Sau người:** đặt `depthMode` độc lập cho từng lớp chữ. Chế độ **Sau người** dùng `VNGeneratePersonSegmentationRequest` tạo matte Vision và ghép chữ **ở giữa background và người** trên từng khung video được xử lý hoặc khung ảnh được xuất; không dựa vào thao tác chỉ thay đổi z-index của một lớp chữ. Không có segmentation cho các loại chủ thể không phải người trong bản này.
+- **Image In Text / Video In Text:** văn bản chính là mask alpha có vùng trong suốt ngoài nét chữ. Ảnh/video nằm bên trong từng ký tự, hỗ trợ `Fit / Fill`, zoom nội dung 0.5–4, dịch X/Y; không tạo một ô ảnh hình chữ nhật phía sau. Mỗi lớp có thể dùng màu đơn hoặc gradient.
+- **Video Fill offline:** tránh phụ thuộc vào `AVPlayerLayer` không đồng bộ với AVVideoComposition khi xuất MP4; giải mã filmstrip thật từ video: tối đa 32 khung ở 8 fps trong 4 giây đầu, lặp theo chu kỳ ngắn. Chế độ xem nhanh hiển thị ảnh đại diện; xem thử **MP4 720p** để đánh giá chuyển động thật.
+- **Trước/sau người trong MP4:** khi title ở sau người, video gốc được chép qua MOV trung gian để ghép chữ + Vision theo từng frame, rồi đưa vào pipeline chuyển cảnh/overlay cũ; với ảnh tĩnh Vision chỉ chạy một lần, mặt nạ được biến đổi theo pan/zoom/lật ảnh nhằm tiết kiệm năng lượng.
+- **Hiệu ứng typography:** hỗ trợ viền nét chữ, bóng đổ/glow, độ dày giả 3D, hiệu ứng nhịp thở Pulse, vị trí và keyframe chuyển động cũ, nhiều lớp chữ chồng nhau.
+- **8 preset**: Title Behind Person, Big Bold Intro, Image In Text, Video In Text, Product Behind Person, Cinematic Name, Laptop Sale, Travel Text. Các preset đều chỉnh được lại, không phá các source file.
+- **AI gợi ý vị trí chữ** chạy bằng Vision trực tiếp trên iPhone: nhận diện khuôn mặt trong ảnh hoặc một khung video, đề xuất vùng ít che mặt. Không gửi ảnh hay video lên cloud.
+- **Lưu/mở dự án cũ:** mới thêm các khóa Codable có mặc định tương thích; ảnh/video làm nội dung glyph được copy vào thư mục Media ứng dụng và đường dẫn được khôi phục đúng khi mở lại project. Không thay đổi bundle ID.
+- **Giới hạn cần biết:** Vision chế độ sau chủ thể hiện nhận diện **người**, chưa hỗ trợ vật thể bất kỳ và có thể khó với tóc mờ hoặc nền phức tạp. Bộ xem nhanh dùng chữ trước người như hướng dẫn vị trí; **Xem thử 720p** và MP4 xuất cuối là kết quả phân lớp thực tế. Video trong chữ là filmstrip giới hạn 4 giây, 8fps và lặp, không phải playback 30fps của mọi video dài. Tên/chữ trên video letterbox hoặc chuyển cảnh phức tạp có thể lệch vị trí vì matte chạy trong tọa độ clip nguồn. Hiệu ứng blur nền, blend mode và 3D thực chưa có trong bản này. Cần kiểm thử trên iPhone 12 Pro Max.
+- Phiên bản **5.5.0 (build 40)**, iOS 16+, bundle `com.nguyendp911.smartvideo`, build unsigned IPA bằng GitHub Actions.
+
 ## ViePN Smart Video v5.4.0 – Multi-Music Regions
 
 ### Nhiều đoạn nhạc độc lập trên timeline

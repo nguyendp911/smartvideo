@@ -65,6 +65,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/SoundEffectClip.swift SmartVideo/Models/AudioTimelineMath.swift SmartVideo/Models/MusicRegionEditMath.swift scripts/multi-music-region-tests.swift -o /tmp/multi-music-region-tests
           /tmp/multi-music-region-tests
 
+      - name: Validate Text Layer Pro project compatibility and presets
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/TextOverlayClip.swift SmartVideo/Models/TextTitlePreset.swift scripts/text-title-pro-tests.swift -o /tmp/text-title-pro-tests
+          /tmp/text-title-pro-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
