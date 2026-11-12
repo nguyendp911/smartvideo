@@ -4,6 +4,14 @@ Mã nguồn ứng dụng **render video ngay trên iPhone 12 Pro Max**, không g
 
 ## Tính năng (bản dựng UI mới)
 
+## ViePN Smart Video v5.5.1 – Hotfix Invisible Exported Text
+
+- **Sửa mất chữ khi xuất MP4**: khôi phục `CATextLayer` đã hoạt động ở bản trước cho lớp chữ màu đơn và dựng sẵn bitmap RGBA chứa đúng nét chữ cho gradient/ảnh/video trong chữ. Không đưa `CALayer.mask` lồng nhau hoặc `sourceIn` transparency group chưa được rasterize vào quá trình xuất nữa.
+- **Sửa trường hợp chữ sau người biến mất**: `UIGraphicsImageRenderer` trên iPhone mặc định render ở 2x/3x, khiến `CIImage` crop theo kích thước frame 1x bỏ lỡ toàn bộ chữ. Ép rasterizer sử dụng `scale = 1` khớp tọa độ frame video và mặt nạ Vision.
+- **Ảnh/video chữ bị thiếu**: fallback sang màu chữ đã chọn thay vì lớp trong suốt.
+- **Kiểm thử ảnh thực tế**: iOS Simulator XCTest xác minh nét chữ solid/gradient/image/video có pixel màu và alpha, kiểm tra lớp chữ trước người và CoreImage đã ghép chữ sau người. Test tạo/xuất MP4 H.264 được dành cho thiết bị thật vì trình mã hóa Simulator trả lỗi `-12900` trên môi trường CI này. Build thành công không thay thế kiểm thử render trên iPhone.
+- Version **5.5.1 – Build 41**, bundle `com.nguyendp911.smartvideo` giữ nguyên; IPA phát hành từ GitHub Actions vẫn chưa ký Apple.
+
 ## ViePN Smart Video v5.5.0 – Text Layer Pro
 
 ### Chữ trước/sau người, ảnh/video nằm ngay trong nét chữ, preset điện ảnh

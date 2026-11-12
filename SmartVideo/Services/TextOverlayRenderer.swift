@@ -40,14 +40,40 @@ enum TextOverlayRenderer {
             outer.transform = transform(first)
             gate.addSublayer(outer)
 
-            let content = TextMaskMedia.contentLayer(
-                for: item,
-                bounds: outer.bounds.insetBy(dx: 9, dy: 5),
-                begin: begin, duration: end - begin
-            )
-            content.position = CGPoint(
-                x: outer.bounds.midX, y: outer.bounds.midY
-            )
+            let rect = outer.bounds.insetBy(dx: 9, dy: 5)
+            let content: CALayer
+            if item.fillMode == .solid {
+                // The original CATextLayer was reliable in the real MP4.
+                // Keep that proven path for plain/legacy titles rather
+                // than introducing a glyph-mask dependency for old projects.
+                let title = CATextLayer()
+                title.frame = rect
+                title.string = item.text
+                title.font = UIFont.boldSystemFont(
+                    ofSize: fontSize
+                )
+                title.fontSize = fontSize
+                title.alignmentMode = .center
+                title.foregroundColor = uiColor(
+                    hex: item.colorHex
+                ).cgColor
+                title.isWrapped = true
+                title.contentsScale = 2
+                content = title
+            } else {
+                // Advanced fill is a precomposed transparent RGBA bitmap.
+                // Never require CALayer.mask at AVAssetExportSession time:
+                // it could silently erase every glyph.
+                let imageText = TextMaskMedia.contentLayer(
+                    for: item, bounds: rect,
+                    begin: begin, duration: end - begin
+                )
+                imageText.position = CGPoint(
+                    x: outer.bounds.midX,
+                    y: outer.bounds.midY
+                )
+                content = imageText
+            }
             content.shadowColor = UIColor.black.cgColor
             content.shadowOpacity = Float(
                 min(1, max(0, item.shadowOpacity))
@@ -55,49 +81,46 @@ enum TextOverlayRenderer {
             content.shadowRadius = CGFloat(
                 min(20, max(0, item.glowRadius))
             )
-            content.shadowOffset = CGSize(width: 1.5, height: -2)
+            content.shadowOffset = CGSize(
+                width: 1.5, height: -2
+            )
+
             if item.fauxDepth > 0 {
                 let depth = CALayer()
-                depth.bounds = content.bounds
-                depth.position = CGPoint(
-                    x: content.position.x + CGFloat(item.fauxDepth),
-                    y: content.position.y - CGFloat(item.fauxDepth)
+                depth.bounds = CGRect(
+                    origin: .zero, size: rect.size
                 )
-                depth.backgroundColor = UIColor.black.withAlphaComponent(
-                    0.55
-                ).cgColor
-                depth.mask = {
-                    let mask = CALayer()
-                    mask.frame = depth.bounds
-                    mask.contents = TextMaskMedia.glyphMask(
-                        text: item.text, size: depth.bounds.size,
-                        fontSize: fontSize,
-                        strokeWidth: CGFloat(item.strokeWidth)
-                    )
-                    return mask
-                }()
+                depth.position = CGPoint(
+                    x: outer.bounds.midX +
+                       CGFloat(item.fauxDepth),
+                    y: outer.bounds.midY -
+                       CGFloat(item.fauxDepth)
+                )
+                var shadow = item
+                shadow.fillMode = .solid
+                shadow.colorHex = "242424"
+                depth.contents = TextMaskMedia.rasterizedGlyph(
+                    for: shadow, size: rect.size
+                )
                 outer.addSublayer(depth)
             }
             outer.addSublayer(content)
-            if item.strokeWidth > 0 {
-                let outline = CALayer()
-                outline.bounds = content.bounds
-                outline.position = content.position
-                outline.backgroundColor = uiColor(
-                    hex: item.strokeHex
-                ).cgColor
-                let outlineMask = CALayer()
-                outlineMask.frame = outline.bounds
-                outlineMask.contents = TextMaskMedia.glyphMask(
-                    text: item.text,
-                    size: outline.bounds.size,
-                    fontSize: fontSize,
-                    strokeWidth: CGFloat(item.strokeWidth),
-                    outlineOnly: true
+            if let stroke = TextMaskMedia.outlineImage(
+                for: item, size: rect.size
+            ) {
+                let border = CALayer()
+                border.bounds = CGRect(
+                    origin: .zero, size: rect.size
                 )
-                outline.mask = outlineMask
-                outer.addSublayer(outline)
+                border.position = CGPoint(
+                    x: outer.bounds.midX,
+                    y: outer.bounds.midY
+                )
+                border.contents = stroke
+                border.contentsGravity = .resize
+                outer.addSublayer(border)
             }
+
             if item.pulseEnabled {
                 let pulse = CABasicAnimation(keyPath: "transform.scale")
                 pulse.fromValue = 1
