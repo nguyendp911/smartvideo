@@ -55,8 +55,18 @@ final class EditorViewModel: ObservableObject {
     @Published var availableProjects: [ProjectListItem] = []
     @Published var savedProjectNames: [String] = []
     @Published var lastSaveMessage: String?
-    private var undoStack: [[TimelineClip]] = []
-    private var redoStack: [[TimelineClip]] = []
+    private struct TimelineSnapshot {
+        var clips: [TimelineClip]
+        var soundEffects: [SoundEffectClip]
+        var projectID: UUID
+    }
+    private var undoStack: [TimelineSnapshot] = []
+    private var redoStack: [TimelineSnapshot] = []
+    private var currentSnapshot: TimelineSnapshot {
+        TimelineSnapshot(
+            clips: clips, soundEffects: soundEffects, projectID: projectID
+        )
+    }
     var canUndo: Bool { !undoStack.isEmpty }
     var canRedo: Bool { !redoStack.isEmpty }
     @Published var subtitles: [SubtitleCue] = []
@@ -1285,6 +1295,8 @@ final class EditorViewModel: ObservableObject {
     }
 
     func removeSoundEffect(_ id: UUID) {
+        guard soundEffects.contains(where: { $0.id == id }) else { return }
+        checkpoint()
         soundEffects.removeAll { $0.id == id }
     }
 
@@ -1292,9 +1304,25 @@ final class EditorViewModel: ObservableObject {
         guard let index = soundEffects.firstIndex(where: { $0.id == id }) else {
             return
         }
+        checkpoint()
         soundEffects[index].start = min(
             max(0, timelineSecond), max(0, totalDuration - 0.1)
         )
+    }
+
+    /// Global project position. Set recordUndo=false while dragging after
+    /// a single beginSoundEffectsEdit checkpoint in the gesture.
+    func moveSoundEffect(
+        _ id: UUID, to second: Double,
+        recordUndo: Bool = true
+    ) {
+        guard let index = soundEffects.firstIndex(where: { $0.id == id }),
+              second.isFinite else { return }
+        let cap = max(0, totalDuration - max(0.1, soundEffects[index].duration))
+        let target = min(cap, max(0, second))
+        guard abs(soundEffects[index].start - target) > 0.0001 else { return }
+        if recordUndo { checkpoint() }
+        soundEffects[index].start = target
     }
 
     @discardableResult
@@ -1303,6 +1331,7 @@ final class EditorViewModel: ObservableObject {
               let index = soundEffects.firstIndex(where: { $0.id == id }) else {
             return nil
         }
+        checkpoint()
         var duplicate = soundEffects[index]
         duplicate.id = UUID()
         duplicate.start = min(
@@ -1340,6 +1369,7 @@ final class EditorViewModel: ObservableObject {
             at: p, frames: effect.volumeKeyframes
         )
         let key = AudioGainKeyframe(progress: p, gain: value)
+        checkpoint()
         soundEffects[index].volumeKeyframes = AudioAutomationMath.normalized(
             effect.volumeKeyframes + [key]
         )
@@ -1354,7 +1384,32 @@ final class EditorViewModel: ObservableObject {
         }), let point = soundEffects[index].volumeKeyframes.firstIndex(
             where: { $0.id == frameID }
         ) else { return }
-        soundEffects[index].volumeKeyframes[point].gain =
+        let safe = AudioAutomationMath.clampGain(gain)
+        if soundEffects[index].volumeKeyframes[point].gain != safe {
+            soundEffects[index].volumeKeyframes[point].gain = safe
+        }
+    }
+
+    /// Drag a keyframe's horizontal time and vertical volume directly on
+    /// the multi-track lane. Preserve ordering and identity of every node.
+    func moveSoundVolumeKeyframe(
+        _ effectID: UUID, frameID: UUID,
+        progress: Double, gain: Float
+    ) {
+        guard let index = soundEffects.firstIndex(where: {
+            $0.id == effectID
+        }), let node = soundEffects[index].volumeKeyframes.firstIndex(
+            where: { $0.id == frameID }
+        ) else { return }
+        let frames = soundEffects[index].volumeKeyframes
+        let lower = node == 0 ? 0 :
+            min(1, frames[node - 1].progress + 0.01)
+        let upper = node == frames.count - 1 ? 1 :
+            max(0, frames[node + 1].progress - 0.01)
+        soundEffects[index].volumeKeyframes[node].progress =
+            min(upper, max(lower,
+                AudioAutomationMath.clampProgress(progress)))
+        soundEffects[index].volumeKeyframes[node].gain =
             AudioAutomationMath.clampGain(gain)
     }
 
@@ -1362,6 +1417,10 @@ final class EditorViewModel: ObservableObject {
         guard let index = soundEffects.firstIndex(where: {
             $0.id == effectID
         }) else { return }
+        guard soundEffects[index].volumeKeyframes.contains(where: {
+            $0.id == frameID
+        }) else { return }
+        checkpoint()
         soundEffects[index].volumeKeyframes.removeAll {
             $0.id == frameID
         }
@@ -1371,6 +1430,8 @@ final class EditorViewModel: ObservableObject {
         guard let index = soundEffects.firstIndex(where: {
             $0.id == id
         }) else { return }
+        guard !soundEffects[index].volumeKeyframes.isEmpty else { return }
+        checkpoint()
         soundEffects[index].volumeKeyframes = []
     }
 
@@ -1391,6 +1452,7 @@ final class EditorViewModel: ObservableObject {
             return nil
         }
         let p = local / source.duration
+        checkpoint()
         var left = source
         var right = source
         left.duration = local
@@ -1493,7 +1555,9 @@ final class EditorViewModel: ObservableObject {
                     "Thiếu ảnh, video hoặc âm thanh gốc. Dự án cần các file trong Media của ứng dụng."
                 )
             }
-            checkpoint()
+            // An undo must never restore media from another project.
+            undoStack.removeAll()
+            redoStack.removeAll()
             projectID = p.id
             projectName = p.name
             appliedStudioPresetID = p.studioPresetID
@@ -1591,7 +1655,8 @@ final class EditorViewModel: ObservableObject {
     }
 
     func newProject() {
-        checkpoint()
+        undoStack.removeAll()
+        redoStack.removeAll()
         projectID = UUID()
         projectName = "Dự án mới"
         appliedStudioPresetID = nil
@@ -1638,24 +1703,42 @@ final class EditorViewModel: ObservableObject {
     // MARK: - Precise, non-destructive timeline editing
 
     private func checkpoint() {
-        undoStack.append(clips)
+        undoStack.append(currentSnapshot)
         if undoStack.count > 40 { undoStack.removeFirst() }
         redoStack.removeAll()
         objectWillChange.send()
     }
 
+    /// An edit gesture should checkpoint once at its beginning, not once
+    /// for every animation frame or slider change.
+    func beginSoundEffectsEdit() {
+        checkpoint()
+    }
+
     func undoEdit() {
-        guard let previous = undoStack.popLast() else { return }
-        redoStack.append(clips)
-        clips = previous
+        guard let previous = undoStack.popLast(),
+              previous.projectID == projectID else {
+            undoStack.removeAll()
+            redoStack.removeAll()
+            return
+        }
+        redoStack.append(currentSnapshot)
+        clips = previous.clips
+        soundEffects = previous.soundEffects
         timelineSecond = min(timelineSecond, totalDuration)
         objectWillChange.send()
     }
 
     func redoEdit() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(clips)
-        clips = next
+        guard let next = redoStack.popLast(),
+              next.projectID == projectID else {
+            undoStack.removeAll()
+            redoStack.removeAll()
+            return
+        }
+        undoStack.append(currentSnapshot)
+        clips = next.clips
+        soundEffects = next.soundEffects
         timelineSecond = min(timelineSecond, totalDuration)
         objectWillChange.send()
     }
