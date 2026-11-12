@@ -18,7 +18,8 @@ enum VideoFrameGrader {
         timelineStart: Double = 0,
         sourceStart: Double = 0,
         speed: Double = 1,
-        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
+        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:],
+        mockups: [MockupOverlayClip] = []
     ) -> AVVideoComposition {
         let context = CIContext(options: [.cacheIntermediates: false])
         return AVVideoComposition(asset: asset) { request in
@@ -38,12 +39,28 @@ enum VideoFrameGrader {
                         request.compositionTime.seconds - sourceStart,
                     playbackSpeed: speed
                 )
-                let composited = try TextBehindPersonRenderer.apply(
-                    to: output, items: behindTitles,
+                let needsMask = (!behindTitles.isEmpty ||
+                    mockups.contains { $0.depthMode == .behindPerson &&
+                        MockupAnimationSampler.active($0, at: projectSecond) })
+                let mask = needsMask ? try PersonCutoutProcessor.personMask(
+                    source, quality: .fast
+                ) : nil
+                let rear = try MockupOverlayRenderer.apply(
+                    output, overlays: mockups,
+                    second: projectSecond,
+                    depth: .behindPerson, personMask: mask
+                )
+                let titled = try TextBehindPersonRenderer.apply(
+                    to: rear, items: behindTitles,
                     projectTime: projectSecond, maskSource: source,
+                    maskOverride: mask,
                     films: filmstrips, quality: .fast
                 )
-                request.finish(with: composited, context: context)
+                let finished = try MockupOverlayRenderer.apply(
+                    titled, overlays: mockups,
+                    second: projectSecond, depth: .front
+                )
+                request.finish(with: finished, context: context)
             } catch {
                 // Export fails explicitly instead of silently returning
                 // the original footage without a requested AI cutout.
@@ -75,13 +92,14 @@ enum VideoFrameGrader {
         clip: TimelineClip, outputURL: URL,
         behindTitles: [TextOverlayClip] = [],
         timelineStart: Double = 0,
-        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:]
+        filmstrips: [UUID: TextMaskMedia.Filmstrip] = [:],
+        mockups: [MockupOverlayClip] = []
     ) async throws {
         guard clip.kind == .video,
               ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                 !clip.colorAdjustments.isNeutral ||
                 clip.personBackground != .original ||
-                !behindTitles.isEmpty) else {
+                !behindTitles.isEmpty || !mockups.isEmpty) else {
             throw SmartVideoError.invalidMedia(
                 "Không có bộ màu video cần xử lý."
             )
@@ -170,7 +188,8 @@ enum VideoFrameGrader {
             timelineStart: timelineStart,
             sourceStart: 0,
             speed: clip.playbackSpeed,
-            filmstrips: filmstrips
+            filmstrips: filmstrips,
+            mockups: mockups
         )
         // The source was trimmed BEFORE videoComposition; no timeRange
         // is applied to this export. All filters begin at t=0.
