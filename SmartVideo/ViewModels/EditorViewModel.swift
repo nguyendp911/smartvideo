@@ -2,6 +2,8 @@ import SwiftUI
 import PhotosUI
 import Photos
 import AVFoundation
+import Vision
+import UIKit
 
 @MainActor
 final class EditorViewModel: ObservableObject {
@@ -1743,6 +1745,111 @@ final class EditorViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Text glyph media and AI layout
+
+    func importTextFill(
+        from sourceURL: URL, for textID: UUID, video: Bool
+    ) {
+        guard textOverlays.contains(where: { $0.id == textID }) else {
+            errorText = "Hãy chọn một lớp chữ trước."
+            return
+        }
+        do {
+            let local = try copyScoped(
+                sourceURL, fallbackExtension: video ? "mov" : "png"
+            )
+            Task {
+                do {
+                    if video {
+                        let asset = AVURLAsset(url: local)
+                        guard !(try await asset.loadTracks(
+                            withMediaType: .video
+                        )).isEmpty else {
+                            throw SmartVideoError.invalidMedia(
+                                "Tệp này không chứa video hợp lệ."
+                            )
+                        }
+                    } else {
+                        guard UIImage(contentsOfFile: local.path) != nil
+                        else {
+                            throw SmartVideoError.invalidMedia(
+                                "Không đọc được ảnh dùng để tô chữ."
+                            )
+                        }
+                    }
+                    guard let index = textOverlays.firstIndex(where: {
+                        $0.id == textID
+                    }) else { return }
+                    checkpoint()
+                    textOverlays[index].fillAssetURL = local
+                    textOverlays[index].fillMode = video ?
+                        .video : .image
+                } catch {
+                    try? FileManager.default.removeItem(at: local)
+                    errorText = "Không chọn được nền chữ: \(error.localizedDescription)"
+                }
+            }
+        } catch {
+            errorText = "Không mở được tệp nền chữ: \(error.localizedDescription)"
+        }
+    }
+
+    /// Face-aware text position suggestions run ON DEVICE using Vision.
+    /// Detects faces, then ranks clear corners; no cloud account required.
+    func autoPositionText(_ textID: UUID, clip: TimelineClip?) {
+        guard let clip else {
+            errorText = "Hãy chọn ảnh/video trên timeline."
+            return
+        }
+        Task {
+            do {
+                let image: CGImage
+                if clip.kind == .image,
+                   let photo = UIImage(contentsOfFile: clip.fileURL.path)?
+                    .cgImage {
+                    image = photo
+                } else {
+                    let asset = AVURLAsset(url: clip.fileURL)
+                    let generator = AVAssetImageGenerator(asset: asset)
+                    generator.appliesPreferredTrackTransform = true
+                    image = try generator.copyCGImage(
+                        at: CMTime(
+                            seconds: clip.startTime,
+                            preferredTimescale: 600
+                        ),
+                        actualTime: nil
+                    )
+                }
+                let request = VNDetectFaceRectanglesRequest()
+                try VNImageRequestHandler(
+                    cgImage: image, options: [:]
+                ).perform([request])
+                let faces = request.results?.map {
+                    CGRect(
+                        x: $0.boundingBox.midX,
+                        y: 1 - $0.boundingBox.midY,
+                        width: $0.boundingBox.width,
+                        height: $0.boundingBox.height
+                    )
+                } ?? []
+                let point = TextAutoPlacement.bestPosition(
+                    normalizedFaceBoxes: faces
+                )
+                guard let index = textOverlays.firstIndex(where: {
+                    $0.id == textID
+                }) else { return }
+                checkpoint()
+                textOverlays[index].startX = point.x
+                textOverlays[index].startY = point.y
+                textOverlays[index].endX = point.x
+                textOverlays[index].endY = point.y
+                textOverlays[index].keyframes = []
+            } catch {
+                errorText = "Không phân tích được vùng mặt: \(error.localizedDescription)"
+            }
+        }
+    }
+
     // MARK: - Project music and narration keyframe automation
 
     func projectAudioStart(_ lane: ProjectAudioLane) -> Double {
@@ -1935,6 +2042,13 @@ final class EditorViewModel: ObservableObject {
             let overlayFiles = p.imageOverlays.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
+            let textFillFiles = p.textOverlays.compactMap {
+                $0.fillAssetURL.map { url in
+                    MediaStorage.mediaDirectory.appendingPathComponent(
+                        url.lastPathComponent
+                    )
+                }
+            }
             let sfxFiles = p.soundEffects.map {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
@@ -1942,7 +2056,7 @@ final class EditorViewModel: ObservableObject {
                 MediaStorage.mediaDirectory.appendingPathComponent($0.fileURL.lastPathComponent)
             }
             let allFiles = restoredClips.map(\.fileURL) +
-                overlayFiles + pipFiles + sfxFiles + musicFiles +
+                overlayFiles + textFillFiles + pipFiles + sfxFiles + musicFiles +
                 [restoredMusic, restoredVoice, restoredOriginalVoice,
                  restoredOriginalMusic].compactMap { $0 }
             guard allFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.path) }) else {
@@ -1971,7 +2085,14 @@ final class EditorViewModel: ObservableObject {
                     .appendingPathComponent($0.fileURL.lastPathComponent)
                 return overlay
             }
-            textOverlays = p.textOverlays
+            textOverlays = p.textOverlays.map { text in
+                var result = text
+                if let url = result.fillAssetURL {
+                    result.fillAssetURL = MediaStorage.mediaDirectory
+                        .appendingPathComponent(url.lastPathComponent)
+                }
+                return result
+            }
             musicBeatSourceTimes = p.beatSourceTimes
             detectedTempoBPM = p.detectedTempoBPM
             beatConfidence = 0
