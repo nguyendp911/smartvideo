@@ -222,6 +222,9 @@ struct MockupStudioPanel: View {
             metric("Làm mềm", value: item.blurRadius, suffix: "px")
             Slider(value: $model.mockupOverlays[index].blurRadius,
                    in: 0...36).tint(.cyan)
+            metric("Feather / tan mép", value: item.feather, suffix: "")
+            Slider(value: $model.mockupOverlays[index].feather,
+                   in: 0...1).tint(.cyan)
             metric("Độ sáng", value: item.brightness, suffix: "")
             Slider(value: $model.mockupOverlays[index].brightness,
                    in: -0.8...0.8).tint(.cyan)
