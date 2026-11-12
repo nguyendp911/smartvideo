@@ -70,6 +70,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/TextOverlayClip.swift SmartVideo/Models/TextTitlePreset.swift SmartVideo/Models/TextTitleRenderTime.swift scripts/text-title-pro-tests.swift -o /tmp/text-title-pro-tests
           /tmp/text-title-pro-tests
 
+      - name: Validate 42 mockup assets, motion and saved settings
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
+          /tmp/mockup-tests
+
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
 
@@ -130,6 +135,11 @@ jobs:
 
       - name: Install XcodeGen
         run: brew install xcodegen
+
+      - name: Validate 42 mockup assets, motion and saved settings
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
+          /tmp/mockup-tests
 
       - name: Prepare ViePN app icon
         run: bash scripts/make-icon.sh
