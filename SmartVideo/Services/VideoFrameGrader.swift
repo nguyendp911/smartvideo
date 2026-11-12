@@ -130,7 +130,7 @@ enum VideoFrameGrader {
             withMediaType: .audio
         ).first {
             let audibleRange = CMTimeRangeGetIntersection(
-                sourceRange, try await audio.load(.timeRange)
+                sourceRange, otherRange: try await audio.load(.timeRange)
             )
             if audibleRange.duration.isNumeric &&
                 CMTimeCompare(audibleRange.duration, .zero) > 0,
