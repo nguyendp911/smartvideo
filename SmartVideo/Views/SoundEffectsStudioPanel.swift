@@ -136,7 +136,9 @@ struct SoundEffectsStudioPanel: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(isPreparingMix || (
                     model.soundEffects.isEmpty &&
-                    model.musicURL == nil &&
+                    (model.musicRegionMode ?
+                        model.musicRegions.isEmpty :
+                        model.musicURL == nil) &&
                     model.voiceoverURL == nil
                 ))
             }
@@ -231,7 +233,8 @@ struct SoundEffectsStudioPanel: View {
         previewPlayer?.stop()
         isPreparingMix = true
         let duration = model.totalDuration
-        let music = model.musicURL
+        let music = model.musicRegionMode ? nil : model.musicURL
+        let regions = model.musicRegionMode ? model.musicRegions : []
         let voice = model.voiceoverURL
         let effects = model.soundEffects
         let start = model.musicStartSeconds
@@ -264,6 +267,7 @@ struct SoundEffectsStudioPanel: View {
                     narrationStart: voiceStart,
                     narrationVolume: voiceVolume,
                     voiceVolumeKeyframes: voiceFrames,
+                    musicRegions: regions,
                     effects: effects
                 )
                 try AVAudioSession.sharedInstance().setCategory(
