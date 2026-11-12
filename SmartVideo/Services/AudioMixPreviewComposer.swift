@@ -21,6 +21,7 @@ enum AudioMixPreviewComposer {
         narrationStart: Double,
         narrationVolume: Float,
         voiceVolumeKeyframes: [AudioGainKeyframe],
+        musicRegions: [SoundEffectClip],
         effects: [SoundEffectClip]
     ) async throws -> AVPlayerItem {
         guard duration.isFinite, duration > 0 else {
@@ -159,6 +160,10 @@ enum AudioMixPreviewComposer {
             }
         }
 
+        mixes.append(contentsOf: try await SoundEffectsMixer.add(
+            musicRegions, to: composition, timelineDuration: total,
+            narrationStart: voiceAt, narrationEnd: voiceEnd
+        ))
         mixes.append(contentsOf: try await SoundEffectsMixer.add(
             effects, to: composition, timelineDuration: total
         ))
