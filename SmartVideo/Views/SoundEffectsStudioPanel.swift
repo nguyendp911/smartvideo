@@ -10,6 +10,7 @@ struct SoundEffectsStudioPanel: View {
     @State private var previewPlayer: AVAudioPlayer?
     @State private var mixPlayer: AVPlayer?
     @State private var isPreparingMix = false
+    @State private var selectedKeyframeID: UUID?
 
     private var selectedIndex: Int? {
         guard let selectedID else { return nil }
@@ -215,6 +216,9 @@ struct SoundEffectsStudioPanel: View {
                 selectedID = model.soundEffects.first?.id
             }
         }
+        .onChange(of: selectedID) { _ in
+            selectedKeyframeID = nil
+        }
         .onDisappear {
             previewPlayer?.stop()
             mixPlayer?.pause()
@@ -282,8 +286,16 @@ struct SoundEffectsStudioPanel: View {
             Divider()
             Text("Chỉnh track đã chọn")
                 .font(.subheadline.bold())
-            AudioWaveformBars(url: item.fileURL)
-                .frame(height: 50)
+            AudioWaveformTrimView(
+                url: item.fileURL,
+                sourceDuration: item.originalDuration,
+                trimStart: sfxTrimStart(item.id),
+                trimEnd: sfxTrimEnd(item.id),
+                title: "Waveform · kéo để cắt nguồn",
+                playheadSource: model.timelineSecond >= item.start &&
+                    model.timelineSecond <= item.end ?
+                    item.sourceStart + model.timelineSecond - item.start : nil
+            )
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
@@ -401,6 +413,142 @@ struct SoundEffectsStudioPanel: View {
             Slider(value: $model.soundEffects[index].fadeOut,
                    in: 0...min(2, max(0.05, item.duration / 2)),
                    step: 0.05).tint(.cyan)
+
+            Divider()
+            volumeKeyframeEditor(item)
+        }
+    }
+
+    private func sfxTrimStart(_ id: UUID) -> Binding<Double> {
+        Binding {
+            model.soundEffects.first(where: { $0.id == id })?.sourceStart ?? 0
+        } set: { value in
+            guard let i = model.soundEffects.firstIndex(where: { $0.id == id })
+            else { return }
+            let sound = model.soundEffects[i]
+            let end = min(sound.originalDuration,
+                          sound.sourceStart + sound.duration)
+            let from = min(max(0, value), max(0, end - 0.1))
+            model.soundEffects[i].sourceStart = from
+            model.soundEffects[i].duration = min(
+                max(0.1, end - from),
+                max(0.1, model.totalDuration - sound.start)
+            )
+        }
+    }
+
+    private func sfxTrimEnd(_ id: UUID) -> Binding<Double> {
+        Binding {
+            guard let sound = model.soundEffects.first(where: {
+                $0.id == id
+            }) else { return 0 }
+            return sound.sourceStart + sound.duration
+        } set: { value in
+            guard let i = model.soundEffects.firstIndex(where: { $0.id == id })
+            else { return }
+            let sound = model.soundEffects[i]
+            let end = min(sound.originalDuration,
+                          max(sound.sourceStart + 0.1, value))
+            model.soundEffects[i].duration = min(
+                max(0.1, end - sound.sourceStart),
+                max(0.1, model.totalDuration - sound.start)
+            )
+        }
+    }
+
+    @ViewBuilder
+    private func volumeKeyframeEditor(_ item: SoundEffectClip) -> some View {
+        let progress = (model.timelineSecond - item.start) /
+                       max(0.1, item.duration)
+        VStack(alignment: .leading, spacing: 9) {
+            HStack {
+                Label("Keyframe âm lượng", systemImage: "point.3.connected.trianglepath.dotted")
+                    .font(.subheadline.bold())
+                Spacer()
+                Text("\(item.volumeKeyframes.count)/16")
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+
+            AudioGainCurveView(
+                frames: item.volumeKeyframes,
+                selectedID: selectedKeyframeID,
+                playheadProgress: progress,
+                onSelect: { selectedKeyframeID = $0 }
+            )
+
+            HStack(spacing: 7) {
+                Button {
+                    if let id = model.addSoundVolumeKeyframe(item.id) {
+                        selectedKeyframeID = id
+                    }
+                } label: {
+                    Label("Thêm tại con trỏ", systemImage: "plus.diamond.fill")
+                }
+                .disabled(item.volumeKeyframes.count >= 16 ||
+                    model.timelineSecond < item.start ||
+                    model.timelineSecond > item.end)
+                Button {
+                    if let id = model.splitSoundEffectAtPlayhead(item.id) {
+                        selectedID = id
+                        selectedKeyframeID = nil
+                    }
+                } label: {
+                    Label("Tách FX", systemImage: "scissors")
+                }
+                .disabled(model.soundEffects.count >= 12)
+            }
+            .font(.caption2)
+            .buttonStyle(.borderedProminent)
+
+            if let keyframe = item.volumeKeyframes.first(where: {
+                $0.id == selectedKeyframeID
+            }) {
+                HStack {
+                    Text(String(format: "Mốc %.2fs", keyframe.progress *
+                                item.duration + item.start))
+                    Spacer()
+                    Text("\(Int(keyframe.gain * 100))%")
+                        .monospacedDigit()
+                }
+                .font(.caption)
+                Slider(value: Binding(
+                    get: {
+                        Double(model.soundEffects.first(where: {
+                            $0.id == item.id
+                        })?.volumeKeyframes.first(where: {
+                            $0.id == keyframe.id
+                        })?.gain ?? 1)
+                    },
+                    set: {
+                        model.updateSoundVolumeKeyframe(
+                            item.id, frameID: keyframe.id, gain: Float($0)
+                        )
+                    }
+                ), in: 0...1, step: 0.05)
+                    .tint(.orange)
+                Button(role: .destructive) {
+                    model.deleteSoundVolumeKeyframe(
+                        item.id, frameID: keyframe.id
+                    )
+                    selectedKeyframeID = nil
+                } label: {
+                    Label("Xóa mốc đã chọn", systemImage: "trash")
+                }
+                .font(.caption)
+                .buttonStyle(.bordered)
+            }
+            if !item.volumeKeyframes.isEmpty {
+                Button("Xóa toàn bộ keyframe") {
+                    model.resetSoundVolumeKeyframes(item.id)
+                    selectedKeyframeID = nil
+                }
+                .font(.caption2)
+                .buttonStyle(.bordered)
+            }
+            Text("Đặt con trỏ trong FX → Thêm mốc → chọn chấm màu cam và chỉnh mức tiếng. Các mốc nối tuyến tính, nghe thử ngay và được đưa vào MP4.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
         }
     }
 }
