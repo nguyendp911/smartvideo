@@ -10,7 +10,7 @@ import Vision
 enum TextBehindPersonRenderer {
     static func apply(
         to source: CIImage, items: [TextOverlayClip],
-        projectTime: Double,
+        projectTime: Double, maskSource: CIImage? = nil,
         films: [UUID: TextMaskMedia.Filmstrip] = [:],
         quality: VNGeneratePersonSegmentationRequest.QualityLevel = .fast
     ) throws -> CIImage {
@@ -55,7 +55,7 @@ enum TextBehindPersonRenderer {
 
         let under = overlayCI.composited(over: source)
         let mask = try PersonCutoutProcessor.personMask(
-            source, quality: quality
+            maskSource ?? source, quality: quality
         )
         // The foreground person wins over the title in every generated frame.
         // Smooth mask edges are handled by Vision's alpha image.
