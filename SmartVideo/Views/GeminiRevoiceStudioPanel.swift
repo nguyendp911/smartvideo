@@ -14,6 +14,13 @@ struct GeminiRevoiceStudioPanel: View {
     @State private var reviewPage = 0
     private let reviewPageSize = 12
 
+    private func originalText(for cue: SubtitleCue) -> String? {
+        model.subtitles.first {
+            abs($0.start - cue.start) < 0.001 &&
+            abs($0.end - cue.end) < 0.001
+        }?.text
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Gemini AI • Thuyết minh lại video",
@@ -244,8 +251,9 @@ struct GeminiRevoiceStudioPanel: View {
                                     .foregroundStyle(.orange)
                             }
                         }
-                        if index < model.subtitles.count {
-                            Text("Gốc: " + model.subtitles[index].text)
+                        if let original = originalText(
+                            for: model.aiRevoiceDraft[index]) {
+                            Text("Gốc: " + original)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -255,9 +263,9 @@ struct GeminiRevoiceStudioPanel: View {
                             .lineLimit(2...5)
                             .textFieldStyle(.roundedBorder)
                         Button("Khôi phục lời gốc") {
-                            if index < model.subtitles.count {
-                                model.aiRevoiceDraft[index].text =
-                                    model.subtitles[index].text
+                            if let original = originalText(
+                                for: model.aiRevoiceDraft[index]) {
+                                model.aiRevoiceDraft[index].text = original
                             }
                         }
                         .font(.caption2)
