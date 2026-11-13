@@ -117,6 +117,9 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     /// Strength of the selected grade (zero leaves the source unchanged).
     var lookIntensity: Double = 1.0
     var colorAdjustments: ColorAdjustments = .neutral
+    /// Photo-only self-contained mood recipe; videos ignore this setting.
+    var photoPreset: PhotoPreset? = nil
+    var photoPresetIntensity: Double = 0.75
     var autoEnhance: AutoEnhanceSettings = .off
     var personBackground: PersonBackground = .original
     /// Independent source-audio settings; original media is never modified.
@@ -135,6 +138,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          imageLook: ImageLook = .original,
          lookIntensity: Double = 1.0,
          colorAdjustments: ColorAdjustments = .neutral,
+         photoPreset: PhotoPreset? = nil,
+         photoPresetIntensity: Double = 0.75,
          autoEnhance: AutoEnhanceSettings = .off,
          personBackground: PersonBackground = .original,
          sourceAudioVolume: Float = 1,
@@ -154,6 +159,9 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.imageLook = imageLook
         self.lookIntensity = min(1, max(0, lookIntensity))
         self.colorAdjustments = colorAdjustments
+        self.photoPreset = kind == .image ? photoPreset : nil
+        self.photoPresetIntensity = photoPresetIntensity.isFinite ?
+            min(1, max(0, photoPresetIntensity)) : 0.75
         self.autoEnhance = autoEnhance
         self.personBackground = personBackground
         self.sourceAudioVolume = ClipAudioEnvelope.safeVolume(sourceAudioVolume)
@@ -167,7 +175,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
         case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
-        case autoEnhance
+        case autoEnhance, photoPreset, photoPresetIntensity
         case flipHorizontal, flipVertical, personBackground
         case sourceAudioVolume, sourceAudioMuted, sourceAudioFadeIn, sourceAudioFadeOut
     }
@@ -195,6 +203,12 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         lookIntensity = min(1, max(0, rawStrength.isFinite ? rawStrength : 1))
         colorAdjustments = try c.decodeIfPresent(ColorAdjustments.self,
                                                  forKey: .colorAdjustments) ?? .neutral
+        photoPreset = kind == .image ?
+            try c.decodeIfPresent(PhotoPreset.self, forKey: .photoPreset) : nil
+        let rawPresetIntensity = try c.decodeIfPresent(
+            Double.self, forKey: .photoPresetIntensity) ?? 0.75
+        photoPresetIntensity = rawPresetIntensity.isFinite ?
+            min(1, max(0, rawPresetIntensity)) : 0.75
         autoEnhance = try c.decodeIfPresent(AutoEnhanceSettings.self,
                                           forKey: .autoEnhance) ?? .off
         personBackground = try c.decodeIfPresent(PersonBackground.self,
