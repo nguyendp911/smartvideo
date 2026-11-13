@@ -118,6 +118,49 @@ struct TextOverlayStudioPanel: View {
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
+                DisclosureGroup("Font Studio Pro — kiểu chữ & chuyển động") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Picker("Font tiếng Việt", selection:
+                            $model.textOverlays[idx].fontName) {
+                            Text("Hệ thống đậm").tag("")
+                            Text("Avenir Next").tag("AvenirNext-Bold")
+                            Text("Helvetica Neue").tag("HelveticaNeue-Bold")
+                            Text("Georgia").tag("Georgia-Bold")
+                            Text("Palatino").tag("Palatino-Bold")
+                            Text("Menlo").tag("Menlo-Bold")
+                            Text("Gill Sans").tag("GillSans-Bold")
+                            Text("Futura").tag("Futura-Bold")
+                        }
+                        .pickerStyle(.menu)
+                        Text("Font không hỗ trợ ký tự sẽ được iOS thay thế; hãy xem thử MP4 với dấu tiếng Việt.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        row("Giãn chữ",
+                            String(format: "%.1f pt", item.letterSpacing))
+                        Slider(value: $model.textOverlays[idx].letterSpacing,
+                               in: -5...24, step: 0.5).tint(.cyan)
+                        row("Uốn cong dòng chữ",
+                            String(format: "%.0f", item.curveAmount))
+                        Slider(value: $model.textOverlays[idx].curveAmount,
+                               in: -80...80, step: 2).tint(.cyan)
+                        Button("Trả chữ về đường thẳng") {
+                            model.textOverlays[idx].curveAmount = 0
+                        }
+                        .buttonStyle(.bordered)
+                        .font(.caption)
+                        Toggle("Gõ từng ký tự (Typewriter)",
+                               isOn: $model.textOverlays[idx].typewriterEnabled)
+                            .font(.caption)
+                        if item.typewriterEnabled {
+                            row("Thời gian gõ",
+                                String(format: "%.1fs", item.typewriterDuration))
+                            Slider(value: $model.textOverlays[idx].typewriterDuration,
+                                   in: 0.2...min(10, max(0.2, item.duration)),
+                                   step: 0.1).tint(.cyan)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                }
+                .font(.caption.bold())
                 Picker("Vị trí theo chủ thể",
                        selection: $model.textOverlays[idx].depthMode) {
                     ForEach(TextDepthMode.allCases) { mode in
@@ -156,6 +199,12 @@ struct TextOverlayStudioPanel: View {
                 .pickerStyle(.menu)
 
                 if item.fillMode == .gradient {
+                    Text("Màu giữa (HEX, để trống nếu chỉ dùng 2 màu)")
+                        .font(.caption.bold())
+                    TextField("Để trống hoặc FF88CC",
+                              text: $model.textOverlays[idx].gradientMidHex)
+                        .textInputAutocapitalization(.characters)
+                        .textFieldStyle(.roundedBorder)
                     Text("Màu chuyển sắc thứ hai (HEX)")
                         .font(.caption.bold())
                     TextField("18D6F5",
