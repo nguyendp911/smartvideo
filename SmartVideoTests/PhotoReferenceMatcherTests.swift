@@ -56,6 +56,25 @@ final class PhotoReferenceMatcherTests: XCTestCase {
         }
     }
 
+    func testImportedPresetValuesAreBoundedAndIDsAreUnique() throws {
+        var unsafe = try XCTUnwrap(PhotoPresetLibrary.find("sunset"))
+        unsafe.exposureEV = 999
+        unsafe.contrast = -45
+        unsafe.saturation = 400
+        unsafe.sharpness = 99
+        unsafe.vignette = -20
+        let imported = PhotoPresetTransferDocument.sanitized(
+            Array(repeating: unsafe, count: 45)
+        )
+        XCTAssertEqual(imported.count, 40)
+        XCTAssertEqual(Set(imported.map(\.id)).count, 40)
+        XCTAssertEqual(imported[0].exposureEV, 0.8, accuracy: 0.001)
+        XCTAssertEqual(imported[0].contrast, 0.75, accuracy: 0.001)
+        XCTAssertEqual(imported[0].saturation, 1.4, accuracy: 0.001)
+        XCTAssertEqual(imported[0].sharpness, 0.75, accuracy: 0.001)
+        XCTAssertEqual(imported[0].vignette, 0, accuracy: 0.001)
+    }
+
     func testSelectedBatchChangesOnlyChosenPhotosAndCanUndo() throws {
         let model = EditorViewModel()
         let first = TimelineClip(
