@@ -207,6 +207,9 @@ struct EditorView: View {
         .onChange(of: selectedClip?.colorAdjustments) { _ in
             refreshColorPreview()
         }
+        .onChange(of: selectedClip?.autoEnhance) { _ in
+            refreshColorPreview()
+        }
         .onChange(of: selectedClip?.personBackground) { _ in
             refreshColorPreview()
         }
@@ -1049,6 +1052,13 @@ struct EditorView: View {
         case .effects: effectsPanel
         case .ai:
             VStack(alignment: .leading, spacing: 12) {
+                Hook3sStudioPanel(
+                    model: model, selectedClipID: selectedClipID
+                )
+                AutoEnhanceStudioPanel(
+                    model: model, selectedClipID: selectedClipID,
+                    compareOriginal: $compareOriginalFootage
+                )
                 AIVideoDirectorPanel(
                     model: model, selectedClipID: selectedClipID
                 )
@@ -2640,6 +2650,7 @@ struct EditorView: View {
         if compareOriginalFootage {
             previewClip.lookIntensity = 0
             previewClip.colorAdjustments = .neutral
+            previewClip.autoEnhance = .off
             previewClip.personBackground = .original
         }
 
