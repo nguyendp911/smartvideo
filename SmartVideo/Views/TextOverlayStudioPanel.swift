@@ -91,9 +91,10 @@ struct TextOverlayStudioPanel: View {
                                                 .foregroundStyle(
                                                     LinearGradient(
                                                         colors: [
-                                                            Color.cyan.opacity(0.95),
-                                                            Color.white,
-                                                            Color.pink.opacity(0.8)
+                                                            Color(uiColor: TextOverlayRenderer.uiColor(
+                                                                hex: preset.previewColors.start)),
+                                                            Color(uiColor: TextOverlayRenderer.uiColor(
+                                                                hex: preset.previewColors.end))
                                                         ],
                                                         startPoint: .topLeading,
                                                         endPoint: .bottomTrailing
