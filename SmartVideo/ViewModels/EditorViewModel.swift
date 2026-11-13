@@ -164,6 +164,10 @@ final class EditorViewModel: ObservableObject {
     @Published var isAnalyzingVideoHighlights = false
     @Published var previousTimeline: [TimelineClip]?
     @Published var aiRevoiceDraft: [SubtitleCue] = []
+    @Published var aiGeminiModels: [GeminiAvailableModel] = []
+    @Published var isLoadingGeminiModels = false
+    @Published var aiGeminiModelStatus = ""
+    @Published var aiGeminiModelName = ""
     @Published var aiRevoiceStyle = "Kể chuyện tự nhiên"
     @Published var aiRevoiceLanguage = "Tiếng Việt"
     @Published var aiRevoiceInstructions = ""
@@ -691,6 +695,72 @@ final class EditorViewModel: ObservableObject {
     }
 
     // MARK: - Gemini AI Video Revoice
+
+    func discoverGeminiModels(apiKey: String) {
+        guard !isLoadingGeminiModels else { return }
+        isLoadingGeminiModels = true
+        aiGeminiModelStatus = "Đang kiểm tra Gemini API key và tải model…"
+        aiGeminiModels = []
+        Task {
+            defer { isLoadingGeminiModels = false }
+            do {
+                let models = try await GeminiDirectAPI.listModels(apiKey: apiKey)
+                aiGeminiModels = models
+                if !models.contains(where: { $0.name == aiGeminiModelName }) {
+                    aiGeminiModelName = ""
+                }
+                let selected = aiGeminiModelName.isEmpty ?
+                    GeminiDirectAPI.recommended(models)?.title ?? "Chưa có model" :
+                    models.first(where: { $0.name == aiGeminiModelName })?.title ?? ""
+                aiGeminiModelStatus = "Đã phát hiện \(models.count) model. Đề xuất: \(selected)."
+            } catch {
+                aiGeminiModelStatus = "Không tải được model: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func rewriteSubtitlesDirectGemini(apiKey: String) {
+        guard !isRewritingWithGemini else { return }
+        let cues = subtitles
+        guard !cues.isEmpty else {
+            errorText = "Hãy nhận diện lời nói hoặc nhập SRT trước."
+            return
+        }
+        let available = aiGeminiModels
+        guard let selected = aiGeminiModelName.isEmpty
+            ? GeminiDirectAPI.recommended(available)
+            : available.first(where: { $0.name == aiGeminiModelName }) else {
+            errorText = "Hãy kiểm tra API key và tải danh sách model trước."
+            return
+        }
+        let projectAtStart = projectID
+        let style = aiRevoiceStyle
+        let language = aiRevoiceLanguage
+        let instructions = aiRevoiceInstructions
+        aiRevoiceDraft = []
+        isRewritingWithGemini = true
+        aiRevoiceStatus = "Gemini \(selected.title) đang viết lại lời dẫn…"
+        Task {
+            defer { isRewritingWithGemini = false }
+            do {
+                let rewritten = try await GeminiDirectAPI.rewrite(
+                    apiKey: apiKey, modelName: selected.name,
+                    style: style, language: language,
+                    instructions: instructions, captions: cues
+                )
+                guard projectID == projectAtStart,
+                      subtitles == cues else {
+                    aiRevoiceStatus = "Phụ đề đã thay đổi. Hãy chạy lại."
+                    return
+                }
+                aiRevoiceDraft = rewritten
+                aiRevoiceStatus = "Đã viết lại \(rewritten.count) đoạn bằng \(selected.title). Hãy kiểm tra trước khi áp dụng."
+            } catch {
+                aiRevoiceStatus = ""
+                errorText = "Gemini: \(error.localizedDescription)"
+            }
+        }
+    }
 
     func rewriteSubtitlesWithGemini(gatewayURL: String, token: String) {
         guard !isRewritingWithGemini else { return }
