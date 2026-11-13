@@ -666,6 +666,28 @@ final class EditorViewModel: ObservableObject {
             "Đã áp dụng \(preset.name). Có thể tinh chỉnh cường độ."
     }
 
+    /// A single undo checkpoint for a hand-picked set of photo clips.
+    /// No video clip is modified even if an ID of one is supplied.
+    func applyPhotoPresetToSelection(
+        _ preset: PhotoPreset, ids: Set<UUID>, intensity: Double
+    ) {
+        let indices = clips.indices.filter {
+            clips[$0].kind == .image && ids.contains(clips[$0].id)
+        }
+        guard !indices.isEmpty else {
+            photoPresetFeedback = "Chưa chọn ảnh nào để áp dụng."
+            return
+        }
+        checkpoint()
+        let amount = intensity.isFinite ? min(1, max(0, intensity)) : 0.75
+        for index in indices {
+            clips[index].photoPreset = preset
+            clips[index].photoPresetIntensity = amount
+            clips[index].imageLook = .original
+        }
+        photoPresetFeedback = "Đã áp dụng \(preset.name) cho \(indices.count) ảnh được chọn."
+    }
+
     func beginPhotoPresetAdjustment() { checkpoint() }
 
     func changePhotoPresetIntensity(clipID: UUID?, intensity: Double) {
