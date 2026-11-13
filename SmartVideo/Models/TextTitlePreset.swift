@@ -10,6 +10,14 @@ enum TextTitlePreset: String, CaseIterable, Identifiable {
     case cinematic = "Cinematic Name"
     case laptopSale = "Laptop Sale"
     case travel = "Travel Text"
+    case neonBlue = "Neon Blue"
+    case neonPink = "Neon Pink"
+    case chrome = "Chrome Silver"
+    case royalGold = "Royal Gold"
+    case fire = "Fire Glow"
+    case ice = "Ice Frost"
+    case cyberpunk = "Cyberpunk"
+    case saleFlash = "Flash Sale"
 
     var id: String { rawValue }
 
@@ -23,6 +31,8 @@ enum TextTitlePreset: String, CaseIterable, Identifiable {
         title.maskOffsetX = 0
         title.maskOffsetY = 0
         title.opacity = 1
+        title.shadowOpacity = 0.35
+        title.strokeHex = "FFFFFF"
         title.fontSize = 80
         title.depthMode = .front
         title.fillMode = .solid
@@ -74,6 +84,70 @@ enum TextTitlePreset: String, CaseIterable, Identifiable {
             title.fontSize = 115
             title.pulseEnabled = true
             title.strokeWidth = 1
+        case .neonBlue:
+            title.fillMode = .gradient
+            title.colorHex = "E4FFFF"
+            title.gradientEndHex = "00CFFF"
+            title.strokeHex = "008DFF"
+            title.strokeWidth = 2.5
+            title.glowRadius = 15
+            title.fauxDepth = 0
+        case .neonPink:
+            title.fillMode = .gradient
+            title.colorHex = "FFF1FB"
+            title.gradientEndHex = "FF36BC"
+            title.strokeHex = "A400FF"
+            title.strokeWidth = 2.5
+            title.glowRadius = 16
+            title.fauxDepth = 0
+        case .chrome:
+            title.fillMode = .gradient
+            title.colorHex = "FFFFFF"
+            title.gradientEndHex = "6F8396"
+            title.strokeHex = "E8F4FF"
+            title.strokeWidth = 1.5
+            title.glowRadius = 0
+            title.fauxDepth = 7
+        case .royalGold:
+            title.fillMode = .gradient
+            title.colorHex = "FFF5BB"
+            title.gradientEndHex = "B77A15"
+            title.strokeHex = "FFDE7C"
+            title.strokeWidth = 1.5
+            title.glowRadius = 0
+            title.fauxDepth = 5
+        case .fire:
+            title.fillMode = .gradient
+            title.colorHex = "FFF498"
+            title.gradientEndHex = "FF3B0B"
+            title.strokeHex = "B91800"
+            title.strokeWidth = 2
+            title.glowRadius = 18
+            title.fauxDepth = 0
+        case .ice:
+            title.fillMode = .gradient
+            title.colorHex = "FFFFFF"
+            title.gradientEndHex = "42AFFF"
+            title.strokeHex = "BEF7FF"
+            title.strokeWidth = 3
+            title.glowRadius = 8
+            title.fauxDepth = 0
+        case .cyberpunk:
+            title.fillMode = .gradient
+            title.colorHex = "00FFF0"
+            title.gradientEndHex = "F7FF32"
+            title.strokeHex = "FD2FFF"
+            title.strokeWidth = 3
+            title.glowRadius = 9
+            title.fauxDepth = 5
+        case .saleFlash:
+            title.fillMode = .gradient
+            title.colorHex = "FFE500"
+            title.gradientEndHex = "FF4534"
+            title.strokeHex = "FFFFFF"
+            title.strokeWidth = 3
+            title.glowRadius = 7
+            title.fauxDepth = 7
         }
     }
 }
