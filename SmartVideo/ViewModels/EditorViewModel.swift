@@ -820,6 +820,12 @@ final class EditorViewModel: ObservableObject {
 
     func applyGeminiRevoice(muteSourceVideo: Bool) {
         guard !aiRevoiceDraft.isEmpty else { return }
+        guard aiRevoiceDraft.allSatisfy({
+            !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else {
+            errorText = "Có câu AI còn trống. Hãy chỉnh sửa hoặc khôi phục câu gốc."
+            return
+        }
         let rewrittenText = aiRevoiceDraft
             .map(\.text).joined(separator: " ")
         // Long scripts can still use the per-caption synced narration mode.
