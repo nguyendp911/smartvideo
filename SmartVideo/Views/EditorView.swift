@@ -1053,7 +1053,19 @@ struct EditorView: View {
         case .ai:
             VStack(alignment: .leading, spacing: 12) {
                 Hook3sStudioPanel(
-                    model: model, selectedClipID: selectedClipID
+                    model: model,
+                    selectedClipID: selectedClipID,
+                    onInserted: { id in
+                        selectedClipID = id
+                        scrubTimeline(to: 0)
+                    },
+                    onUndo: {
+                        selectedClipID = model.clips.first?.id
+                        scrubTimeline(to: model.timelineSecond)
+                    },
+                    onPreview: { second in
+                        scrubTimeline(to: second)
+                    }
                 )
                 AutoEnhanceStudioPanel(
                     model: model, selectedClipID: selectedClipID,
