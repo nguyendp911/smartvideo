@@ -94,6 +94,14 @@ enum TextBehindPersonRenderer {
             1 + 0.035 * sin(localSecond * .pi * 2 / 1.7) : 1
         let wide = canvas.width * 0.85
         var renderedTitle = item
+        if item.typewriterEnabled {
+            let characters = Array(item.text)
+            let fraction = min(1, max(0,
+                localSecond / max(0.1, item.typewriterDuration)))
+            let visible = min(characters.count,
+                Int(ceil(Double(characters.count) * fraction)))
+            renderedTitle.text = String(characters.prefix(visible))
+        }
         let baseFont = CGFloat(min(160, max(15, item.fontSize))) *
             min(1, canvas.width / 720)
         var fontSize = baseFont
@@ -103,7 +111,7 @@ enum TextBehindPersonRenderer {
             // toward the canvas edges so letters can remain visible on
             // either side, without painting over the foreground person.
             // User can disable this option to preserve exact typography.
-            let estimate = (item.text as NSString).size(
+            let estimate = (renderedTitle.text as NSString).size(
                 withAttributes: [
                     .font: UIFont.systemFont(
                         ofSize: max(1, baseFont),
