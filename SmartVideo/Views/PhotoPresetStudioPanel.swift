@@ -3,6 +3,7 @@ import UIKit
 import CoreImage
 import ImageIO
 import PhotosUI
+import UniformTypeIdentifiers
 
 /// A dedicated still-photo editor. Video looks remain independent.
 struct PhotoPresetStudioPanel: View {
@@ -27,6 +28,9 @@ struct PhotoPresetStudioPanel: View {
     @State private var matchingReference = false
     @State private var showPhotoSelection = false
     @State private var selectedPhotoIDs: Set<UUID> = []
+    @State private var showImportPresets = false
+    @State private var showExportPresets = false
+    @State private var transferStatus = ""
 
     private var selectedPhoto: TimelineClip? {
         model.clips.first { $0.id == selectedClipID && $0.kind == .image }
@@ -173,6 +177,57 @@ struct PhotoPresetStudioPanel: View {
             guard selectedPhoto?.photoPreset != nil else { return }
             model.changePhotoPresetIntensity(
                 clipID: selectedClipID, intensity: newValue)
+        }
+        .fileExporter(
+            isPresented: $showExportPresets,
+            document: PhotoPresetTransferDocument(presets: savedCustom),
+            contentType: .json,
+            defaultFilename: "ViePN-Photo-Presets"
+        ) { result in
+            switch result {
+            case .success:
+                transferStatus = "Đã xuất thư viện preset JSON."
+            case .failure(let error):
+                transferStatus = "Không xuất được preset: " +
+                    error.localizedDescription
+            }
+        }
+        .fileImporter(
+            isPresented: $showImportPresets,
+            allowedContentTypes: [.json]
+        ) { result in
+            do {
+                let url = try result.get()
+                let hasAccess = url.startAccessingSecurityScopedResource()
+                defer {
+                    if hasAccess { url.stopAccessingSecurityScopedResource() }
+                }
+                let data = try Data(contentsOf: url)
+                guard data.count <= 256_000 else {
+                    transferStatus = "Tệp quá lớn; giới hạn 256 KB."
+                    return
+                }
+                let decoded = try JSONDecoder().decode(
+                    [PhotoPreset].self, from: data)
+                let incoming = PhotoPresetTransferDocument.sanitized(
+                    decoded)
+                guard !incoming.isEmpty else {
+                    transferStatus = "Tệp JSON không có preset hợp lệ."
+                    return
+                }
+                var combined = incoming + savedCustom
+                combined = Array(combined.prefix(40))
+                guard let output = try? JSONEncoder().encode(combined),
+                      let json = String(data: output, encoding: .utf8) else {
+                    transferStatus = "Không thể lưu thư viện preset nhập."
+                    return
+                }
+                savedCustomJSON = json
+                transferStatus = "Đã nhập \(incoming.count) preset; thư viện giữ tối đa 40 preset."
+            } catch {
+                transferStatus = "Nhập preset thất bại: " +
+                    error.localizedDescription
+            }
         }
     }
 
@@ -493,6 +548,26 @@ struct PhotoPresetStudioPanel: View {
             .disabled(selectedPhoto == nil ||
                       customName.trimmingCharacters(
                         in: .whitespacesAndNewlines).isEmpty)
+            HStack(spacing: 8) {
+                Button {
+                    showImportPresets = true
+                } label: {
+                    Label("Nhập JSON", systemImage: "square.and.arrow.down")
+                }
+                Button {
+                    showExportPresets = true
+                } label: {
+                    Label("Xuất JSON", systemImage: "square.and.arrow.up")
+                }
+                .disabled(savedCustom.isEmpty)
+            }
+            .font(.caption)
+            .buttonStyle(.bordered)
+            if !transferStatus.isEmpty {
+                Text(transferStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
             if !savedCustom.isEmpty {
                 ForEach(savedCustom) { preset in
                     HStack {
