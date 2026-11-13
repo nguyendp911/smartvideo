@@ -743,11 +743,21 @@ final class EditorViewModel: ObservableObject {
         Task {
             defer { isRewritingWithGemini = false }
             do {
-                let rewritten = try await GeminiDirectAPI.rewrite(
-                    apiKey: apiKey, modelName: selected.name,
-                    style: style, language: language,
-                    instructions: instructions, captions: cues
-                )
+                let chunks = stride(from: 0, to: cues.count, by: 60)
+                    .map { start in
+                        Array(cues[start..<min(start + 60, cues.count)])
+                    }
+                var rewritten: [SubtitleCue] = []
+                for (index, chunk) in chunks.enumerated() {
+                    try Task.checkCancellation()
+                    aiRevoiceStatus = "Gemini: xử lý đoạn \(index + 1)/\(chunks.count)…"
+                    let part = try await GeminiDirectAPI.rewrite(
+                        apiKey: apiKey, modelName: selected.name,
+                        style: style, language: language,
+                        instructions: instructions, captions: chunk
+                    )
+                    rewritten.append(contentsOf: part)
+                }
                 guard projectID == projectAtStart,
                       subtitles == cues else {
                     aiRevoiceStatus = "Phụ đề đã thay đổi. Hãy chạy lại."
@@ -779,11 +789,21 @@ final class EditorViewModel: ObservableObject {
         Task {
             defer { isRewritingWithGemini = false }
             do {
-                let result = try await GeminiRevoiceClient.rewrite(
-                    baseURL: gatewayURL, token: token,
-                    style: style, language: language,
-                    instructions: instructions, captions: cues
-                )
+                let chunks = stride(from: 0, to: cues.count, by: 60)
+                    .map { start in
+                        Array(cues[start..<min(start + 60, cues.count)])
+                    }
+                var result: [SubtitleCue] = []
+                for (index, chunk) in chunks.enumerated() {
+                    try Task.checkCancellation()
+                    aiRevoiceStatus = "Gateway: xử lý đoạn \(index + 1)/\(chunks.count)…"
+                    let part = try await GeminiRevoiceClient.rewrite(
+                        baseURL: gatewayURL, token: token,
+                        style: style, language: language,
+                        instructions: instructions, captions: chunk
+                    )
+                    result.append(contentsOf: part)
+                }
                 guard projectID == projectAtStart,
                       subtitles == cues else {
                     aiRevoiceStatus = "Phụ đề đã thay đổi trong lúc xử lý. Hãy chạy lại."
@@ -802,9 +822,10 @@ final class EditorViewModel: ObservableObject {
         guard !aiRevoiceDraft.isEmpty else { return }
         let rewrittenText = aiRevoiceDraft
             .map(\.text).joined(separator: " ")
-        guard rewrittenText.count <= 5000 else {
-            errorText = "Lời mới dài hơn giới hạn 5.000 ký tự của giọng iOS. Hãy xử lý video theo từng đoạn ngắn."
-            return
+        // Long scripts can still use the per-caption synced narration mode.
+        // Whole-script TTS is intentionally limited to 5,000 characters.
+        if rewrittenText.count > 5000 {
+            aiRevoiceStatus = "Lời dài hơn 5.000 ký tự: sử dụng chế độ tạo giọng theo từng mốc phụ đề."
         }
         checkpoint()
         subtitles = aiRevoiceDraft
@@ -816,7 +837,9 @@ final class EditorViewModel: ObservableObject {
                 clips[index].sourceAudioMuted = true
             }
         }
-        aiRevoiceStatus = "Đã thay nội dung và phụ đề. Chọn Tạo giọng đọc để tạo audio mới."
+        aiRevoiceStatus = rewrittenText.count > 5000 ?
+            "Đã áp dụng phụ đề. Lời dài: dùng Tạo giọng theo từng mốc." :
+            "Đã áp dụng lời mới. Hãy tạo giọng đọc và xem thử 720p."
     }
 
     func generateTimeMatchedRevoice() {
