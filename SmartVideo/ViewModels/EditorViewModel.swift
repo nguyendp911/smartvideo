@@ -163,6 +163,12 @@ final class EditorViewModel: ObservableObject {
     @Published var analyzedClipID: UUID?
     @Published var isAnalyzingVideoHighlights = false
     @Published var previousTimeline: [TimelineClip]?
+    @Published var aiRevoiceDraft: [SubtitleCue] = []
+    @Published var aiRevoiceStyle = "Kể chuyện tự nhiên"
+    @Published var aiRevoiceLanguage = "Tiếng Việt"
+    @Published var aiRevoiceInstructions = ""
+    @Published var isRewritingWithGemini = false
+    @Published var aiRevoiceStatus = ""
     @Published var narrationText = ""
     @Published var narratorVoiceID: String = ""
     @Published var narratorTone: NarrationTone = .natural
@@ -681,6 +687,60 @@ final class EditorViewModel: ObservableObject {
         musicHighlightDuration = min(highlight.duration,
                                      max(0, musicDuration - musicStartSeconds))
         exportedMusicHighlightURL = nil
+    }
+
+    // MARK: - Gemini AI Video Revoice
+
+    func rewriteSubtitlesWithGemini(gatewayURL: String, token: String) {
+        guard !isRewritingWithGemini else { return }
+        guard !subtitles.isEmpty else {
+            errorText = "Hãy nhận diện lời nói từ video hoặc nhập SRT trước."
+            return
+        }
+        let cues = subtitles
+        let projectAtStart = projectID
+        let style = aiRevoiceStyle
+        let language = aiRevoiceLanguage
+        let instructions = aiRevoiceInstructions
+        aiRevoiceDraft = []
+        isRewritingWithGemini = true
+        aiRevoiceStatus = "Gemini đang viết lại lời dẫn…"
+        Task {
+            defer { isRewritingWithGemini = false }
+            do {
+                let result = try await GeminiRevoiceClient.rewrite(
+                    baseURL: gatewayURL, token: token,
+                    style: style, language: language,
+                    instructions: instructions, captions: cues
+                )
+                guard projectID == projectAtStart,
+                      subtitles == cues else {
+                    aiRevoiceStatus = "Phụ đề đã thay đổi trong lúc xử lý. Hãy chạy lại."
+                    return
+                }
+                aiRevoiceDraft = result
+                aiRevoiceStatus = "Đã viết lại \(result.count) đoạn. Kiểm tra và nhấn Áp dụng."
+            } catch {
+                aiRevoiceStatus = ""
+                errorText = "Gemini: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func applyGeminiRevoice(muteSourceVideo: Bool) {
+        guard !aiRevoiceDraft.isEmpty else { return }
+        checkpoint()
+        subtitles = aiRevoiceDraft
+        narrationText = aiRevoiceDraft
+            .map(\.text).joined(separator: " ")
+        aiRevoiceDraft = []
+        // This mutes all embedded audio, not isolated speech; user must opt in.
+        if muteSourceVideo {
+            for index in clips.indices where clips[index].kind == .video {
+                clips[index].sourceAudioMuted = true
+            }
+        }
+        aiRevoiceStatus = "Đã thay nội dung và phụ đề. Chọn Tạo giọng đọc để tạo audio mới."
     }
 
     // MARK: - Narration from text
