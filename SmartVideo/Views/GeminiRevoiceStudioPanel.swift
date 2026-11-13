@@ -11,6 +11,8 @@ struct GeminiRevoiceStudioPanel: View {
     @State private var keyStatus = ""
     @State private var muteSourceVideo = false
     @State private var showConfiguration = false
+    @State private var reviewPage = 0
+    private let reviewPageSize = 12
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -190,19 +192,80 @@ struct GeminiRevoiceStudioPanel: View {
                 Divider()
                 Text("Bước 3 • Duyệt bản Gemini")
                     .font(.subheadline.bold())
-                Text("Mốc phụ đề giữ nguyên; giọng TTS chưa căn khớp từng câu. Kiểm tra nội dung trước khi áp dụng.")
+                Text("Sửa trực tiếp từng đoạn trước khi áp dụng; mốc thời gian gốc không đổi. Các câu cảnh báo có thể quá dài cho giọng đọc.")
                     .font(.caption).foregroundStyle(.secondary)
-                ForEach(model.aiRevoiceDraft.prefix(15)) { cue in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(String(format: "%.1f–%.1fs", cue.start, cue.end))
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                        Text(cue.text).font(.caption)
-                    }
+                let needsReview = model.aiRevoiceDraft.filter {
+                    AIRevoiceTimingGuide.needsReview($0)
+                }.count
+                if needsReview > 0 {
+                    Label("\(needsReview) câu cần rút ngắn hoặc kiểm tra tốc độ đọc.",
+                          systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
                 }
-                if model.aiRevoiceDraft.count > 15 {
-                    Text("… và \(model.aiRevoiceDraft.count - 15) đoạn khác")
+                let pageCount = max(1, Int(ceil(
+                    Double(model.aiRevoiceDraft.count) / Double(reviewPageSize))))
+                let page = min(reviewPage, pageCount - 1)
+                let startIndex = page * reviewPageSize
+                let endIndex = min(startIndex + reviewPageSize,
+                                   model.aiRevoiceDraft.count)
+                HStack(spacing: 10) {
+                    Button {
+                        reviewPage = max(0, reviewPage - 1)
+                    } label: {
+                        Label("Trước", systemImage: "chevron.left")
+                    }
+                    .disabled(page == 0)
+                    Spacer()
+                    Text("Trang \(page + 1)/\(pageCount) · \(model.aiRevoiceDraft.count) câu")
+                        .font(.caption2).monospacedDigit()
+                    Spacer()
+                    Button {
+                        reviewPage = min(pageCount - 1, reviewPage + 1)
+                    } label: {
+                        Label("Sau", systemImage: "chevron.right")
+                    }
+                    .disabled(page == pageCount - 1)
+                }
+                .buttonStyle(.bordered)
+                .font(.caption)
+                ForEach(startIndex..<endIndex, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack {
+                            Text(String(format: "#%d · %.1f–%.1fs",
+                                        index + 1,
+                                        model.aiRevoiceDraft[index].start,
+                                        model.aiRevoiceDraft[index].end))
+                                .font(.caption2.monospacedDigit())
+                            Spacer()
+                            if AIRevoiceTimingGuide.needsReview(
+                                model.aiRevoiceDraft[index]) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                            }
+                        }
+                        if index < model.subtitles.count {
+                            Text("Gốc: " + model.subtitles[index].text)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                        TextField("Lời AI (có thể sửa)",
+                                  text: $model.aiRevoiceDraft[index].text,
+                                  axis: .vertical)
+                            .lineLimit(2...5)
+                            .textFieldStyle(.roundedBorder)
+                        Button("Khôi phục lời gốc") {
+                            if index < model.subtitles.count {
+                                model.aiRevoiceDraft[index].text =
+                                    model.subtitles[index].text
+                            }
+                        }
                         .font(.caption2)
+                        .buttonStyle(.borderless)
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.06),
+                                in: RoundedRectangle(cornerRadius: 8))
                 }
                 Toggle("Tắt toàn bộ âm thanh clip gốc khi áp dụng",
                        isOn: $muteSourceVideo)
@@ -232,6 +295,7 @@ struct GeminiRevoiceStudioPanel: View {
             }
             .buttonStyle(.bordered)
             .disabled(model.narrationText.isEmpty ||
+                      model.narrationText.count > 5000 ||
                       model.isGeneratingNarration)
             Button {
                 model.generateTimeMatchedRevoice()
@@ -245,6 +309,11 @@ struct GeminiRevoiceStudioPanel: View {
             .disabled(model.subtitles.isEmpty ||
                       model.isGeneratingSyncedRevoice)
             if model.isGeneratingSyncedRevoice { ProgressView() }
+            if model.narrationText.count > 5000 {
+                Text("Bản lời dài hơn 5.000 ký tự: hãy dùng chế độ tạo giọng theo từng mốc.")
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+            }
             Text("Chế độ khớp mốc tạo tiếng nói từng câu rồi co/giãn thời lượng. Tốc độ giọng có thể không tự nhiên ở câu quá dài; kiểm tra bản xem thử 720p.")
                 .font(.caption2).foregroundStyle(.secondary)
             Text("Sử dụng giọng iOS đã chọn tại tab Giọng. Bản đầu chưa hỗ trợ giọng Gemini TTS hay tự tách giọng khỏi nhạc nền.")
