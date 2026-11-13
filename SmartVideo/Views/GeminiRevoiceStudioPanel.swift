@@ -160,6 +160,20 @@ struct GeminiRevoiceStudioPanel: View {
             .buttonStyle(.bordered)
             .disabled(model.narrationText.isEmpty ||
                       model.isGeneratingNarration)
+            Button {
+                model.generateTimeMatchedRevoice()
+            } label: {
+                Label(model.isGeneratingSyncedRevoice ?
+                      "Đang ghép giọng theo thời gian…" :
+                      "Tạo giọng khớp từng mốc phụ đề",
+                      systemImage: "waveform.badge.mic")
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(model.subtitles.isEmpty ||
+                      model.isGeneratingSyncedRevoice)
+            if model.isGeneratingSyncedRevoice { ProgressView() }
+            Text("Chế độ khớp mốc tạo tiếng nói từng câu rồi co/giãn thời lượng. Tốc độ giọng có thể không tự nhiên ở câu quá dài; kiểm tra bản xem thử 720p.")
+                .font(.caption2).foregroundStyle(.secondary)
             Text("Sử dụng giọng iOS đã chọn tại tab Giọng. Bản đầu chưa hỗ trợ giọng Gemini TTS hay tự tách giọng khỏi nhạc nền.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
