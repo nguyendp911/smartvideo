@@ -208,7 +208,7 @@ enum AIVisualDirector {
             summary: String(result.summary.prefix(1500)),
             scenes: cleaned.sorted { $0.start < $1.start },
             detectedScreenText: Array(Set(allOCR +
-                result.detectedScreenText.prefix(15))).sorted()
+                Array(result.detectedScreenText.prefix(15)))).sorted()
         )
     }
 }
