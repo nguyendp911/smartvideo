@@ -53,6 +53,7 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
     var maskOffsetY: Double = 0
     var maskFit: TextMaskFit = .fill
     var gradientEndHex: String = "18D6F5"
+    var gradientMidHex: String = ""
     var strokeWidth: Double = 0
     var strokeHex: String = "FFFFFF"
     var shadowOpacity: Double = 0.4
@@ -72,7 +73,7 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
         case colorHex, useBackground, opacity, easing
         case pathMode, keyframes
         case depthMode, fillMode, fillAssetURL, maskScale,
-             maskOffsetX, maskOffsetY, maskFit, gradientEndHex,
+             maskOffsetX, maskOffsetY, maskFit, gradientEndHex, gradientMidHex,
              strokeWidth, strokeHex, shadowOpacity, glowRadius,
              fauxDepth, pulseEnabled, behindVisibilityAssist
     }
@@ -118,6 +119,7 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
             try c.decodeIfPresent(Double.self, forKey: .maskOffsetY) ?? 0))
         maskFit = try c.decodeIfPresent(TextMaskFit.self, forKey: .maskFit) ?? .fill
         gradientEndHex = try c.decodeIfPresent(String.self, forKey: .gradientEndHex) ?? "18D6F5"
+        gradientMidHex = try c.decodeIfPresent(String.self, forKey: .gradientMidHex) ?? ""
         strokeWidth = min(12, max(0,
             try c.decodeIfPresent(Double.self, forKey: .strokeWidth) ?? 0))
         strokeHex = try c.decodeIfPresent(String.self, forKey: .strokeHex) ?? "FFFFFF"
