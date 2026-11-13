@@ -65,6 +65,12 @@ final class EditorViewModel: ObservableObject {
     @Published var lastSaveMessage: String?
     private struct TimelineSnapshot {
         var clips: [TimelineClip]
+        var subtitles: [SubtitleCue]
+        var textOverlays: [TextOverlayClip]
+        var imageOverlays: [ImageOverlayClip]
+        var videoOverlays: [VideoOverlayClip]
+        var vfxStartTime: Double
+        var vfxEndTime: Double
         var soundEffects: [SoundEffectClip]
         var musicRegions: [SoundEffectClip]
         var mockupOverlays: [MockupOverlayClip]
@@ -79,7 +85,11 @@ final class EditorViewModel: ObservableObject {
     private var redoStack: [TimelineSnapshot] = []
     private var currentSnapshot: TimelineSnapshot {
         TimelineSnapshot(
-            clips: clips, soundEffects: soundEffects,
+            clips: clips,
+            subtitles: subtitles, textOverlays: textOverlays,
+            imageOverlays: imageOverlays, videoOverlays: videoOverlays,
+            vfxStartTime: vfxStartTime, vfxEndTime: vfxEndTime,
+            soundEffects: soundEffects,
             musicRegions: musicRegions, mockupOverlays: mockupOverlays,
             musicRegionMode: musicRegionMode,
             projectID: projectID,
@@ -2859,6 +2869,8 @@ final class EditorViewModel: ObservableObject {
                 )
             }
             // An undo must never restore media from another project.
+            hook3sBackup = nil
+            hook3sSuggestions = []
             undoStack.removeAll()
             redoStack.removeAll()
             projectID = p.id
@@ -2980,6 +2992,8 @@ final class EditorViewModel: ObservableObject {
     }
 
     func newProject() {
+        hook3sBackup = nil
+        hook3sSuggestions = []
         undoStack.removeAll()
         redoStack.removeAll()
         projectID = UUID()
@@ -3057,6 +3071,12 @@ final class EditorViewModel: ObservableObject {
         }
         redoStack.append(currentSnapshot)
         clips = previous.clips
+        subtitles = previous.subtitles
+        textOverlays = previous.textOverlays
+        imageOverlays = previous.imageOverlays
+        videoOverlays = previous.videoOverlays
+        vfxStartTime = previous.vfxStartTime
+        vfxEndTime = previous.vfxEndTime
         soundEffects = previous.soundEffects
         musicRegions = previous.musicRegions
         mockupOverlays = previous.mockupOverlays
@@ -3078,6 +3098,12 @@ final class EditorViewModel: ObservableObject {
         }
         undoStack.append(currentSnapshot)
         clips = next.clips
+        subtitles = next.subtitles
+        textOverlays = next.textOverlays
+        imageOverlays = next.imageOverlays
+        videoOverlays = next.videoOverlays
+        vfxStartTime = next.vfxStartTime
+        vfxEndTime = next.vfxEndTime
         soundEffects = next.soundEffects
         musicRegions = next.musicRegions
         mockupOverlays = next.mockupOverlays
