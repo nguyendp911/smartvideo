@@ -1,0 +1,443 @@
+import SwiftUI
+import UIKit
+import CoreImage
+import ImageIO
+
+/// A dedicated still-photo editor. Video looks remain independent.
+struct PhotoPresetStudioPanel: View {
+    @ObservedObject var model: EditorViewModel
+    let selectedClipID: UUID?
+    @Binding var compareOriginal: Bool
+
+    @AppStorage("ViePN.PhotoPreset.Favorites") private var favorites = ""
+    @AppStorage("ViePN.PhotoPreset.CustomLibrary") private var savedCustomJSON = ""
+    @State private var category: PhotoPresetCategory? = nil
+    @State private var favoritesOnly = false
+    @State private var searchText = ""
+    @State private var intensity = 0.75
+    @State private var customName = ""
+    @State private var suggestion: PhotoPresetSuggestion?
+    @State private var suggestionStatus = ""
+    @State private var isSuggesting = false
+
+    private var selectedPhoto: TimelineClip? {
+        model.clips.first { $0.id == selectedClipID && $0.kind == .image }
+    }
+    private var savedCustom: [PhotoPreset] {
+        guard let data = savedCustomJSON.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([PhotoPreset].self, from: data)) ?? []
+    }
+    private var allPresets: [PhotoPreset] {
+        PhotoPresetLibrary.all + savedCustom
+    }
+    private var favoriteIDs: Set<String> {
+        Set(favorites.split(separator: "|").map(String.init))
+    }
+    private var shown: [PhotoPreset] {
+        allPresets.filter { preset in
+            (category == nil || preset.category == category) &&
+            (!favoritesOnly || favoriteIDs.contains(preset.id)) &&
+            (searchText.isEmpty ||
+             preset.name.localizedCaseInsensitiveContains(searchText) ||
+             preset.category.rawValue.localizedCaseInsensitiveContains(searchText))
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Label("Photo Preset Studio", systemImage: "camera.filters")
+                .font(.headline)
+            Text("Bộ màu riêng cho ảnh — \(PhotoPresetLibrary.all.count) preset dựng sẵn, preset cá nhân và xem trước bằng chính ảnh của bạn.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if let photo = selectedPhoto {
+                Text("Ảnh đang chọn: \(photo.filename)")
+                    .font(.caption.bold())
+                    .lineLimit(1)
+            } else {
+                Text("Chọn một ẢNH trên timeline để xem và áp dụng preset. Video không bị thay đổi.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            TextField("Tìm Đi biển, Hoàng hôn, Tone Hàn…", text: $searchText)
+                .textFieldStyle(.roundedBorder)
+            categoryStrip
+
+            HStack {
+                Text("\(shown.count) / \(allPresets.count) preset")
+                    .font(.caption.bold())
+                Spacer()
+                Toggle("Yêu thích", isOn: $favoritesOnly)
+                    .font(.caption)
+                    .fixedSize()
+            }
+            if let photo = selectedPhoto {
+                Button {
+                    let id = photo.id
+                    let url = photo.fileURL
+                    isSuggesting = true
+                    suggestion = nil
+                    suggestionStatus = "Vision đang nhận diện bối cảnh ảnh…"
+                    Task {
+                        defer { isSuggesting = false }
+                        do {
+                            let result = try await PhotoPresetSuggester.suggest(
+                                fileURL: url)
+                            guard selectedPhoto?.id == id else { return }
+                            suggestion = result
+                            suggestionStatus = result == nil ?
+                                "Chưa đủ chắc chắn để tự gợi ý. Hãy chọn preset thủ công." :
+                                "Gợi ý: \(PhotoPresetLibrary.find(result!.presetID)?.name ?? "Preset ảnh") — \(result!.reason)"
+                        } catch {
+                            suggestionStatus = "Không nhận diện được ảnh: \(error.localizedDescription)"
+                        }
+                    }
+                } label: {
+                    Label(isSuggesting ? "Đang nhận diện ảnh…" :
+                          "AI gợi ý preset phù hợp",
+                          systemImage: "sparkles")
+                }
+                .buttonStyle(.bordered)
+                .disabled(isSuggesting)
+                if isSuggesting { ProgressView() }
+                if !suggestionStatus.isEmpty {
+                    Text(suggestionStatus)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                if let suggestion,
+                   let recommended = PhotoPresetLibrary.find(suggestion.presetID) {
+                    Button {
+                        apply(recommended, allPhotos: false)
+                    } label: {
+                        Label("Dùng gợi ý: \(recommended.name)",
+                              systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+
+            LazyVGrid(columns: [
+                GridItem(.flexible(), spacing: 8),
+                GridItem(.flexible(), spacing: 8)
+            ], spacing: 9) {
+                ForEach(shown) { preset in
+                    presetTile(preset)
+                }
+            }
+            if shown.isEmpty {
+                Text("Không có preset phù hợp. Hãy đổi bộ lọc hoặc từ khóa.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Divider()
+            strengthControls
+            batchAndClipboard
+            personalPresetEditor
+            if !model.photoPresetFeedback.isEmpty {
+                Text(model.photoPresetFeedback)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text("Photo Preset chỉ áp dụng cho ảnh tĩnh. Ảnh gốc không thay đổi; màu của MP4 xuất dùng chính bộ xử lý Core Image trong bản xem trước.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.05),
+                    in: RoundedRectangle(cornerRadius: 12))
+        .onAppear { intensity = selectedPhoto?.photoPresetIntensity ?? 0.75 }
+        .onChange(of: selectedClipID) { _ in
+            intensity = selectedPhoto?.photoPresetIntensity ?? 0.75
+            suggestion = nil
+            suggestionStatus = ""
+        }
+        .onChange(of: intensity) { newValue in
+            guard selectedPhoto?.photoPreset != nil else { return }
+            model.changePhotoPresetIntensity(
+                clipID: selectedClipID, intensity: newValue)
+        }
+    }
+
+    private var categoryStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Button("Tất cả") { category = nil }
+                    .tint(category == nil ? .cyan : .gray)
+                ForEach(PhotoPresetCategory.allCases) { item in
+                    Button {
+                        category = item
+                    } label: {
+                        Label(item.rawValue, systemImage: item.symbol)
+                    }
+                    .tint(category == item ? .cyan : .gray)
+                }
+            }
+            .buttonStyle(.bordered)
+            .font(.caption)
+        }
+    }
+
+    private func presetTile(_ preset: PhotoPreset) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button {
+                apply(preset, allPhotos: false)
+            } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    if let fileURL = selectedPhoto?.fileURL {
+                        PhotoPresetThumbnail(
+                            fileURL: fileURL, preset: preset)
+                            .frame(height: 94)
+                            .clipped()
+                            .clipShape(RoundedRectangle(cornerRadius: 8))
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.cyan.opacity(0.12))
+                            .frame(height: 94)
+                            .overlay {
+                                Image(systemName: "photo")
+                                    .foregroundStyle(.secondary)
+                            }
+                    }
+                    HStack(spacing: 4) {
+                        Text(preset.name)
+                            .font(.caption.bold())
+                            .lineLimit(1)
+                        Spacer(minLength: 1)
+                        if selectedPhoto?.photoPreset?.id == preset.id {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.cyan)
+                        }
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+
+            HStack {
+                Text(preset.category.rawValue)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Spacer()
+                Button {
+                    toggleFavorite(preset.id)
+                } label: {
+                    Image(systemName:
+                          favoriteIDs.contains(preset.id) ?
+                          "heart.fill" : "heart")
+                        .foregroundStyle(favoriteIDs.contains(preset.id) ?
+                                         .pink : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Yêu thích \(preset.name)")
+            }
+        }
+        .padding(7)
+        .background(
+            selectedPhoto?.photoPreset?.id == preset.id ?
+                Color.cyan.opacity(0.12) : Color.secondary.opacity(0.045),
+            in: RoundedRectangle(cornerRadius: 10)
+        )
+    }
+
+    private var strengthControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Cường độ preset")
+                    .font(.caption.bold())
+                Spacer()
+                Text("\(Int(intensity * 100))%")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.cyan)
+            }
+            Slider(value: $intensity, in: 0...1, step: 0.05,
+                   onEditingChanged: { editing in
+                if editing && selectedPhoto?.photoPreset != nil {
+                    model.beginPhotoPresetAdjustment()
+                }
+            })
+            .tint(.cyan)
+            Toggle("So sánh ảnh gốc / sau preset",
+                   isOn: $compareOriginal)
+                .font(.caption)
+            if selectedPhoto?.photoPreset != nil {
+                Button(role: .destructive) {
+                    model.clearPhotoPreset(clipID: selectedClipID)
+                    compareOriginal = false
+                } label: {
+                    Label("Gỡ preset khỏi ảnh này",
+                          systemImage: "arrow.counterclockwise")
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+    }
+
+    private var batchAndClipboard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Sao chép và áp dụng hàng loạt")
+                .font(.caption.bold())
+            HStack(spacing: 7) {
+                Button {
+                    model.copyPhotoPreset(clipID: selectedClipID)
+                } label: {
+                    Label("Sao chép", systemImage: "doc.on.doc")
+                }
+                .disabled(selectedPhoto?.photoPreset == nil)
+                Button {
+                    model.pastePhotoPreset(clipID: selectedClipID)
+                    intensity = selectedPhoto?.photoPresetIntensity ?? intensity
+                    compareOriginal = false
+                } label: {
+                    Label("Dán preset", systemImage: "doc.on.clipboard")
+                }
+                .disabled(selectedPhoto == nil || !model.hasCopiedPhotoPreset)
+            }
+            .buttonStyle(.bordered)
+            .font(.caption)
+
+            if let applied = selectedPhoto?.photoPreset {
+                Button {
+                    apply(applied, allPhotos: true)
+                } label: {
+                    Label("Áp dụng cho toàn bộ ảnh trong dự án",
+                          systemImage: "square.stack.3d.up")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!model.clips.contains(where: { $0.kind == .image }))
+            }
+        }
+    }
+
+    private var personalPresetEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Preset cá nhân")
+                .font(.caption.bold())
+            TextField("Đặt tên preset riêng…", text: $customName)
+                .textFieldStyle(.roundedBorder)
+            Button {
+                savePersonalPreset()
+            } label: {
+                Label("Lưu công thức ảnh đang chọn",
+                      systemImage: "bookmark")
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedPhoto == nil ||
+                      customName.trimmingCharacters(
+                        in: .whitespacesAndNewlines).isEmpty)
+            if !savedCustom.isEmpty {
+                ForEach(savedCustom) { preset in
+                    HStack {
+                        Text(preset.name).font(.caption)
+                        Spacer()
+                        Button("Áp dụng") {
+                            apply(preset, allPhotos: false)
+                        }
+                        .disabled(selectedPhoto == nil)
+                        Button(role: .destructive) {
+                            removeCustom(preset.id)
+                        } label: {
+                            Image(systemName: "trash")
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .font(.caption2)
+                }
+            }
+        }
+    }
+
+    private func apply(_ preset: PhotoPreset, allPhotos: Bool) {
+        compareOriginal = false
+        model.applyPhotoPreset(
+            preset, to: selectedClipID,
+            intensity: intensity, allPhotos: allPhotos
+        )
+    }
+    private func toggleFavorite(_ id: String) {
+        var ids = favoriteIDs
+        if !ids.insert(id).inserted { ids.remove(id) }
+        favorites = ids.sorted().joined(separator: "|")
+    }
+    private func savePersonalPreset() {
+        guard let clip = selectedPhoto else { return }
+        var custom = clip.photoPreset ??
+            PhotoPresetLibrary.snapshot(name: customName, from: clip)
+        custom.id = "custom-" + UUID().uuidString
+        custom.name = String(customName.trimmingCharacters(
+            in: .whitespacesAndNewlines).prefix(42))
+        custom.category = .lifestyle
+        var list = savedCustom
+        list.insert(custom, at: 0)
+        // Keep preferences compact and protect against unbounded growth.
+        list = Array(list.prefix(40))
+        if let bytes = try? JSONEncoder().encode(list),
+           let json = String(data: bytes, encoding: .utf8) {
+            savedCustomJSON = json
+            customName = ""
+        }
+    }
+    private func removeCustom(_ id: String) {
+        let remaining = savedCustom.filter { $0.id != id }
+        if let bytes = try? JSONEncoder().encode(remaining),
+           let json = String(data: bytes, encoding: .utf8) {
+            savedCustomJSON = json
+        }
+        var ids = favoriteIDs
+        ids.remove(id)
+        favorites = ids.sorted().joined(separator: "|")
+    }
+}
+
+/// Thumbnail uses the SAME recipe as final MP4 export. Source decoding
+/// is downsampled, keeping memory use low even for large original photos.
+private struct PhotoPresetThumbnail: View {
+    let fileURL: URL
+    let preset: PhotoPreset
+    @State private var thumbnail: UIImage?
+
+    var body: some View {
+        Group {
+            if let thumbnail {
+                Image(uiImage: thumbnail)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.08))
+                    .overlay {
+                        Image(systemName: "photo")
+                            .foregroundStyle(.secondary)
+                    }
+            }
+        }
+        .task(id: fileURL.path + "|" + preset.id) {
+            thumbnail = nil
+            let url = fileURL
+            let recipe = preset
+            let result = await Task.detached(priority: .utility) {
+                Self.render(url: url, preset: recipe)
+            }.value
+            guard !Task.isCancelled else { return }
+            thumbnail = result
+        }
+    }
+
+    private static func render(url: URL, preset: PhotoPreset) -> UIImage? {
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let frame = CGImageSourceCreateThumbnailAtIndex(
+                source, 0, [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: 300,
+                    kCGImageSourceCreateThumbnailWithTransform: true
+                ] as CFDictionary) else { return nil }
+        let input = CIImage(cgImage: frame)
+        let result = PhotoPresetProcessor.apply(
+            input, preset: preset, intensity: 0.8)
+        let context = CIContext(options: [.cacheIntermediates: false])
+        guard let rendered = context.createCGImage(
+            result, from: result.extent) else { return nil }
+        return UIImage(cgImage: rendered)
+    }
+}
