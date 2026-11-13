@@ -121,10 +121,15 @@ enum Hook3sAnalyzer {
             return true
         }
         guard valid else { return [] }
-        return stride(from: 0, to: pixels.count, by: 4).map {
-            (0.2126 * Double(pixels[$0]) +
-             0.7152 * Double(pixels[$0 + 1]) +
-             0.0722 * Double(pixels[$0 + 2])) / 255.0
+        var lumas: [Double] = []
+        lumas.reserveCapacity(side * side)
+        for offset in stride(from: 0, to: pixels.count, by: 4) {
+            let red = Double(pixels[offset])
+            let green = Double(pixels[offset + 1])
+            let blue = Double(pixels[offset + 2])
+            let luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+            lumas.append(luminance / 255.0)
         }
+        return lumas
     }
 }
