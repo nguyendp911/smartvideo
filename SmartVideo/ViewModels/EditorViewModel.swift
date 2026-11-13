@@ -168,6 +168,7 @@ final class EditorViewModel: ObservableObject {
     @Published var aiRevoiceLanguage = "Tiếng Việt"
     @Published var aiRevoiceInstructions = ""
     @Published var isRewritingWithGemini = false
+    @Published var isGeneratingSyncedRevoice = false
     @Published var aiRevoiceStatus = ""
     @Published var narrationText = ""
     @Published var narratorVoiceID: String = ""
@@ -746,6 +747,42 @@ final class EditorViewModel: ObservableObject {
             }
         }
         aiRevoiceStatus = "Đã thay nội dung và phụ đề. Chọn Tạo giọng đọc để tạo audio mới."
+    }
+
+    func generateTimeMatchedRevoice() {
+        guard !isGeneratingSyncedRevoice, !subtitles.isEmpty,
+              !clips.isEmpty else { return }
+        let cues = subtitles
+        let duration = totalDuration
+        let voice = narratorVoiceID
+        let tone = narratorTone
+        let rate = narratorRate
+        let pitch = narratorPitch
+        let currentProject = projectID
+        isGeneratingSyncedRevoice = true
+        aiRevoiceStatus = "Đang tạo giọng theo từng mốc phụ đề…"
+        Task {
+            defer { isGeneratingSyncedRevoice = false }
+            do {
+                let output = try await SyncedRevoiceWriter.render(
+                    cues: cues, projectDuration: duration,
+                    voiceIdentifier: voice.isEmpty ? nil : voice,
+                    tone: tone, rate: rate, pitch: pitch
+                )
+                guard projectID == currentProject,
+                      subtitles == cues else {
+                    try? FileManager.default.removeItem(at: output)
+                    return
+                }
+                voiceoverURL = output
+                originalVoiceoverURL = nil
+                voiceoverOffset = 0
+                aiRevoiceStatus = "Đã tạo thuyết minh theo mốc. Nghe bản xem thử 720p để kiểm tra nhịp đọc."
+            } catch {
+                errorText = "Đồng bộ AI Voice: \(error.localizedDescription)"
+                aiRevoiceStatus = ""
+            }
+        }
     }
 
     // MARK: - Narration from text
