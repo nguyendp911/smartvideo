@@ -74,7 +74,11 @@ enum TextOverlayRenderer {
                 )
                 content = imageText
             }
-            content.shadowColor = UIColor.black.cgColor
+            // Emissive styles must use the glyph's light color rather
+            // than a black shadow; this is serialized in MP4 Core Animation.
+            content.shadowColor = item.glowRadius > 0
+                ? uiColor(hex: item.colorHex).cgColor
+                : UIColor.black.cgColor
             content.shadowOpacity = Float(
                 min(1, max(0, item.shadowOpacity))
             )
