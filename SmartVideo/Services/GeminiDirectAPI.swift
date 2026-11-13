@@ -91,8 +91,9 @@ enum GeminiDirectAPI {
                 struct Detail: Decodable { let message: String? }
                 let error: Detail?
             }
-            let message = (try? JSONDecoder().decode(APIError.self, from: data))
-                ?.error?.message ?? "Kiểm tra key, quyền model, quota hoặc kết nối."
+            let parsedError = try? JSONDecoder().decode(APIError.self, from: data)
+            let message = parsedError?.error?.message ??
+                "Kiểm tra key, quyền model, quota hoặc kết nối."
             throw GeminiDirectError.api(
                 http.statusCode, String(message.prefix(220))
             )
