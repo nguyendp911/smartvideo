@@ -729,10 +729,15 @@ final class EditorViewModel: ObservableObject {
 
     func applyGeminiRevoice(muteSourceVideo: Bool) {
         guard !aiRevoiceDraft.isEmpty else { return }
+        let rewrittenText = aiRevoiceDraft
+            .map(\.text).joined(separator: " ")
+        guard rewrittenText.count <= 5000 else {
+            errorText = "Lời mới dài hơn giới hạn 5.000 ký tự của giọng iOS. Hãy xử lý video theo từng đoạn ngắn."
+            return
+        }
         checkpoint()
         subtitles = aiRevoiceDraft
-        narrationText = aiRevoiceDraft
-            .map(\.text).joined(separator: " ")
+        narrationText = rewrittenText
         aiRevoiceDraft = []
         // This mutes all embedded audio, not isolated speech; user must opt in.
         if muteSourceVideo {
