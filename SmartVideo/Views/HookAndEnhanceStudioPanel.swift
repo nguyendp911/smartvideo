@@ -3,6 +3,9 @@ import SwiftUI
 struct Hook3sStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     let selectedClipID: UUID?
+    let onInserted: (UUID) -> Void
+    let onUndo: () -> Void
+    let onPreview: (Double) -> Void
     @State private var selectedID: UUID?
     @State private var hookTitle = ""
 
@@ -75,16 +78,34 @@ struct Hook3sStudioPanel: View {
                         in: RoundedRectangle(cornerRadius: 8)
                     )
                 }
+                Button {
+                    if let chosen,
+                       let selectedClipID,
+                       let index = model.clips.firstIndex(where: {
+                           $0.id == selectedClipID
+                       }) {
+                        let clip = model.clips[index]
+                        let timelineTime = model.timelineStart(of: index) +
+                            chosen.start / max(0.25, clip.playbackSpeed)
+                        onPreview(timelineTime)
+                    }
+                } label: {
+                    Label("Xem thử từ đầu đoạn Hook",
+                          systemImage: "play.rectangle")
+                }
+                .buttonStyle(.bordered)
                 TextField("Câu Hook nổi bật trên video (không bắt buộc)",
                           text: $hookTitle)
                     .textFieldStyle(.roundedBorder)
                 Button {
                     if let chosen {
-                        _ = model.insertHook3s(
+                        if let id = model.insertHook3s(
                             clipID: selectedClipID,
                             suggestion: chosen,
                             title: hookTitle
-                        )
+                        ) {
+                            onInserted(id)
+                        }
                     }
                 } label: {
                     Label("Chèn Hook 3 giây vào đầu video",
@@ -97,6 +118,7 @@ struct Hook3sStudioPanel: View {
             if model.canUndoHook3s {
                 Button {
                     model.undoHook3s()
+                    onUndo()
                 } label: {
                     Label("Hoàn tác chèn Hook 3s",
                           systemImage: "arrow.uturn.backward")
