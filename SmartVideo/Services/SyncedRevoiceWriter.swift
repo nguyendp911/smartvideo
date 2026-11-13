@@ -14,10 +14,10 @@ enum SyncedRevoiceWriter {
         pitch: Float
     ) async throws -> URL {
         let ordered = cues.sorted { $0.start < $1.start }
-        guard !ordered.isEmpty, ordered.count <= 100,
+        guard !ordered.isEmpty, ordered.count <= 500,
               projectDuration > 0 else {
             throw SmartVideoError.invalidMedia(
-                "Cần 1–100 câu phụ đề trong một dự án có thời lượng hợp lệ."
+                "Cần 1–500 câu phụ đề trong một dự án có thời lượng hợp lệ."
             )
         }
         let composition = AVMutableComposition()
