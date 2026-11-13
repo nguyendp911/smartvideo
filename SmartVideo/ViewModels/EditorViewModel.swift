@@ -197,6 +197,9 @@ final class EditorViewModel: ObservableObject {
     @Published var addCustomMetadata = false
     @Published var musicFadeIn: Double = 0.3
     @Published var musicFadeOut: Double = 1.2
+    @Published var separatedBackgroundURL: URL?
+    @Published var isSeparatingAudio = false
+    @Published var separationStatus = ""
     @Published var isGeneratingGeminiSpeech = false
     @Published var geminiSpeechModelName = ""
     @Published var geminiSpeechVoice = "Kore"
@@ -1005,6 +1008,72 @@ final class EditorViewModel: ObservableObject {
         aiRevoiceStatus = rewrittenText.count > 5000 ?
             "Đã áp dụng phụ đề. Lời dài: dùng Tạo giọng theo từng mốc." :
             "Đã áp dụng lời mới. Hãy tạo giọng đọc và xem thử 720p."
+    }
+
+    func separateSelectedClipVoice(
+        clipID: UUID?, serverURL: String, token: String
+    ) {
+        guard !isSeparatingAudio,
+              let clip = clips.first(where: { $0.id == clipID }),
+              clip.kind == .video else {
+            errorText = "Hãy chọn một clip video có tiếng nói."
+            return
+        }
+        guard clips.count == 1, clip.playbackSpeed == 1,
+              clip.speedCurve.isEmpty else {
+            errorText = "Bản tách giọng này hỗ trợ một clip, tốc độ gốc 1×. Hãy xử lý clip riêng trước khi dựng nhiều clip."
+            return
+        }
+        let startProject = projectID
+        separatedBackgroundURL = nil
+        isSeparatingAudio = true
+        separationStatus = "Đang tách audio và tải lên máy chủ Demucs theo yêu cầu…"
+        Task {
+            defer { isSeparatingAudio = false }
+            do {
+                let output = try await AIVocalSeparatorClient.separate(
+                    source: clip.fileURL,
+                    sourceStart: clip.startTime,
+                    duration: clip.duration,
+                    serverURL: serverURL,
+                    token: token
+                )
+                guard projectID == startProject,
+                      clips.first?.id == clip.id else {
+                    try? FileManager.default.removeItem(at: output)
+                    return
+                }
+                separatedBackgroundURL = output
+                separationStatus = "Đã có nền âm thanh tách giọng. Nghe thử trước khi thay âm thanh gốc."
+            } catch {
+                separationStatus = ""
+                errorText = "AI Audio Separation: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func applySeparatedBackground() {
+        guard let background = separatedBackgroundURL,
+              clips.count == 1, clips[0].kind == .video else { return }
+        checkpoint()
+        clips[0].sourceAudioMuted = true
+        musicURL = background
+        originalMusicURL = nil
+        musicStartSeconds = 0
+        musicTimelineOffset = 0
+        musicHighlightDuration = 0
+        musicVolume = 1
+        repeatShortMusic = false
+        musicRegionMode = false
+        musicVolumeKeyframes = []
+        Task {
+            let duration = try? await AVURLAsset(
+                url: background).load(.duration).seconds
+            if musicURL == background {
+                musicDuration = duration ?? 0
+            }
+        }
+        separationStatus = "Đã dùng nền tách giọng làm nhạc/âm môi trường, clip gốc tắt tiếng. Có thể hoàn tác thay đổi dự án."
     }
 
     func generateGeminiSpeech() {
