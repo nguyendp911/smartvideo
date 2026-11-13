@@ -117,6 +117,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     /// Strength of the selected grade (zero leaves the source unchanged).
     var lookIntensity: Double = 1.0
     var colorAdjustments: ColorAdjustments = .neutral
+    var autoEnhance: AutoEnhanceSettings = .off
     var personBackground: PersonBackground = .original
     /// Independent source-audio settings; original media is never modified.
     var sourceAudioVolume: Float = 1
@@ -134,6 +135,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          imageLook: ImageLook = .original,
          lookIntensity: Double = 1.0,
          colorAdjustments: ColorAdjustments = .neutral,
+         autoEnhance: AutoEnhanceSettings = .off,
          personBackground: PersonBackground = .original,
          sourceAudioVolume: Float = 1,
          sourceAudioMuted: Bool = false,
@@ -152,6 +154,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.imageLook = imageLook
         self.lookIntensity = min(1, max(0, lookIntensity))
         self.colorAdjustments = colorAdjustments
+        self.autoEnhance = autoEnhance
         self.personBackground = personBackground
         self.sourceAudioVolume = ClipAudioEnvelope.safeVolume(sourceAudioVolume)
         self.sourceAudioMuted = sourceAudioMuted
@@ -164,6 +167,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
         case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
+        case autoEnhance
         case flipHorizontal, flipVertical, personBackground
         case sourceAudioVolume, sourceAudioMuted, sourceAudioFadeIn, sourceAudioFadeOut
     }
@@ -191,6 +195,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         lookIntensity = min(1, max(0, rawStrength.isFinite ? rawStrength : 1))
         colorAdjustments = try c.decodeIfPresent(ColorAdjustments.self,
                                                  forKey: .colorAdjustments) ?? .neutral
+        autoEnhance = try c.decodeIfPresent(AutoEnhanceSettings.self,
+                                          forKey: .autoEnhance) ?? .off
         personBackground = try c.decodeIfPresent(PersonBackground.self,
                                                   forKey: .personBackground) ?? .original
         sourceAudioVolume = ClipAudioEnvelope.safeVolume(
