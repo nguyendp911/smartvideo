@@ -3,6 +3,7 @@ import SwiftUI
 struct TextOverlayStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     @Binding var selectedID: UUID?
+    @State private var styleCategory = 0
     let onScrub: (Double) -> Void
     let importTextFill: (Bool) -> Void
     let autoPosition: (UUID) -> Void
@@ -57,21 +58,64 @@ struct TextOverlayStudioPanel: View {
             if let item = selected,
                let idx = model.textOverlays.firstIndex(where: { $0.id == item.id }) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Preset tiêu đề điện ảnh")
+                    Text("Thư viện Style Chữ Pro • \(TextTitlePreset.allCases.count) mẫu")
                         .font(.caption.bold())
+                    Picker("Nhóm style", selection: $styleCategory) {
+                        Text("Cơ bản").tag(0)
+                        Text("Neon & FX").tag(1)
+                        Text("Kim loại").tag(2)
+                        Text("Quảng cáo").tag(3)
+                    }
+                    .pickerStyle(.segmented)
+                    let styles: [TextTitlePreset] = {
+                        switch styleCategory {
+                        case 1: return [.neonBlue, .neonPink, .fire, .ice, .cyberpunk]
+                        case 2: return [.chrome, .royalGold, .cinematic]
+                        case 3: return [.saleFlash, .laptopSale, .productName]
+                        default: return [.behindPerson, .bigBold, .imagePoster,
+                                         .videoReveal, .travel]
+                        }
+                    }()
                     ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 7) {
-                            ForEach(TextTitlePreset.allCases) { preset in
-                                Button(preset.rawValue) {
-                                    preset.apply(
-                                        to: &model.textOverlays[idx]
-                                    )
+                        HStack(spacing: 8) {
+                            ForEach(styles) { preset in
+                                Button {
+                                    preset.apply(to: &model.textOverlays[idx])
+                                } label: {
+                                    VStack(spacing: 6) {
+                                        ZStack {
+                                            RoundedRectangle(cornerRadius: 9)
+                                                .fill(Color.black.opacity(0.9))
+                                            Text("Aa")
+                                                .font(.system(size: 31, weight: .black))
+                                                .foregroundStyle(
+                                                    LinearGradient(
+                                                        colors: [
+                                                            Color.cyan.opacity(0.95),
+                                                            Color.white,
+                                                            Color.pink.opacity(0.8)
+                                                        ],
+                                                        startPoint: .topLeading,
+                                                        endPoint: .bottomTrailing
+                                                    )
+                                                )
+                                                .shadow(color: .cyan.opacity(0.6),
+                                                        radius: styleCategory == 1 ? 9 : 1)
+                                        }
+                                        .frame(width: 100, height: 57)
+                                        Text(preset.rawValue)
+                                            .font(.caption2)
+                                            .lineLimit(1)
+                                            .frame(width: 104)
+                                    }
                                 }
-                                .buttonStyle(.bordered)
-                                .font(.caption2)
+                                .buttonStyle(.plain)
                             }
                         }
                     }
+                    Text("Chọn mẫu để áp dụng vào lớp chữ; có thể chỉnh tiếp viền, glow, bóng, màu và keyframe.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
                 Picker("Vị trí theo chủ thể",
                        selection: $model.textOverlays[idx].depthMode) {
