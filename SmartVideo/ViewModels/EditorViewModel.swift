@@ -170,6 +170,7 @@ final class EditorViewModel: ObservableObject {
     @Published var isExportingMusicHighlight = false
     @Published var isAnalyzingMusicHighlights = false
     @Published var hook3sSuggestions: [Hook3sSuggestion] = []
+    @Published var hook3sSourceClipID: UUID?
     @Published var hook3sStatus = ""
     @Published var isFindingHook3s = false
     @Published var isAutoTuningEnhance = false
@@ -638,6 +639,7 @@ final class EditorViewModel: ObservableObject {
         let project = projectID
         isFindingHook3s = true
         hook3sSuggestions = []
+        hook3sSourceClipID = clip.id
         hook3sStatus = "Vision đang tìm 3 giây có gương mặt, chuyển động và hình ảnh nổi bật…"
         Task {
             defer { isFindingHook3s = false }
@@ -659,7 +661,9 @@ final class EditorViewModel: ObservableObject {
     @discardableResult
     func insertHook3s(clipID: UUID?, suggestion: Hook3sSuggestion,
                       title: String) -> UUID? {
-        guard let index = clips.firstIndex(where: { $0.id == clipID }),
+        guard hook3sSourceClipID == clipID,
+              hook3sSuggestions.contains(where: { $0.id == suggestion.id }),
+              let index = clips.firstIndex(where: { $0.id == clipID }),
               clips[index].kind == .video else { return nil }
         let source = clips[index]
         let inputStart = source.startTime + suggestion.start
@@ -733,6 +737,7 @@ final class EditorViewModel: ObservableObject {
         }
         timelineSecond = 0
         hook3sSuggestions = []
+        hook3sSourceClipID = nil
         hook3sStatus = String(format:
             "Đã chèn Hook 3 giây trước video. Timeline tăng %.2f giây; bản gốc vẫn giữ nguyên.",
             shift)
@@ -2994,6 +2999,7 @@ final class EditorViewModel: ObservableObject {
     func newProject() {
         hook3sBackup = nil
         hook3sSuggestions = []
+        hook3sSourceClipID = nil
         undoStack.removeAll()
         redoStack.removeAll()
         projectID = UUID()
