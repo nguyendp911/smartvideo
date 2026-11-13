@@ -183,6 +183,11 @@ final class EditorViewModel: ObservableObject {
     @Published var silenceGap: Double = 0.45
     @Published var isRemovingSilence = false
     @Published var lastSilenceRemoved: Double?
+    @Published var aiMetadataDraft: AIMetadataDraft?
+    @Published var aiMetadataStyle = "Tự nhiên, chuyên nghiệp"
+    @Published var aiMetadataInstructions = ""
+    @Published var aiMetadataStatus = ""
+    @Published var isGeneratingAIMetadata = false
     @Published var metadata = ExportMetadata()
     @Published var addCustomMetadata = false
     @Published var musicFadeIn: Double = 0.3
@@ -692,6 +697,70 @@ final class EditorViewModel: ObservableObject {
         musicHighlightDuration = min(highlight.duration,
                                      max(0, musicDuration - musicStartSeconds))
         exportedMusicHighlightURL = nil
+    }
+
+    // MARK: - Gemini AI Metadata Studio
+
+    func generateAIMetadata(apiKey: String) {
+        guard !isGeneratingAIMetadata else { return }
+        let transcript = subtitles
+            .sorted { $0.start < $1.start }
+            .map(\.text)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .joined(separator: " ")
+        let source = transcript.isEmpty ? narrationText : transcript
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorText = "Chưa có nội dung. Hãy nhận diện lời nói, nhập phụ đề hoặc lời thuyết minh trước."
+            return
+        }
+        let available = aiGeminiModels
+        guard let selected = aiGeminiModelName.isEmpty
+            ? GeminiDirectAPI.recommended(available)
+            : available.first(where: { $0.name == aiGeminiModelName }) else {
+            errorText = "Hãy nhập Gemini API key và nhận diện danh sách model trước."
+            return
+        }
+        let projectAtStart = projectID
+        let scriptAtStart = source
+        let language = aiRevoiceLanguage
+        let style = aiMetadataStyle
+        let instructions = aiMetadataInstructions
+        aiMetadataDraft = nil
+        isGeneratingAIMetadata = true
+        aiMetadataStatus = "Gemini \(selected.title) đang phân tích transcript và tạo metadata…"
+        Task {
+            defer { isGeneratingAIMetadata = false }
+            do {
+                let draft = try await GeminiDirectAPI.generateMetadata(
+                    apiKey: apiKey, modelName: selected.name,
+                    transcript: scriptAtStart, language: language,
+                    style: style, instructions: instructions
+                )
+                guard projectID == projectAtStart else {
+                    aiMetadataStatus = "Dự án đã thay đổi. Hãy tạo lại metadata."
+                    return
+                }
+                aiMetadataDraft = draft
+                aiMetadataStatus = "Đã tạo gợi ý metadata. Hãy kiểm tra và áp dụng."
+            } catch {
+                aiMetadataStatus = ""
+                errorText = "AI Metadata: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func applyAIMetadata() {
+        guard let draft = aiMetadataDraft else { return }
+        do {
+            let checked = try draft.validated()
+            checkpoint()
+            metadata = checked.applying(to: metadata)
+            addCustomMetadata = true
+            aiMetadataDraft = checked
+            aiMetadataStatus = "Đã cập nhật metadata xuất MP4. Tác giả, bản quyền, năm vẫn giữ nguyên."
+        } catch {
+            errorText = "Metadata không hợp lệ. Hãy kiểm tra tiêu đề và mô tả."
+        }
     }
 
     // MARK: - Gemini AI Video Revoice
