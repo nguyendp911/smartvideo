@@ -422,13 +422,14 @@ struct PhotoPresetStudioPanel: View {
             DisclosureGroup("Áp dụng cho các ảnh được chọn",
                             isExpanded: $showPhotoSelection) {
                 let photos = model.clips.filter { $0.kind == .image }
+                let allIDs = Set(photos.map { $0.id })
+                let selectedCount = selectedPhotoIDs.intersection(allIDs).count
                 HStack {
-                    Text("\(selectedPhotoIDs.intersection(
-                        Set(photos.map(\\.id))).count) / \(photos.count) ảnh")
+                    Text("\(selectedCount) / \(photos.count) ảnh")
                         .font(.caption2)
                     Spacer()
                     Button("Chọn hết") {
-                        selectedPhotoIDs = Set(photos.map(\\.id))
+                        selectedPhotoIDs = allIDs
                     }
                     Button("Bỏ chọn") { selectedPhotoIDs = [] }
                 }
