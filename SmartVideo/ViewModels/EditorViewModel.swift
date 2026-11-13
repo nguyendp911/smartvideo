@@ -8,6 +8,10 @@ import UIKit
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
+    @Published var photoPresetFeedback = ""
+    private var copiedPhotoPreset: (recipe: PhotoPreset, intensity: Double)?
+    var hasCopiedPhotoPreset: Bool { copiedPhotoPreset != nil }
+
     @Published var imageOverlays: [ImageOverlayClip] = []
     @Published var isTrackingFace = false
     @Published var faceTrackingMessage: String?
@@ -625,6 +629,82 @@ final class EditorViewModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         return try MediaStorage.copyToMedia(url, fallbackExtension: fallbackExtension)
+    }
+
+    // MARK: - Photo Preset Studio
+
+    func applyPhotoPreset(
+        _ preset: PhotoPreset, to clipID: UUID?,
+        intensity: Double, allPhotos: Bool = false
+    ) {
+        let indices: [Int]
+        if allPhotos {
+            indices = clips.indices.filter { clips[$0].kind == .image }
+        } else if let index = clips.firstIndex(where: {
+            $0.id == clipID && $0.kind == .image
+        }) {
+            indices = [index]
+        } else {
+            photoPresetFeedback = "Chọn ảnh trên timeline trước."
+            return
+        }
+        guard !indices.isEmpty else {
+            photoPresetFeedback = "Dự án chưa có ảnh."
+            return
+        }
+        checkpoint()
+        for index in indices {
+            clips[index].photoPreset = preset
+            clips[index].photoPresetIntensity = min(1, max(0,
+                intensity.isFinite ? intensity : 0.75))
+            // Photo recipes are independent of existing video-look presets.
+            // Manual color adjustments and Auto Enhance remain available.
+            clips[index].imageLook = .original
+        }
+        photoPresetFeedback = allPhotos ?
+            "Đã áp dụng \(preset.name) cho \(indices.count) ảnh." :
+            "Đã áp dụng \(preset.name). Có thể tinh chỉnh cường độ."
+    }
+
+    func beginPhotoPresetAdjustment() { checkpoint() }
+
+    func changePhotoPresetIntensity(clipID: UUID?, intensity: Double) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID && $0.kind == .image
+        }), clips[index].photoPreset != nil else { return }
+        clips[index].photoPresetIntensity = min(1, max(0,
+            intensity.isFinite ? intensity : 0.75))
+    }
+
+    func clearPhotoPreset(clipID: UUID?) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID && $0.kind == .image
+        }) else { return }
+        checkpoint()
+        clips[index].photoPreset = nil
+        photoPresetFeedback = "Đã gỡ preset; ảnh gốc được giữ nguyên."
+    }
+
+    func copyPhotoPreset(clipID: UUID?) {
+        guard let clip = clips.first(where: {
+            $0.id == clipID && $0.kind == .image
+        }), let recipe = clip.photoPreset else {
+            photoPresetFeedback = "Chưa có preset trên ảnh để sao chép."
+            return
+        }
+        copiedPhotoPreset = (recipe, clip.photoPresetIntensity)
+        photoPresetFeedback = "Đã sao chép \(recipe.name). Chọn ảnh khác và nhấn Dán."
+    }
+
+    func pastePhotoPreset(clipID: UUID?) {
+        guard let recipe = copiedPhotoPreset else {
+            photoPresetFeedback = "Chưa sao chép preset nào."
+            return
+        }
+        applyPhotoPreset(
+            recipe.recipe, to: clipID,
+            intensity: recipe.intensity
+        )
     }
 
     // MARK: - Hook 3s and Auto Enhance
