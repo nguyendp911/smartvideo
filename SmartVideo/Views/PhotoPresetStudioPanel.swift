@@ -2,6 +2,7 @@ import SwiftUI
 import UIKit
 import CoreImage
 import ImageIO
+import PhotosUI
 
 /// A dedicated still-photo editor. Video looks remain independent.
 struct PhotoPresetStudioPanel: View {
@@ -19,6 +20,13 @@ struct PhotoPresetStudioPanel: View {
     @State private var suggestion: PhotoPresetSuggestion?
     @State private var suggestionStatus = ""
     @State private var isSuggesting = false
+    @State private var referenceImage: PhotosPickerItem?
+    @State private var referencePreset: PhotoPreset?
+    @State private var referenceStatus = ""
+    @State private var referenceName = "Màu từ ảnh mẫu"
+    @State private var matchingReference = false
+    @State private var showPhotoSelection = false
+    @State private var selectedPhotoIDs: Set<UUID> = []
 
     private var selectedPhoto: TimelineClip? {
         model.clips.first { $0.id == selectedClipID && $0.kind == .image }
@@ -64,6 +72,7 @@ struct PhotoPresetStudioPanel: View {
             TextField("Tìm Đi biển, Hoàng hôn, Tone Hàn…", text: $searchText)
                 .textFieldStyle(.roundedBorder)
             categoryStrip
+            referenceEditor
 
             HStack {
                 Text("\(shown.count) / \(allPresets.count) preset")
@@ -152,11 +161,113 @@ struct PhotoPresetStudioPanel: View {
             intensity = selectedPhoto?.photoPresetIntensity ?? 0.75
             suggestion = nil
             suggestionStatus = ""
+            referencePreset = nil
+            referenceStatus = ""
+            referenceImage = nil
+        }
+        .onChange(of: referenceImage) { item in
+            guard let item else { return }
+            analyzeReference(item)
         }
         .onChange(of: intensity) { newValue in
             guard selectedPhoto?.photoPreset != nil else { return }
             model.changePhotoPresetIntensity(
                 clipID: selectedClipID, intensity: newValue)
+        }
+    }
+
+    private var referenceEditor: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("Match Color • Học màu từ ảnh mẫu",
+                  systemImage: "photo.on.rectangle.angled")
+                .font(.subheadline.bold())
+            Text("Chọn một ảnh có tone màu đẹp. Ứng dụng đo độ sáng, độ tương phản, độ bão hòa và sắc ấm/lạnh ngay trên iPhone để tạo công thức tương tự cho ảnh đang chỉnh.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            PhotosPicker(selection: $referenceImage, matching: .images) {
+                Label("Chọn ảnh mẫu từ thư viện",
+                      systemImage: "photo.badge.plus")
+            }
+            .buttonStyle(.bordered)
+            .disabled(selectedPhoto == nil || matchingReference)
+            if matchingReference { ProgressView() }
+            if !referenceStatus.isEmpty {
+                Text(referenceStatus)
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            if let recipe = referencePreset {
+                TextField("Đặt tên preset từ ảnh mẫu", text: $referenceName)
+                    .textFieldStyle(.roundedBorder)
+                HStack(spacing: 7) {
+                    Button {
+                        apply(recipe, allPhotos: false)
+                    } label: {
+                        Label("Áp dụng màu mẫu", systemImage: "checkmark.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button {
+                        var stored = recipe
+                        stored.id = "custom-" + UUID().uuidString
+                        stored.name = String(referenceName.trimmingCharacters(
+                            in: .whitespacesAndNewlines).prefix(42))
+                        guard !stored.name.isEmpty else {
+                            referenceStatus = "Hãy đặt tên cho preset ảnh mẫu."
+                            return
+                        }
+                        if storePersonalPreset(stored) {
+                            referenceStatus = "Đã lưu công thức vào Preset cá nhân."
+                        } else {
+                            referenceStatus = "Không lưu được preset ảnh mẫu."
+                        }
+                    } label: {
+                        Label("Lưu preset", systemImage: "bookmark")
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .font(.caption2)
+                Text("Match Color là phép ghép màu dựa trên thống kê, không sao chép cảnh vật, da người hay ánh sáng từng vùng. Kết quả cần chỉnh lại nếu ảnh gốc và ảnh mẫu rất khác nhau.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(9)
+        .background(Color.cyan.opacity(0.065),
+                    in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func analyzeReference(_ item: PhotosPickerItem) {
+        guard let photo = selectedPhoto else {
+            referenceStatus = "Hãy chọn ảnh trong timeline."
+            return
+        }
+        let photoID = photo.id
+        referencePreset = nil
+        matchingReference = true
+        referenceStatus = "Đang học công thức màu từ ảnh mẫu…"
+        Task {
+            defer { matchingReference = false }
+            do {
+                guard let data = try await item.loadTransferable(
+                    type: Data.self) else {
+                    referenceStatus = "Không đọc được ảnh mẫu."
+                    return
+                }
+                let result = try await PhotoReferenceMatcher.createPreset(
+                    fromReferenceData: data,
+                    forSourceURL: photo.fileURL,
+                    name: referenceName
+                )
+                guard selectedPhoto?.id == photoID else {
+                    referenceStatus = "Ảnh đang chỉnh đã đổi. Chọn lại ảnh mẫu."
+                    return
+                }
+                referencePreset = result
+                referenceStatus = "Đã phân tích màu. Nhấn Áp dụng màu mẫu để xem trước."
+            } catch {
+                referenceStatus = "Lỗi đọc ảnh mẫu: " +
+                    error.localizedDescription
+            }
         }
     }
 
@@ -307,6 +418,61 @@ struct PhotoPresetStudioPanel: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(!model.clips.contains(where: { $0.kind == .image }))
             }
+
+            DisclosureGroup("Áp dụng cho các ảnh được chọn",
+                            isExpanded: $showPhotoSelection) {
+                let photos = model.clips.filter { $0.kind == .image }
+                HStack {
+                    Text("\(selectedPhotoIDs.intersection(
+                        Set(photos.map(\\.id))).count) / \(photos.count) ảnh")
+                        .font(.caption2)
+                    Spacer()
+                    Button("Chọn hết") {
+                        selectedPhotoIDs = Set(photos.map(\\.id))
+                    }
+                    Button("Bỏ chọn") { selectedPhotoIDs = [] }
+                }
+                .font(.caption2)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(photos) { photo in
+                            Toggle(isOn: Binding(
+                                get: { selectedPhotoIDs.contains(photo.id) },
+                                set: { selected in
+                                    if selected {
+                                        selectedPhotoIDs.insert(photo.id)
+                                    } else {
+                                        selectedPhotoIDs.remove(photo.id)
+                                    }
+                                }
+                            )) {
+                                Text(photo.filename)
+                                    .font(.caption)
+                                    .lineLimit(1)
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 195)
+                if let chosen = selectedPhoto?.photoPreset {
+                    Button {
+                        model.applyPhotoPresetToSelection(
+                            chosen, ids: selectedPhotoIDs,
+                            intensity: intensity
+                        )
+                    } label: {
+                        Label("Áp dụng cho ảnh đã chọn",
+                              systemImage: "checkmark.square")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(selectedPhotoIDs.isEmpty)
+                } else {
+                    Text("Áp dụng một preset lên ảnh hiện tại trước khi dùng hàng loạt.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .font(.caption.bold())
         }
     }
 
@@ -368,16 +534,24 @@ struct PhotoPresetStudioPanel: View {
         custom.name = String(customName.trimmingCharacters(
             in: .whitespacesAndNewlines).prefix(42))
         custom.category = .lifestyle
-        var list = savedCustom
-        list.insert(custom, at: 0)
-        // Keep preferences compact and protect against unbounded growth.
-        list = Array(list.prefix(40))
-        if let bytes = try? JSONEncoder().encode(list),
-           let json = String(data: bytes, encoding: .utf8) {
-            savedCustomJSON = json
+        if storePersonalPreset(custom) {
             customName = ""
         }
     }
+
+    @discardableResult
+    private func storePersonalPreset(_ preset: PhotoPreset) -> Bool {
+        var list = savedCustom
+        list.insert(preset, at: 0)
+        list = Array(list.prefix(40))
+        guard let bytes = try? JSONEncoder().encode(list),
+              let json = String(data: bytes, encoding: .utf8) else {
+            return false
+        }
+        savedCustomJSON = json
+        return true
+    }
+
     private func removeCustom(_ id: String) {
         let remaining = savedCustom.filter { $0.id != id }
         if let bytes = try? JSONEncoder().encode(remaining),
