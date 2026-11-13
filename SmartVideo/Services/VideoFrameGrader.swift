@@ -13,6 +13,7 @@ enum VideoFrameGrader {
     static func makeComposition(
         asset: AVAsset, look: ImageLook, intensity: Double,
         adjustments: ColorAdjustments = .neutral,
+        autoEnhance: AutoEnhanceSettings = .off,
         personBackground: PersonBackground = .original,
         behindTitles: [TextOverlayClip] = [],
         timelineStart: Double = 0,
@@ -27,7 +28,8 @@ enum VideoFrameGrader {
             do {
                 let graded = StudioColorGrader.apply(
                     source, look: look, intensity: intensity,
-                    adjustments: adjustments
+                    adjustments: adjustments,
+                    autoEnhance: autoEnhance
                 ).cropped(to: source.extent)
                 let output = try PersonCutoutProcessor.apply(
                     source, mode: personBackground, quality: .fast,
@@ -75,11 +77,13 @@ enum VideoFrameGrader {
         if clip.kind == .video &&
            ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
             !clip.colorAdjustments.isNeutral ||
+            clip.autoEnhance.isActive ||
             clip.personBackground != .original) {
             item.videoComposition = makeComposition(
                 asset: asset, look: clip.imageLook,
                 intensity: clip.lookIntensity,
                 adjustments: clip.colorAdjustments,
+                autoEnhance: clip.autoEnhance,
                 personBackground: clip.personBackground
             )
         }
@@ -98,6 +102,7 @@ enum VideoFrameGrader {
         guard clip.kind == .video,
               ((clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                 !clip.colorAdjustments.isNeutral ||
+                clip.autoEnhance.isActive ||
                 clip.personBackground != .original ||
                 !behindTitles.isEmpty || !mockups.isEmpty) else {
             throw SmartVideoError.invalidMedia(
@@ -183,6 +188,7 @@ enum VideoFrameGrader {
             asset: zeroBased, look: clip.imageLook,
             intensity: clip.lookIntensity,
             adjustments: clip.colorAdjustments,
+            autoEnhance: clip.autoEnhance,
             personBackground: clip.personBackground,
             behindTitles: behindTitles,
             timelineStart: timelineStart,
