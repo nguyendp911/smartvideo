@@ -151,8 +151,18 @@ private struct TextOverlayPreviewItem: View {
 
     @ViewBuilder
     private var styledTitle: some View {
-        let base = Text(item.text)
-            .font(.system(size: fontPoints, weight: .black))
+        let elapsed = max(0, second - item.start)
+        let progress = min(1, elapsed / max(0.1, item.typewriterDuration))
+        let letters = Array(item.text)
+        let title = item.typewriterEnabled ?
+            String(letters.prefix(Int(ceil(Double(letters.count) * progress)))) :
+            item.text
+        let base = Text(title)
+            .font(item.fontName.isEmpty ?
+                  .system(size: fontPoints, weight: .black) :
+                  .custom(item.fontName, size: fontPoints))
+            .kerning(CGFloat(item.letterSpacing) *
+                     max(0.2, canvas.width / 1080))
             .multilineTextAlignment(.center)
         switch item.fillMode {
         case .solid:
@@ -162,6 +172,10 @@ private struct TextOverlayPreviewItem: View {
                 LinearGradient(
                     colors: [
                         titleColor,
+                        Color(uiColor: TextOverlayRenderer.uiColor(
+                            hex: item.gradientMidHex.isEmpty ?
+                                item.gradientEndHex : item.gradientMidHex
+                        )),
                         Color(uiColor: TextOverlayRenderer.uiColor(
                             hex: item.gradientEndHex
                         ))
