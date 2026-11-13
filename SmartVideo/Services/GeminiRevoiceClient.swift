@@ -64,11 +64,7 @@ enum AIRevoiceError: LocalizedError {
 }
 
 enum GeminiRevoiceClient {
-    static func rewrite(
-        baseURL: String, token: String, style: String,
-        language: String, instructions: String,
-        captions: [SubtitleCue]
-    ) async throws -> [SubtitleCue] {
+    static func prepare(_ captions: [SubtitleCue]) throws -> [AIRevoiceSegment] {
         let eligible = captions
             .sorted { $0.start < $1.start }
             .filter { cue in
@@ -88,6 +84,35 @@ enum GeminiRevoiceClient {
             )
         }
         guard !input.isEmpty else { throw AIRevoiceError.emptyTranscript }
+        return input
+    }
+    static func validate(_ segments: [AIRevoiceSegment],
+                         input: [AIRevoiceSegment]) throws -> [SubtitleCue] {
+        let mapped = Dictionary(segments.map { ($0.id, $0.text) },
+                                uniquingKeysWith: { first, _ in first })
+        guard mapped.count == input.count else {
+            throw AIRevoiceError.response(
+                "Gemini trả thiếu đoạn hoặc số lượng đoạn không khớp."
+            )
+        }
+        return try input.map { segment in
+            guard let output = mapped[segment.id]?
+                .trimmingCharacters(in: .whitespacesAndNewlines),
+                !output.isEmpty, output.count <= 900 else {
+                throw AIRevoiceError.response(
+                    "Nội dung Gemini trả về không hợp lệ ở đoạn \(segment.id + 1)."
+                )
+            }
+            return SubtitleCue(start: segment.start,
+                               end: segment.end, text: output)
+        }
+    }
+    static func rewrite(
+        baseURL: String, token: String, style: String,
+        language: String, instructions: String,
+        captions: [SubtitleCue]
+    ) async throws -> [SubtitleCue] {
+        let input = try prepare(captions)
         guard let root = URL(string: baseURL),
               root.scheme?.lowercased() == "https",
               root.host != nil, root.user == nil,
@@ -119,23 +144,6 @@ enum GeminiRevoiceClient {
         let decoded = try JSONDecoder().decode(AIRevoiceResponse.self, from: body)
         // Reject truncated/hallucinated responses and keep original timing;
         // never trust model-produced timestamps or word-level alignments.
-        let mapped = Dictionary(decoded.segments.map { ($0.id, $0.text) },
-                                uniquingKeysWith: { first, _ in first })
-        guard mapped.count == input.count else {
-            throw AIRevoiceError.response(
-                "Gemini trả thiếu đoạn hoặc số lượng đoạn không khớp."
-            )
-        }
-        return try input.map { segment in
-            guard let output = mapped[segment.id]?
-                .trimmingCharacters(in: .whitespacesAndNewlines),
-                !output.isEmpty, output.count <= 900 else {
-                throw AIRevoiceError.response(
-                    "Nội dung Gemini trả về không hợp lệ ở đoạn \(segment.id + 1)."
-                )
-            }
-            return SubtitleCue(start: segment.start,
-                               end: segment.end, text: output)
-        }
+        return try validate(decoded.segments, input: input)
     }
 }
