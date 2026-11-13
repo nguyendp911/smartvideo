@@ -9,6 +9,7 @@ struct StudioLookPhotoPreview: View {
     let look: ImageLook
     let intensity: Double
     let adjustments: ColorAdjustments
+    let autoEnhance: AutoEnhanceSettings
     let personBackground: PersonBackground
     let contentMode: CanvasContentMode
 
@@ -41,7 +42,11 @@ struct StudioLookPhotoPreview: View {
               String(format: "%.2f", intensity) + "|" +
               String(format: "%.2f|%.2f|%.2f|%.2f",
                      adjustments.exposureEV, adjustments.contrast,
-                     adjustments.saturation, adjustments.warmth)) {
+                     adjustments.saturation, adjustments.warmth) + "|" +
+              String(format: "%d|%.2f|%.2f|%.2f|%.2f|%.2f",
+                     autoEnhance.enabled ? 1 : 0, autoEnhance.exposureEV,
+                     autoEnhance.contrast, autoEnhance.saturation,
+                     autoEnhance.noiseReduction, autoEnhance.sharpness)) {
             gradedImage = nil
             cutoutError = nil
             guard let input = CIImage(
@@ -56,7 +61,8 @@ struct StudioLookPhotoPreview: View {
             ))
             let graded = StudioColorGrader.apply(
                 prepared, look: look, intensity: intensity,
-                adjustments: adjustments
+                adjustments: adjustments,
+                autoEnhance: autoEnhance
             )
             let filtered: CIImage
             do {
