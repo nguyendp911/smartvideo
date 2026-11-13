@@ -69,18 +69,24 @@ enum GeminiRevoiceClient {
         language: String, instructions: String,
         captions: [SubtitleCue]
     ) async throws -> [SubtitleCue] {
-        let input = captions
+        let eligible = captions
             .sorted { $0.start < $1.start }
-            .prefix(100)
-            .enumerated()
-            .compactMap { index, cue -> AIRevoiceSegment? in
-                let text = String(cue.text.trimmingCharacters(
-                    in: .whitespacesAndNewlines).prefix(650))
-                guard !text.isEmpty, cue.end > cue.start,
-                      cue.start.isFinite, cue.end.isFinite else { return nil }
-                return AIRevoiceSegment(id: index, start: cue.start,
-                                        end: cue.end, text: text)
+            .filter { cue in
+                !cue.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+                    cue.end > cue.start && cue.start.isFinite && cue.end.isFinite
             }
+        guard eligible.count <= 100 else {
+            throw AIRevoiceError.response(
+                "Mỗi lần Gemini xử lý tối đa 100 câu. Hãy chia dự án thành đoạn ngắn."
+            )
+        }
+        let input = eligible.enumerated().map { index, cue in
+            AIRevoiceSegment(
+                id: index, start: cue.start, end: cue.end,
+                text: String(cue.text.trimmingCharacters(
+                    in: .whitespacesAndNewlines).prefix(650))
+            )
+        }
         guard !input.isEmpty else { throw AIRevoiceError.emptyTranscript }
         guard let root = URL(string: baseURL),
               root.scheme?.lowercased() == "https",
