@@ -197,6 +197,11 @@ final class EditorViewModel: ObservableObject {
     @Published var addCustomMetadata = false
     @Published var musicFadeIn: Double = 0.3
     @Published var musicFadeOut: Double = 1.2
+    @Published var isGeneratingGeminiSpeech = false
+    @Published var geminiSpeechModelName = ""
+    @Published var geminiSpeechVoice = "Kore"
+    @Published var geminiSpeechStyle = "Giọng tự nhiên, ấm áp"
+    @Published var geminiSpeechStatus = ""
     @Published var isGeneratingNarration = false
     @Published var repeatShortMusic = true
     @Published var keepOriginalAudio = true
@@ -1000,6 +1005,45 @@ final class EditorViewModel: ObservableObject {
         aiRevoiceStatus = rewrittenText.count > 5000 ?
             "Đã áp dụng phụ đề. Lời dài: dùng Tạo giọng theo từng mốc." :
             "Đã áp dụng lời mới. Hãy tạo giọng đọc và xem thử 720p."
+    }
+
+    func generateGeminiSpeech() {
+        guard !isGeneratingGeminiSpeech else { return }
+        let key = GeminiAPIKeyStore.load()
+        let available = GeminiSpeechGenerator.availableModels(aiGeminiModels)
+        guard let model = available.first(where: {
+            $0.name == geminiSpeechModelName
+        }) ?? available.first else {
+            errorText = "Gemini key chưa có model TTS. Làm mới danh sách model hoặc chọn giọng iOS."
+            return
+        }
+        let text = narrationText
+        let projectAtStart = projectID
+        let voice = geminiSpeechVoice
+        let style = geminiSpeechStyle
+        isGeneratingGeminiSpeech = true
+        geminiSpeechStatus = "Đang tạo giọng nói bằng \(model.title)…"
+        Task {
+            defer { isGeneratingGeminiSpeech = false }
+            do {
+                let output = try await GeminiSpeechGenerator.generate(
+                    apiKey: key, model: model.name,
+                    text: text, voice: voice, style: style
+                )
+                guard projectID == projectAtStart,
+                      narrationText == text else {
+                    try? FileManager.default.removeItem(at: output)
+                    return
+                }
+                voiceoverURL = output
+                originalVoiceoverURL = nil
+                voiceoverOffset = 0
+                geminiSpeechStatus = "Đã tạo giọng Gemini. Nghe và kiểm tra đồng bộ phụ đề trước khi xuất."
+            } catch {
+                errorText = "Gemini TTS: \(error.localizedDescription)"
+                geminiSpeechStatus = ""
+            }
+        }
     }
 
     func generateTimeMatchedRevoice() {
