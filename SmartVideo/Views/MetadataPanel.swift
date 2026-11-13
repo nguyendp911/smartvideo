@@ -42,6 +42,35 @@ struct MetadataPanel: View {
                 .font(.caption)
             }
 
+            Divider()
+            DisclosureGroup("Kiểm tra chất lượng trước khi xuất MP4") {
+                let findings = AIExportQualityAudit.inspect(
+                    clips: model.clips,
+                    subtitles: model.subtitles,
+                    voiceURL: model.voiceoverURL,
+                    voiceDuration: model.voiceoverDuration,
+                    metadata: model.metadata,
+                    attachMetadata: model.addCustomMetadata,
+                    totalDuration: model.totalDuration
+                )
+                ForEach(findings) { item in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: item.level == .critical ?
+                              "xmark.octagon" :
+                              item.level == .warning ?
+                              "exclamationmark.triangle" : "checkmark.circle")
+                            .foregroundStyle(item.level == .critical ?
+                                             .red : item.level == .warning ?
+                                             .orange : .green)
+                        Text(item.message)
+                            .font(.caption)
+                    }
+                }
+                Text("Chỉ kiểm tra dữ liệu dự án. Hãy nghe giọng đọc và xem file xuất thực tế để phát hiện lỗi hình, âm thanh hoặc đồng bộ.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            .font(.subheadline.bold())
+
             Text("Dữ liệu mới được ghi vào container MP4 khi xuất nếu định dạng hỗ trợ; từng ứng dụng có thể không hiển thị tất cả trường. Lọc metadata nguồn không xóa các thông số kỹ thuật như thời lượng, codec hoặc độ phân giải.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
