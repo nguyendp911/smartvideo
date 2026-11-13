@@ -163,6 +163,11 @@ final class EditorViewModel: ObservableObject {
     @Published var analyzedClipID: UUID?
     @Published var isAnalyzingVideoHighlights = false
     @Published var previousTimeline: [TimelineClip]?
+    @Published var aiVisualReport: AIVisualReport?
+    @Published var aiVisualClipID: UUID?
+    @Published var aiVisualInstructions = ""
+    @Published var aiVisualStatus = ""
+    @Published var isAnalyzingVisualScenes = false
     @Published var aiRevoiceDraft: [SubtitleCue] = []
     @Published var aiGeminiModels: [GeminiAvailableModel] = []
     @Published var isLoadingGeminiModels = false
@@ -761,6 +766,86 @@ final class EditorViewModel: ObservableObject {
         } catch {
             errorText = "Metadata không hợp lệ. Hãy kiểm tra tiêu đề và mô tả."
         }
+    }
+
+    // MARK: - AI Video Director (sampled frames + local OCR)
+
+    func analyzeSelectedVideoWithGemini(clipID: UUID?, apiKey: String) {
+        guard !isAnalyzingVisualScenes,
+              let clip = clips.first(where: { $0.id == clipID }),
+              clip.kind == .video else {
+            errorText = "Hãy chọn một clip VIDEO trước."
+            return
+        }
+        let available = aiGeminiModels.filter {
+            !$0.name.lowercased().contains("tts")
+        }
+        guard let chosen = aiGeminiModelName.isEmpty
+            ? GeminiDirectAPI.recommended(available)
+            : available.first(where: { $0.name == aiGeminiModelName }) else {
+            errorText = "Hãy nhập Gemini API key và nhận diện model trước."
+            return
+        }
+        let transcript = subtitles
+            .filter { $0.start <= totalDuration }
+            .sorted { $0.start < $1.start }
+            .map(\.text).joined(separator: " ")
+        let currentProject = projectID
+        let instructions = aiVisualInstructions
+        aiVisualReport = nil
+        isAnalyzingVisualScenes = true
+        aiVisualStatus = "Đang trích xuất khung hình và OCR trên iPhone…"
+        Task {
+            defer { isAnalyzingVisualScenes = false }
+            do {
+                aiVisualStatus = "Đang phân tích các cảnh bằng Gemini…"
+                let report = try await AIVisualDirector.analyze(
+                    clip: clip, transcript: transcript,
+                    apiKey: apiKey, modelName: chosen.name,
+                    instructions: instructions
+                )
+                guard projectID == currentProject,
+                      clips.contains(where: { $0.id == clip.id }) else { return }
+                aiVisualClipID = clip.id
+                aiVisualReport = report
+                aiVisualStatus = "Đã tạo \(report.scenes.count) cảnh gợi ý. Kiểm tra trước khi áp dụng."
+            } catch {
+                aiVisualStatus = ""
+                errorText = "AI Video Director: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func applyDirectorSceneNarration() {
+        guard let report = aiVisualReport,
+              let clipID = aiVisualClipID,
+              let index = clips.firstIndex(where: { $0.id == clipID })
+        else { return }
+        let beginning = timelineStart(of: index)
+        let duration = clips[index].renderedDuration
+        let suggestions = report.scenes
+            .filter { !$0.narration.trimmingCharacters(
+                in: .whitespacesAndNewlines).isEmpty }
+            .map { scene in
+                SubtitleCue(
+                    start: max(beginning, beginning + scene.start),
+                    end: min(totalDuration,
+                             beginning + min(duration, scene.end)),
+                    text: scene.narration
+                )
+            }.filter { $0.end > $0.start + 0.05 }
+        guard !suggestions.isEmpty else {
+            errorText = "Chưa có lời dẫn hợp lệ từ AI."
+            return
+        }
+        checkpoint()
+        subtitles.removeAll {
+            $0.start >= beginning && $0.start < beginning + duration
+        }
+        subtitles.append(contentsOf: suggestions)
+        subtitles.sort { $0.start < $1.start }
+        narrationText = subtitles.map(\.text).joined(separator: " ")
+        aiVisualStatus = "Đã đưa \(suggestions.count) câu vào phụ đề. Tạo giọng theo mốc để đồng bộ."
     }
 
     // MARK: - Gemini AI Video Revoice
