@@ -76,6 +76,44 @@ enum TextOverlayRenderer {
             }
             // Emissive styles must use the glyph's light color rather
             // than a black shadow; this is serialized in MP4 Core Animation.
+            if item.typewriterEnabled {
+                // Pre-rasterize each grapheme-aware reveal. This avoids
+                // exporting CALayer.mask animations which can drop text.
+                let characters = Array(item.text)
+                let steps = min(characters.count, 48)
+                if steps > 0 {
+                    var frames: [CGImage] = []
+                    for step in 0...steps {
+                        var partial = item
+                        let count = Int(ceil(
+                            Double(step) * Double(characters.count) /
+                            Double(steps)
+                        ))
+                        partial.text = String(characters.prefix(count))
+                        if let bitmap = TextMaskMedia.rasterizedGlyph(
+                            for: partial, size: rect.size
+                        ) {
+                            frames.append(bitmap)
+                        }
+                    }
+                    if frames.count == steps + 1 {
+                        content.contents = frames[0]
+                        let animation = CAKeyframeAnimation(keyPath: "contents")
+                        animation.values = frames
+                        animation.calculationMode = .discrete
+                        animation.keyTimes = (0...steps).map {
+                            NSNumber(value: Double($0) / Double(steps))
+                        }
+                        animation.duration = min(
+                            end - begin, max(0.1, item.typewriterDuration)
+                        )
+                        animation.beginTime = AVCoreAnimationBeginTimeAtZero + begin
+                        animation.fillMode = .forwards
+                        animation.isRemovedOnCompletion = false
+                        content.add(animation, forKey: "font-studio-typewriter")
+                    }
+                }
+            }
             content.shadowColor = item.glowRadius > 0
                 ? uiColor(hex: item.colorHex).cgColor
                 : UIColor.black.cgColor
