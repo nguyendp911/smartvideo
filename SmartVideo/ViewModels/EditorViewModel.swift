@@ -188,6 +188,8 @@ final class EditorViewModel: ObservableObject {
     @Published var silenceGap: Double = 0.45
     @Published var isRemovingSilence = false
     @Published var lastSilenceRemoved: Double?
+    @Published var aiPublishingVariants: [AIMetadataDraft] = []
+    @Published var isGeneratingPublishingVariants = false
     @Published var aiMetadataDraft: AIMetadataDraft?
     @Published var aiMetadataStyle = "Tự nhiên, chuyên nghiệp"
     @Published var aiMetadataInstructions = ""
@@ -712,6 +714,60 @@ final class EditorViewModel: ObservableObject {
         exportedMusicHighlightURL = nil
     }
 
+    func generateAIPublishingVariants(apiKey: String) {
+        guard !isGeneratingPublishingVariants else { return }
+        let cues = subtitles.sorted { $0.start < $1.start }
+            .map(\.text).joined(separator: " ")
+        let source = cues.isEmpty ?
+            (aiVisualReport?.summary ?? narrationText) : cues
+        guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            errorText = "Cần nhận diện lời nói hoặc phân tích cảnh trước khi tạo bản đăng."
+            return
+        }
+        let models = aiGeminiModels.filter {
+            !$0.name.lowercased().contains("tts")
+        }
+        guard let model = aiGeminiModelName.isEmpty ?
+            GeminiDirectAPI.recommended(models) :
+            models.first(where: { $0.name == aiGeminiModelName }) else {
+            errorText = "Hãy nhận diện model Gemini trước."
+            return
+        }
+        let project = projectID
+        let instructions = aiMetadataInstructions
+        let language = aiRevoiceLanguage
+        let styles = ["TikTok / Reels ngắn gọn",
+                      "YouTube hấp dẫn, tối ưu tìm kiếm",
+                      "Facebook, gần gũi và tự nhiên"]
+        isGeneratingPublishingVariants = true
+        aiPublishingVariants = []
+        aiMetadataStatus = "Đang tạo các phiên bản nội dung đăng bài…"
+        Task {
+            defer { isGeneratingPublishingVariants = false }
+            do {
+                var results: [AIMetadataDraft] = []
+                for (i, style) in styles.enumerated() {
+                    try Task.checkCancellation()
+                    aiMetadataStatus = "Gemini tạo bản \(i + 1)/3: \(style)…"
+                    results.append(try await GeminiDirectAPI.generateMetadata(
+                        apiKey: apiKey,
+                        modelName: model.name,
+                        transcript: source,
+                        language: language,
+                        style: style,
+                        instructions: instructions
+                    ))
+                }
+                guard projectID == project else { return }
+                aiPublishingVariants = results
+                aiMetadataStatus = "Đã tạo 3 phiên bản. Chọn bản để chỉnh sửa hoặc áp dụng."
+            } catch {
+                aiMetadataStatus = ""
+                errorText = "AI Publishing: \(error.localizedDescription)"
+            }
+        }
+    }
+
     // MARK: - Gemini AI Metadata Studio
 
     func generateAIMetadata(apiKey: String) {
@@ -721,7 +777,8 @@ final class EditorViewModel: ObservableObject {
             .map(\.text)
             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: " ")
-        let source = transcript.isEmpty ? narrationText : transcript
+        let source = transcript.isEmpty ?
+            (aiVisualReport?.summary ?? narrationText) : transcript
         guard !source.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             errorText = "Chưa có nội dung. Hãy nhận diện lời nói, nhập phụ đề hoặc lời thuyết minh trước."
             return
