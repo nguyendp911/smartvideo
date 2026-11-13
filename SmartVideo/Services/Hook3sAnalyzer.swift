@@ -24,7 +24,7 @@ enum Hook3sAnalyzer {
         let realLength = try await asset.load(.duration).seconds
         let safeStart = max(0, min(clip.startTime, realLength))
         let visible = min(clip.duration, max(0, realLength - safeStart))
-        guard visible >= 3.02 else {
+        guard visible >= 3.0 else {
             throw SmartVideoError.invalidMedia(
                 "Phần video đã chọn còn dưới 3 giây.")
         }
