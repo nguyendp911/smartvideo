@@ -1051,6 +1051,9 @@ struct EditorView: View {
                 AIVideoDirectorPanel(
                     model: model, selectedClipID: selectedClipID
                 )
+                AIVocalSeparationPanel(
+                    model: model, selectedClipID: selectedClipID
+                )
                 GeminiRevoiceStudioPanel(
                     model: model, selectedClipID: selectedClipID
                 )
