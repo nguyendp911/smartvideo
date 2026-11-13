@@ -386,6 +386,7 @@ struct EditorView: View {
                             look: clip.imageLook,
                             intensity: compareOriginalFootage ? 0 : clip.lookIntensity,
                             adjustments: compareOriginalFootage ? .neutral : clip.colorAdjustments,
+                            autoEnhance: compareOriginalFootage ? .off : clip.autoEnhance,
                             personBackground: compareOriginalFootage ? .original : clip.personBackground,
                             contentMode: model.contentMode
                         )
