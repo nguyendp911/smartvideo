@@ -105,12 +105,39 @@ enum TextMaskMedia {
                 width: textWidth,
                 height: sz.height
             )
-            (text as NSString).draw(
-                with: rect,
-                options: [.usesLineFragmentOrigin,
-                          .usesFontLeading],
-                attributes: attributes, context: nil
-            )
+            if abs(curve) < 0.5 {
+                (text as NSString).draw(
+                    with: rect,
+                    options: [.usesLineFragmentOrigin, .usesFontLeading],
+                    attributes: attributes, context: nil
+                )
+            } else {
+                let letters = text.map(String.init)
+                let widths = letters.map {
+                    ($0 as NSString).size(withAttributes: attributes).width
+                }
+                let total = widths.reduce(CGFloat.zero, +) +
+                    tracking * CGFloat(max(0, letters.count - 1))
+                var cursor = (sz.width - total) / 2
+                let baseY = (sz.height - font.lineHeight) / 2
+                for (index, letter) in letters.enumerated() {
+                    let width = widths[index]
+                    let x = cursor + width / 2
+                    let u = (x - sz.width / 2) / max(1, sz.width / 2)
+                    let y = -curve * (1 - u * u)
+                    let angle = atan(2 * curve * u / max(1, sz.width / 2))
+                    let ctx = UIGraphicsGetCurrentContext()
+                    ctx?.saveGState()
+                    ctx?.translateBy(x: x, y: baseY + y)
+                    ctx?.rotate(by: angle)
+                    (letter as NSString).draw(
+                        at: CGPoint(x: -width / 2, y: 0),
+                        withAttributes: attributes
+                    )
+                    ctx?.restoreGState()
+                    cursor += width + tracking
+                }
+            }
         }
         return result.cgImage
     }
@@ -122,7 +149,10 @@ enum TextMaskMedia {
         let size = safeSize(size)
         guard let mask = glyphMask(
             text: item.text, size: size,
-            fontSize: CGFloat(min(180, max(15, item.fontSize)))
+            fontSize: CGFloat(min(180, max(15, item.fontSize))),
+            fontName: item.fontName,
+            tracking: CGFloat(item.letterSpacing),
+            curve: CGFloat(item.curveAmount)
         ) else { return nil }
         let bitmap = UIGraphicsImageRenderer(
             size: size, format: rgbaFormat()
@@ -211,7 +241,10 @@ enum TextMaskMedia {
                 text: item.text, size: size,
                 fontSize: CGFloat(min(180, max(15, item.fontSize))),
                 strokeWidth: CGFloat(item.strokeWidth),
-                outlineOnly: true
+                outlineOnly: true,
+                fontName: item.fontName,
+                tracking: CGFloat(item.letterSpacing),
+                curve: CGFloat(item.curveAmount)
               ) else { return nil }
         let size = safeSize(size)
         return UIGraphicsImageRenderer(
