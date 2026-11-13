@@ -42,7 +42,9 @@ enum TextOverlayRenderer {
 
             let rect = outer.bounds.insetBy(dx: 9, dy: 5)
             let content: CALayer
-            if item.fillMode == .solid {
+            if item.fillMode == .solid && item.fontName.isEmpty &&
+                item.letterSpacing == 0 && item.curveAmount == 0 &&
+                !item.typewriterEnabled {
                 // The original CATextLayer was reliable in the real MP4.
                 // Keep that proven path for plain/legacy titles rather
                 // than introducing a glyph-mask dependency for old projects.
