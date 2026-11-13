@@ -110,6 +110,8 @@ jobs:
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             -only-testing:SmartVideoTests/TextExportSmokeTests \
+            -only-testing:SmartVideoTests/PhotoPresetStudioTests \
+            -only-testing:SmartVideoTests/PhotoReferenceMatcherTests \
             test
 
       - name: Package simulator app for inspection
