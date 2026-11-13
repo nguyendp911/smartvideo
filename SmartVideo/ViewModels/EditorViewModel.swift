@@ -159,6 +159,27 @@ final class EditorViewModel: ObservableObject {
     @Published var exportedMusicHighlightURL: URL?
     @Published var isExportingMusicHighlight = false
     @Published var isAnalyzingMusicHighlights = false
+    @Published var hook3sSuggestions: [Hook3sSuggestion] = []
+    @Published var hook3sStatus = ""
+    @Published var isFindingHook3s = false
+    @Published var isAutoTuningEnhance = false
+    @Published var autoEnhanceStatus = ""
+    private struct HookInsertionBackup {
+        let clips: [TimelineClip]
+        let subtitles: [SubtitleCue]
+        let text: [TextOverlayClip]
+        let images: [ImageOverlayClip]
+        let videos: [VideoOverlayClip]
+        let mockups: [MockupOverlayClip]
+        let sounds: [SoundEffectClip]
+        let musicRegions: [SoundEffectClip]
+        let musicOffset: Double
+        let voiceOffset: Double
+        let vfxStart: Double
+        let vfxEnd: Double
+        let timelineSecond: Double
+    }
+    private var hook3sBackup: HookInsertionBackup?
     @Published var videoHighlights: [VideoHighlight] = []
     @Published var analyzedClipID: UUID?
     @Published var isAnalyzingVideoHighlights = false
@@ -593,6 +614,186 @@ final class EditorViewModel: ObservableObject {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         return try MediaStorage.copyToMedia(url, fallbackExtension: fallbackExtension)
+    }
+
+    // MARK: - Hook 3s and Auto Enhance
+
+    func findHook3s(clipID: UUID?) {
+        guard !isFindingHook3s,
+              let clip = clips.first(where: { $0.id == clipID }),
+              clip.kind == .video else {
+            errorText = "Hãy chọn clip video dài ít nhất 3 giây."
+            return
+        }
+        let project = projectID
+        isFindingHook3s = true
+        hook3sSuggestions = []
+        hook3sStatus = "Vision đang tìm 3 giây có gương mặt, chuyển động và hình ảnh nổi bật…"
+        Task {
+            defer { isFindingHook3s = false }
+            do {
+                let candidates = try await Hook3sAnalyzer.suggest(from: clip)
+                guard projectID == project,
+                      clips.contains(where: { $0.id == clip.id }) else { return }
+                hook3sSuggestions = candidates
+                hook3sStatus = "Đã gợi ý \(candidates.count) đoạn Hook 3 giây. Chọn trước khi chèn."
+            } catch {
+                hook3sStatus = ""
+                errorText = "Hook 3s: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Inserts an independent 3s teaser while preserving the original video.
+    /// Existing timed content is shifted to match the new timeline length.
+    @discardableResult
+    func insertHook3s(clipID: UUID?, suggestion: Hook3sSuggestion,
+                      title: String) -> UUID? {
+        guard let index = clips.firstIndex(where: { $0.id == clipID }),
+              clips[index].kind == .video else { return nil }
+        let source = clips[index]
+        let inputStart = source.startTime + suggestion.start
+        guard inputStart >= 0,
+              inputStart + 3 <= source.originalDuration + 0.02 else {
+            errorText = "Khoảng Hook nằm ngoài video gốc."
+            return nil
+        }
+        let oldFirst = clips[0]
+        let overlap = transition == .cut ? 0 :
+            min(transitionSeconds, 3 * 0.24,
+                oldFirst.renderedDuration * 0.24)
+        let shift = 3.0 - overlap
+        hook3sBackup = HookInsertionBackup(
+            clips: clips, subtitles: subtitles,
+            text: textOverlays, images: imageOverlays,
+            videos: videoOverlays, mockups: mockupOverlays,
+            sounds: soundEffects, musicRegions: musicRegions,
+            musicOffset: musicTimelineOffset,
+            voiceOffset: voiceoverOffset,
+            vfxStart: vfxStartTime, vfxEnd: vfxEndTime,
+            timelineSecond: timelineSecond
+        )
+        checkpoint()
+        var teaser = source
+        teaser.id = UUID()
+        teaser.startTime = inputStart
+        teaser.duration = 3.0
+        teaser.originalDuration = source.originalDuration
+        teaser.playbackSpeed = 1
+        teaser.speedCurve = []
+        teaser.sourceAudioFadeIn = 0
+        teaser.sourceAudioFadeOut = min(0.15, teaser.duration / 4)
+        clips.insert(teaser, at: 0)
+        for i in subtitles.indices {
+            subtitles[i].start += shift
+            subtitles[i].end += shift
+            for j in subtitles[i].words.indices {
+                subtitles[i].words[j].start += shift
+                subtitles[i].words[j].end += shift
+            }
+        }
+        for i in textOverlays.indices { textOverlays[i].start += shift }
+        for i in imageOverlays.indices { imageOverlays[i].start += shift }
+        for i in videoOverlays.indices { videoOverlays[i].start += shift }
+        for i in mockupOverlays.indices { mockupOverlays[i].start += shift }
+        for i in soundEffects.indices { soundEffects[i].start += shift }
+        for i in musicRegions.indices { musicRegions[i].start += shift }
+        musicTimelineOffset += shift
+        voiceoverOffset += shift
+        if vfxEndTime > vfxStartTime {
+            vfxStartTime += shift
+            vfxEndTime += shift
+        }
+        let trimmedTitle = String(title.trimmingCharacters(
+            in: .whitespacesAndNewlines).prefix(85))
+        if !trimmedTitle.isEmpty {
+            var overlay = TextOverlayClip()
+            overlay.start = 0
+            overlay.duration = 3
+            overlay.text = trimmedTitle
+            overlay.startY = 0.34
+            overlay.endY = 0.34
+            overlay.fontSize = 48
+            overlay.useBackground = true
+            overlay.strokeWidth = 1.2
+            overlay.shadowOpacity = 0.75
+            overlay.typewriterEnabled = true
+            overlay.typewriterDuration = 0.65
+            textOverlays.insert(overlay, at: 0)
+        }
+        timelineSecond = 0
+        hook3sSuggestions = []
+        hook3sStatus = String(format:
+            "Đã chèn Hook 3 giây trước video. Timeline tăng %.2f giây; bản gốc vẫn giữ nguyên.",
+            shift)
+        return teaser.id
+    }
+
+    func undoHook3s() {
+        guard let old = hook3sBackup else { return }
+        checkpoint()
+        clips = old.clips
+        subtitles = old.subtitles
+        textOverlays = old.text
+        imageOverlays = old.images
+        videoOverlays = old.videos
+        mockupOverlays = old.mockups
+        soundEffects = old.sounds
+        musicRegions = old.musicRegions
+        musicTimelineOffset = old.musicOffset
+        voiceoverOffset = old.voiceOffset
+        vfxStartTime = old.vfxStart
+        vfxEndTime = old.vfxEnd
+        timelineSecond = old.timelineSecond
+        hook3sBackup = nil
+        hook3sStatus = "Đã hoàn tác Hook 3s cùng các mốc thời gian."
+    }
+
+    var canUndoHook3s: Bool { hook3sBackup != nil }
+
+    func autoEnhanceClip(clipID: UUID?, strength: Double) {
+        guard !isAutoTuningEnhance,
+              let clip = clips.first(where: { $0.id == clipID }) else {
+            errorText = "Hãy chọn ảnh hoặc video để Auto Enhance."
+            return
+        }
+        let project = projectID
+        isAutoTuningEnhance = true
+        autoEnhanceStatus = "Đang phân tích độ sáng và tương phản của ảnh mẫu…"
+        Task {
+            defer { isAutoTuningEnhance = false }
+            do {
+                let result = try await AutoEnhanceProcessor.recommend(
+                    for: clip, strength: strength
+                )
+                guard projectID == project,
+                      let index = clips.firstIndex(where: {
+                          $0.id == clip.id
+                      }) else { return }
+                checkpoint()
+                clips[index].autoEnhance = result
+                autoEnhanceStatus = "Đã tối ưu ánh sáng, màu, giảm nhiễu và độ nét. Kiểm tra preview trước/sau."
+            } catch {
+                autoEnhanceStatus = ""
+                errorText = "Auto Enhance: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    func setAutoEnhance(_ clipID: UUID, settings: AutoEnhanceSettings) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID
+        }) else { return }
+        clips[index].autoEnhance = settings
+    }
+
+    func disableAutoEnhance(_ clipID: UUID) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID
+        }) else { return }
+        checkpoint()
+        clips[index].autoEnhance = .off
+        autoEnhanceStatus = "Đã tắt Auto Enhance. Video gốc không thay đổi."
     }
 
     // MARK: - AI-assisted local video selection
