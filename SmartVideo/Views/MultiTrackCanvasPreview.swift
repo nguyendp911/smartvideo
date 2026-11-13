@@ -164,9 +164,21 @@ private struct TextOverlayPreviewItem: View {
             .kerning(CGFloat(item.letterSpacing) *
                      max(0.2, canvas.width / 1080))
             .multilineTextAlignment(.center)
-        switch item.fillMode {
-        case .solid:
-            base.foregroundStyle(titleColor)
+        if abs(item.curveAmount) >= 0.5 {
+            var sample = item
+            sample.text = title
+            if let bitmap = TextMaskMedia.rasterizedGlyph(
+                for: sample, size: CGSize(width: 680, height: 200)
+            ) {
+                Image(uiImage: UIImage(cgImage: bitmap))
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: canvas.width * 0.85)
+            }
+        } else {
+            switch item.fillMode {
+            case .solid:
+                base.foregroundStyle(titleColor)
         case .gradient:
             base.foregroundStyle(
                 LinearGradient(
@@ -201,6 +213,7 @@ private struct TextOverlayPreviewItem: View {
                     )
             } else {
                 base.foregroundStyle(titleColor)
+            }
             }
         }
     }
