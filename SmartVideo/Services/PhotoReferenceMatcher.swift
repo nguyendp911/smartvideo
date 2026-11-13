@@ -22,21 +22,21 @@ enum PhotoReferenceMatcher {
                 "Ảnh mẫu vượt quá 25 MB hoặc không hợp lệ.")
         }
         return try await Task.detached(priority: .userInitiated) {
-            let source = try readStats(url: sourceURL)
-            let goal = try readStats(data: reference)
+            let source = try Self.readStats(url: sourceURL)
+            let goal = try Self.readStats(data: reference)
             // Statistics are normalized RGB summaries, not a semantic copy
             // of the look. Conservative limits prevent blown highlights.
-            let exposure = clamp(
+            let exposure = Self.clamp(
                 log2(max(0.08, goal.brightness) /
                      max(0.08, source.brightness)),
                 -0.45...0.45)
-            let contrast = clamp(
+            let contrast = Self.clamp(
                 goal.contrast / max(0.04, source.contrast),
                 0.84...1.20)
-            let saturation = clamp(
+            let saturation = Self.clamp(
                 goal.saturation / max(0.07, source.saturation),
                 0.78...1.22)
-            let warmth = clamp(
+            let warmth = Self.clamp(
                 (goal.warmth - source.warmth) * 2.2,
                 -0.30...0.30)
             return PhotoPreset(
