@@ -1046,7 +1046,13 @@ struct EditorView: View {
         case .captions: subtitlePanel
         case .audio: audioPanel
         case .effects: effectsPanel
-        case .ai: highlightPanel
+        case .ai:
+            VStack(alignment: .leading, spacing: 12) {
+                GeminiRevoiceStudioPanel(
+                    model: model, selectedClipID: selectedClipID
+                )
+                highlightPanel
+            }
         case .narration: NarrationStudioPanel(model: model, recorder: recorder) {
             activeFilePicker = .voice
             showDocumentImporter = true
