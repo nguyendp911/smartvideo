@@ -6,6 +6,8 @@ struct AIVideoDirectorPanel: View {
     @ObservedObject var model: EditorViewModel
     let selectedClipID: UUID?
     @State private var showScenes = true
+    @State private var selectedHighlightIDs: Set<UUID> = []
+    @State private var useVertical = true
 
     private var selectedClip: TimelineClip? {
         model.clips.first { $0.id == selectedClipID && $0.kind == .video }
@@ -51,6 +53,73 @@ struct AIVideoDirectorPanel: View {
                 Text(model.aiVisualStatus)
                     .font(.caption2).foregroundStyle(.secondary)
             }
+            Divider()
+            DisclosureGroup("AI Auto Edit • Đề xuất Shorts") {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("Sử dụng Vision trên iPhone để tìm các đoạn nổi bật; không tự xóa cảnh trước khi bạn xác nhận.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Button {
+                        if let clip = selectedClip {
+                            selectedHighlightIDs = []
+                            model.suggestVideoHighlights(for: clip)
+                        }
+                    } label: {
+                        Label("Tìm highlight trong clip",
+                              systemImage: "wand.and.stars")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(selectedClip == nil ||
+                              model.isAnalyzingVideoHighlights)
+                    if model.isAnalyzingVideoHighlights { ProgressView() }
+                    if model.analyzedClipID == selectedClipID {
+                        ForEach(model.videoHighlights) { highlight in
+                            Toggle(isOn: Binding(
+                                get: { selectedHighlightIDs.contains(highlight.id) },
+                                set: { enabled in
+                                    if enabled {
+                                        selectedHighlightIDs.insert(highlight.id)
+                                    } else {
+                                        selectedHighlightIDs.remove(highlight.id)
+                                    }
+                                }
+                            )) {
+                                Text(String(format: "%.1fs – %.1fs · %@",
+                                            highlight.start,
+                                            highlight.start + highlight.duration,
+                                            highlight.reason))
+                                    .font(.caption)
+                            }
+                        }
+                        if !model.videoHighlights.isEmpty {
+                            Toggle("Tự chuyển khung hình dọc 9:16",
+                                   isOn: $useVertical)
+                                .font(.caption)
+                            Button {
+                                guard let selectedClipID else { return }
+                                let selected = model.videoHighlights.filter {
+                                    selectedHighlightIDs.contains($0.id)
+                                }
+                                if model.applyVideoHighlights(
+                                    clipID: selectedClipID, selected: selected
+                                ) != nil && useVertical {
+                                    model.canvas = .portrait
+                                }
+                            } label: {
+                                Label("Áp dụng các đoạn đã chọn",
+                                      systemImage: "scissors")
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(selectedHighlightIDs.isEmpty)
+                            Button("Hoàn tác Auto Edit") {
+                                model.undoHighlights()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+            .font(.subheadline.bold())
+
             if let report = model.aiVisualReport,
                model.aiVisualClipID == selectedClipID {
                 Divider()
