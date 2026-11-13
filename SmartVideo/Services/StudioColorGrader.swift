@@ -7,7 +7,9 @@ enum StudioColorGrader {
     static func apply(_ image: CIImage, look: ImageLook,
                       intensity: Double = 1.0,
                       adjustments: ColorAdjustments = .neutral,
-                      autoEnhance: AutoEnhanceSettings = .off) -> CIImage {
+                      autoEnhance: AutoEnhanceSettings = .off,
+                      photoPreset: PhotoPreset? = nil,
+                      photoPresetIntensity: Double = 0.75) -> CIImage {
         let amount = min(1, max(0, intensity.isFinite ? intensity : 1))
         let base: CIImage
         if amount <= 0.0001 || look == .original {
@@ -19,6 +21,18 @@ enum StudioColorGrader {
                     kCIInputTargetImageKey: graded,
                     kCIInputTimeKey: amount
                 ]).cropped(to: image.extent)
+        }
+        if photoPreset != nil {
+            // Photo-only workflow: restoration -> mood -> final manual corrections.
+            // Do not stack old video looks or extra manual correction into a
+            // custom preset automatically; the UI gives users explicit control.
+            let enhanced = AutoEnhanceProcessor.apply(
+                base, settings: autoEnhance)
+            let mood = PhotoPresetProcessor.apply(
+                enhanced, preset: photoPreset,
+                intensity: photoPresetIntensity)
+            return applyManualAdjustments(
+                mood, adjustments: adjustments)
         }
         let graded = applyManualAdjustments(base, adjustments: adjustments)
         return AutoEnhanceProcessor.apply(graded, settings: autoEnhance)
