@@ -6,7 +6,8 @@ import CoreImage
 enum StudioColorGrader {
     static func apply(_ image: CIImage, look: ImageLook,
                       intensity: Double = 1.0,
-                      adjustments: ColorAdjustments = .neutral) -> CIImage {
+                      adjustments: ColorAdjustments = .neutral,
+                      autoEnhance: AutoEnhanceSettings = .off) -> CIImage {
         let amount = min(1, max(0, intensity.isFinite ? intensity : 1))
         let base: CIImage
         if amount <= 0.0001 || look == .original {
@@ -19,7 +20,8 @@ enum StudioColorGrader {
                     kCIInputTimeKey: amount
                 ]).cropped(to: image.extent)
         }
-        return applyManualAdjustments(base, adjustments: adjustments)
+        let graded = applyManualAdjustments(base, adjustments: adjustments)
+        return AutoEnhanceProcessor.apply(graded, settings: autoEnhance)
     }
 
     private static func applyManualAdjustments(
