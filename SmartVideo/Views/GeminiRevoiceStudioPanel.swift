@@ -324,7 +324,53 @@ struct GeminiRevoiceStudioPanel: View {
             }
             Text("Chế độ khớp mốc tạo tiếng nói từng câu rồi co/giãn thời lượng. Tốc độ giọng có thể không tự nhiên ở câu quá dài; kiểm tra bản xem thử 720p.")
                 .font(.caption2).foregroundStyle(.secondary)
-            Text("Sử dụng giọng iOS đã chọn tại tab Giọng. Bản đầu chưa hỗ trợ giọng Gemini TTS hay tự tách giọng khỏi nhạc nền.")
+            Divider()
+            Text("Gemini AI Voice • Giọng nói tự nhiên")
+                .font(.subheadline.bold())
+            let availableTTS = GeminiSpeechGenerator.availableModels(
+                model.aiGeminiModels)
+            if availableTTS.isEmpty {
+                Text("API key chưa liệt kê model Gemini TTS. Nhấn Làm mới model ở phần kết nối Gemini; giọng iOS vẫn hoạt động.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            } else {
+                Picker("Model giọng nói",
+                       selection: $model.geminiSpeechModelName) {
+                    Text("Tự động (TTS đầu tiên)").tag("")
+                    ForEach(availableTTS) { item in
+                        Text(item.title).tag(item.name)
+                    }
+                }
+                .pickerStyle(.menu)
+                Picker("Giọng Gemini", selection: $model.geminiSpeechVoice) {
+                    ForEach(["Kore", "Puck", "Charon", "Fenrir",
+                             "Aoede", "Leda", "Zephyr", "Orus"],
+                            id: \.self) { Text($0).tag($0) }
+                }
+                .pickerStyle(.menu)
+                TextField("Cảm xúc / phong cách giọng đọc",
+                          text: $model.geminiSpeechStyle)
+                    .textFieldStyle(.roundedBorder)
+                Button {
+                    model.generateGeminiSpeech()
+                } label: {
+                    Label(model.isGeneratingGeminiSpeech ?
+                          "Gemini đang tạo giọng…" :
+                          "Tạo giọng Gemini TTS",
+                          systemImage: "waveform")
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.isGeneratingGeminiSpeech ||
+                          model.narrationText.isEmpty ||
+                          model.narrationText.count > 2500)
+                if model.isGeneratingGeminiSpeech { ProgressView() }
+                if !model.geminiSpeechStatus.isEmpty {
+                    Text(model.geminiSpeechStatus)
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+                Text("Giới hạn 2.500 ký tự/lần. Giọng AI thay thế track thuyết minh sau khi tạo thành công; cần kiểm tra lại thời gian phụ đề.")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+            Text("Tách giọng khỏi nhạc nền cần dịch vụ xử lý âm thanh chuyên dụng; không thể thực hiện bằng Gemini text TTS.")
                 .font(.caption2).foregroundStyle(.secondary)
         }
         .padding(12)
