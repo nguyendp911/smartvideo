@@ -66,23 +66,24 @@ enum TextMaskMedia {
     /// Generates a glyph alpha image, not a CALayer text mask.
     static func glyphMask(
         text: String, size: CGSize, fontSize: CGFloat,
-        strokeWidth: CGFloat = 0, outlineOnly: Bool = false
+        strokeWidth: CGFloat = 0, outlineOnly: Bool = false,
+        fontName: String = "", tracking: CGFloat = 0, curve: CGFloat = 0
     ) -> CGImage? {
         let sz = safeSize(size)
         let renderer = UIGraphicsImageRenderer(
             size: sz, format: rgbaFormat()
         )
         let result = renderer.image { _ in
-            let font = UIFont.systemFont(
-                ofSize: fontSize, weight: .black
-            )
+            let font = UIFont(name: fontName, size: fontSize)
+                ?? UIFont.systemFont(ofSize: fontSize, weight: .black)
             let paragraph = NSMutableParagraphStyle()
             paragraph.alignment = .center
             paragraph.lineBreakMode = .byWordWrapping
             var attributes: [NSAttributedString.Key: Any] = [
                 .font: font,
                 .foregroundColor: UIColor.white,
-                .paragraphStyle: paragraph
+                .paragraphStyle: paragraph,
+                .kern: tracking
             ]
             // Explicit zero stroke width is accepted in UIFont drawing,
             // but omitting it for normal glyphs avoids inconsistent
