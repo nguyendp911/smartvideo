@@ -2,7 +2,7 @@ import Foundation
 
 /// Non-destructive Core Image image-restoration controls, saved per clip.
 /// These filters cannot recover real detail absent from the source.
-struct AutoEnhanceSettings: Codable, Equatable {
+struct AutoEnhanceSettings: Codable, Hashable {
     var enabled: Bool = false
     var exposureEV: Double = 0
     var contrast: Double = 1
