@@ -125,6 +125,8 @@ final class VideoRenderer {
                     lookIntensity: clip.lookIntensity,
                     colorAdjustments: clip.colorAdjustments,
                     autoEnhance: clip.autoEnhance,
+                    photoPreset: clip.photoPreset,
+                    photoPresetIntensity: clip.photoPresetIntensity,
                     personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical,
@@ -452,6 +454,8 @@ final class VideoRenderer {
         lookIntensity: Double,
         colorAdjustments: ColorAdjustments,
         autoEnhance: AutoEnhanceSettings,
+        photoPreset: PhotoPreset?,
+        photoPresetIntensity: Double,
         personBackground: PersonBackground,
         flipHorizontal: Bool,
         flipVertical: Bool,
@@ -478,7 +482,9 @@ final class VideoRenderer {
         let gradedSource = StudioColorGrader.apply(
             image, look: imageLook, intensity: lookIntensity,
             adjustments: colorAdjustments,
-            autoEnhance: autoEnhance
+            autoEnhance: autoEnhance,
+            photoPreset: photoPreset,
+            photoPresetIntensity: photoPresetIntensity
         )
         let cutout = try PersonCutoutProcessor.apply(
             image, mode: personBackground, foreground: gradedSource
