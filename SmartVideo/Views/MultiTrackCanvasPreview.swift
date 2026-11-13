@@ -165,11 +165,7 @@ private struct TextOverlayPreviewItem: View {
                      max(0.2, canvas.width / 1080))
             .multilineTextAlignment(.center)
         if abs(item.curveAmount) >= 0.5 {
-            var sample = item
-            sample.text = title
-            if let bitmap = TextMaskMedia.rasterizedGlyph(
-                for: sample, size: CGSize(width: 680, height: 200)
-            ) {
+            if let bitmap = curvedPreviewBitmap(for: title) {
                 Image(uiImage: UIImage(cgImage: bitmap))
                     .resizable()
                     .scaledToFit()
@@ -216,6 +212,14 @@ private struct TextOverlayPreviewItem: View {
             }
             }
         }
+    }
+
+    private func curvedPreviewBitmap(for title: String) -> CGImage? {
+        var sample = item
+        sample.text = title
+        return TextMaskMedia.rasterizedGlyph(
+            for: sample, size: CGSize(width: 680, height: 200)
+        )
     }
 
     var body: some View {
