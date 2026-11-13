@@ -124,6 +124,7 @@ final class VideoRenderer {
                     imageLook: clip.imageLook,
                     lookIntensity: clip.lookIntensity,
                     colorAdjustments: clip.colorAdjustments,
+                    autoEnhance: clip.autoEnhance,
                     personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical,
@@ -159,6 +160,7 @@ final class VideoRenderer {
 
                 if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                     !clip.colorAdjustments.isNeutral ||
+                    clip.autoEnhance.isActive ||
                     clip.personBackground != .original ||
                     !behindTitles.isEmpty ||
                     !clipMockups.isEmpty {
@@ -180,6 +182,7 @@ final class VideoRenderer {
                 workingClips[index] = prepared
             } else if (clip.imageLook != .original && clip.lookIntensity > 0.001) ||
                       !clip.colorAdjustments.isNeutral ||
+                      clip.autoEnhance.isActive ||
                       clip.personBackground != .original ||
                       !behindTitles.isEmpty ||
                       !clipMockups.isEmpty {
@@ -448,6 +451,7 @@ final class VideoRenderer {
         imageLook: ImageLook,
         lookIntensity: Double,
         colorAdjustments: ColorAdjustments,
+        autoEnhance: AutoEnhanceSettings,
         personBackground: PersonBackground,
         flipHorizontal: Bool,
         flipVertical: Bool,
@@ -473,7 +477,8 @@ final class VideoRenderer {
         // Vision is evaluated once per still, not once per output frame.
         let gradedSource = StudioColorGrader.apply(
             image, look: imageLook, intensity: lookIntensity,
-            adjustments: colorAdjustments
+            adjustments: colorAdjustments,
+            autoEnhance: autoEnhance
         )
         let cutout = try PersonCutoutProcessor.apply(
             image, mode: personBackground, foreground: gradedSource
