@@ -21,6 +21,12 @@ enum TextTitlePreset: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var previewColors: (start: String, end: String) {
+        var sample = TextOverlayClip()
+        apply(to: &sample)
+        return (sample.colorHex, sample.gradientEndHex)
+    }
+
     func apply(to title: inout TextOverlayClip) {
         title.pulseEnabled = false
         title.useBackground = false
