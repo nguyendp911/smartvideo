@@ -390,6 +390,8 @@ struct EditorView: View {
                             intensity: compareOriginalFootage ? 0 : clip.lookIntensity,
                             adjustments: compareOriginalFootage ? .neutral : clip.colorAdjustments,
                             autoEnhance: compareOriginalFootage ? .off : clip.autoEnhance,
+                            photoPreset: compareOriginalFootage ? nil : clip.photoPreset,
+                            photoPresetIntensity: clip.photoPresetIntensity,
                             personBackground: compareOriginalFootage ? .original : clip.personBackground,
                             contentMode: model.contentMode
                         )
@@ -1480,6 +1482,11 @@ struct EditorView: View {
                     Text("Chuyển động ảnh kiểu Ken Burns")
                         .font(.caption.bold())
                     imageMotionGrid(clip: clip)
+                    PhotoPresetStudioPanel(
+                        model: model,
+                        selectedClipID: selectedClipID,
+                        compareOriginal: $compareOriginalFootage
+                    )
 
                 }
 
