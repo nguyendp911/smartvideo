@@ -46,7 +46,8 @@ struct Hook3sStudioPanel: View {
                 Text(model.hook3sStatus)
                     .font(.caption2).foregroundStyle(.secondary)
             }
-            if !model.hook3sSuggestions.isEmpty {
+            if model.hook3sSourceClipID == selectedClipID &&
+                !model.hook3sSuggestions.isEmpty {
                 Text("Chọn đoạn mở đầu")
                     .font(.caption.bold())
                 ForEach(model.hook3sSuggestions) { candidate in
