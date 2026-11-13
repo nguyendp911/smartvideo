@@ -31,6 +31,13 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
     var endX: Double = 0.5
     var endY: Double = 0.5
     var fontSize: Double = 48
+    /// Font family PostScript name. Empty means the existing bold system font.
+    var fontName: String = ""
+    var letterSpacing: Double = 0
+    /// Bend baseline in points; positive bends upward.
+    var curveAmount: Double = 0
+    var typewriterEnabled = false
+    var typewriterDuration: Double = 1.2
     var colorHex: String = "FFFFFF"
     var useBackground: Bool = true
     var opacity: Double = 1
@@ -60,7 +67,9 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case id, text, start, duration, startX, startY, endX, endY
-        case fontSize, colorHex, useBackground, opacity, easing
+        case fontSize, fontName, letterSpacing, curveAmount,
+             typewriterEnabled, typewriterDuration
+        case colorHex, useBackground, opacity, easing
         case pathMode, keyframes
         case depthMode, fillMode, fillAssetURL, maskScale,
              maskOffsetX, maskOffsetY, maskFit, gradientEndHex,
@@ -81,6 +90,15 @@ struct TextOverlayClip: Identifiable, Codable, Equatable {
         endX = try c.decodeIfPresent(Double.self, forKey: .endX) ?? 0.5
         endY = try c.decodeIfPresent(Double.self, forKey: .endY) ?? 0.5
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize) ?? 48
+        fontName = try c.decodeIfPresent(String.self, forKey: .fontName) ?? ""
+        letterSpacing = min(24, max(-5, try c.decodeIfPresent(
+            Double.self, forKey: .letterSpacing) ?? 0))
+        curveAmount = min(80, max(-80, try c.decodeIfPresent(
+            Double.self, forKey: .curveAmount) ?? 0))
+        typewriterEnabled = try c.decodeIfPresent(
+            Bool.self, forKey: .typewriterEnabled) ?? false
+        typewriterDuration = min(10, max(0.1, try c.decodeIfPresent(
+            Double.self, forKey: .typewriterDuration) ?? 1.2))
         colorHex = try c.decodeIfPresent(String.self, forKey: .colorHex) ?? "FFFFFF"
         useBackground = try c.decodeIfPresent(Bool.self, forKey: .useBackground) ?? true
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
