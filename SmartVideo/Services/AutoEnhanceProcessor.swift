@@ -42,9 +42,15 @@ enum AutoEnhanceProcessor {
         let frame: CGImage
         if clip.kind == .image {
             guard let input = CIImage(contentsOf: clip.fileURL,
-                                       options: [.applyOrientationProperty: true]),
-                  let result = CIContext().createCGImage(
-                    input, from: input.extent) else {
+                                       options: [.applyOrientationProperty: true]) else {
+                throw SmartVideoError.invalidMedia("Không đọc được ảnh để tối ưu.")
+            }
+            let maxSide = max(input.extent.width, input.extent.height)
+            let ratio = min(1.0, 480.0 / max(1, maxSide))
+            let scaled = input.transformed(by: CGAffineTransform(
+                scaleX: ratio, y: ratio))
+            guard let result = CIContext().createCGImage(
+                    scaled, from: scaled.extent) else {
                 throw SmartVideoError.invalidMedia("Không đọc được ảnh để tối ưu.")
             }
             frame = result
