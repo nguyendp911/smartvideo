@@ -42,6 +42,8 @@ final class HookAndAutoEnhanceTests: XCTestCase {
         let chosen = Hook3sSuggestion(
             start: 6, duration: 3, score: 0.9,
             reason: "Chuyển động")
+        model.hook3sSourceClipID = clip.id
+        model.hook3sSuggestions = [chosen]
         let newID = model.insertHook3s(
             clipID: clip.id, suggestion: chosen, title: "Hook hấp dẫn"
         )
