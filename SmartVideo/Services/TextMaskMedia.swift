@@ -173,9 +173,17 @@ enum TextMaskMedia {
                         hex: item.gradientEndHex
                     ).cgColor
                 ]
+                let palette: [CGColor] = item.gradientMidHex.isEmpty
+                    ? colors : [
+                        colors[0],
+                        TextOverlayRenderer.uiColor(hex: item.gradientMidHex).cgColor,
+                        colors[1]
+                    ]
+                let stops: [CGFloat] = palette.count == 3
+                    ? [0, 0.5, 1] : [0, 1]
                 if let gradient = CGGradient(
                     colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                    colors: colors as CFArray, locations: [0, 1]
+                    colors: palette as CFArray, locations: stops
                 ) {
                     cg.drawLinearGradient(
                         gradient, start: .zero,
