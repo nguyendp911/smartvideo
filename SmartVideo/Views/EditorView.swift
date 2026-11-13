@@ -1048,6 +1048,9 @@ struct EditorView: View {
         case .effects: effectsPanel
         case .ai:
             VStack(alignment: .leading, spacing: 12) {
+                AIVideoDirectorPanel(
+                    model: model, selectedClipID: selectedClipID
+                )
                 GeminiRevoiceStudioPanel(
                     model: model, selectedClipID: selectedClipID
                 )
