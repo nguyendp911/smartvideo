@@ -190,6 +190,50 @@ struct MetadataPanel: View {
             .disabled(model.isGeneratingAIMetadata ||
                       model.aiGeminiModels.isEmpty ||
                       geminiKey.isEmpty)
+            Button {
+                model.generateAIPublishingVariants(apiKey: geminiKey)
+            } label: {
+                Label(model.isGeneratingPublishingVariants ?
+                      "Đang tạo 3 bài đăng…" :
+                      "Tạo 3 phiên bản YouTube / TikTok / Facebook",
+                      systemImage: "rectangle.stack")
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isGeneratingPublishingVariants ||
+                      model.isGeneratingAIMetadata ||
+                      model.aiGeminiModels.isEmpty ||
+                      geminiKey.isEmpty)
+            if model.isGeneratingPublishingVariants { ProgressView() }
+            if !model.aiPublishingVariants.isEmpty {
+                Text("AI Publishing Studio — chọn phiên bản")
+                    .font(.caption.bold())
+                let channels = ["TikTok / Reels", "YouTube", "Facebook"]
+                ForEach(model.aiPublishingVariants.indices, id: \.self) { index in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(index < channels.count ? channels[index] : "Bài đăng")
+                            .font(.caption.bold())
+                        Text(model.aiPublishingVariants[index].title)
+                            .font(.caption)
+                        HStack(spacing: 7) {
+                            Button("Dùng bản này") {
+                                model.aiMetadataDraft =
+                                    model.aiPublishingVariants[index]
+                            }
+                            .buttonStyle(.borderedProminent)
+                            ShareLink(item:
+                                model.aiPublishingVariants[index].socialCaption
+                            ) {
+                                Label("Chia sẻ", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .font(.caption2)
+                    }
+                    .padding(8)
+                    .background(Color.secondary.opacity(0.05),
+                                in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
             if model.isGeneratingAIMetadata { ProgressView() }
             if !model.aiMetadataStatus.isEmpty {
                 Text(model.aiMetadataStatus)
