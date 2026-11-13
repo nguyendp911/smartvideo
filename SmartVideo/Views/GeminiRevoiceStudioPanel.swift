@@ -5,7 +5,10 @@ struct GeminiRevoiceStudioPanel: View {
     @ObservedObject var model: EditorViewModel
     let selectedClipID: UUID?
     @AppStorage("ViePN.GeminiGateway.BaseURL") private var gatewayURL = ""
+    @AppStorage("ViePN.Gemini.Mode") private var connectionMode = "direct"
+    @State private var directAPIKey = ""
     @State private var gatewayToken = ""
+    @State private var keyStatus = ""
     @State private var muteSourceVideo = false
     @State private var showConfiguration = false
 
@@ -18,29 +21,95 @@ struct GeminiRevoiceStudioPanel: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-            DisclosureGroup("Kết nối Gemini Gateway",
-                            isExpanded: $showConfiguration) {
+            Picker("Kết nối AI", selection: $connectionMode) {
+                Text("API key trực tiếp").tag("direct")
+                Text("Gateway riêng").tag("gateway")
+            }
+            .pickerStyle(.segmented)
+
+            if connectionMode == "direct" {
                 VStack(alignment: .leading, spacing: 8) {
-                    TextField("https://your-worker.workers.dev",
-                              text: $gatewayURL)
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .autocorrectionDisabled()
-                        .textFieldStyle(.roundedBorder)
-                    SecureField("Gateway access token (không phải Gemini API key)",
-                                text: $gatewayToken)
+                    SecureField("Nhập Gemini API key", text: $directAPIKey)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .textFieldStyle(.roundedBorder)
-                    Button("Lưu token vào Keychain") {
-                        AIGatewayCredentials.saveToken(gatewayToken)
+                    HStack(spacing: 8) {
+                        Button {
+                            if GeminiAPIKeyStore.save(
+                                directAPIKey.trimmingCharacters(
+                                    in: .whitespacesAndNewlines)) {
+                                keyStatus = "Đã lưu API key vào Keychain."
+                                model.discoverGeminiModels(apiKey: directAPIKey)
+                            } else {
+                                keyStatus = "Không lưu được API key vào Keychain."
+                            }
+                        } label: {
+                            Label("Lưu & nhận diện model", systemImage: "checkmark.shield")
+                        }
+                        .buttonStyle(.borderedProminent)
+                        Button {
+                            model.discoverGeminiModels(apiKey: directAPIKey)
+                        } label: {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(model.isLoadingGeminiModels ||
+                                  directAPIKey.isEmpty)
+                        Button(role: .destructive) {
+                            _ = GeminiAPIKeyStore.save("")
+                            directAPIKey = ""
+                            model.aiGeminiModels = []
+                            model.aiGeminiModelName = ""
+                            keyStatus = "Đã xóa API key."
+                        } label: { Image(systemName: "trash") }
+                        .buttonStyle(.bordered)
                     }
-                    .buttonStyle(.bordered)
-                    Text("Gemini API key chỉ đặt tại máy chủ. Nội dung transcript được gửi đến Google khi bạn nhấn Viết lại.")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
+                    if model.isLoadingGeminiModels { ProgressView() }
+                    if !keyStatus.isEmpty {
+                        Text(keyStatus).font(.caption2).foregroundStyle(.secondary)
+                    }
+                    if !model.aiGeminiModelStatus.isEmpty {
+                        Text(model.aiGeminiModelStatus)
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    Picker("Model Gemini", selection: $model.aiGeminiModelName) {
+                        Text("Tự động chọn model phù hợp").tag("")
+                        ForEach(model.aiGeminiModels) { item in
+                            Text(item.title + " · " + item.name)
+                                .tag(item.name)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .disabled(model.aiGeminiModels.isEmpty)
+                    Text("Tự nhận diện danh sách model được phép dùng với API key này. Không lưu key trong mã nguồn, GitHub hoặc UserDefaults.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                    Text("Chế độ trực tiếp gửi transcript từ iPhone đến Google qua HTTPS. Với app phát hành công khai, Gateway riêng an toàn hơn.")
+                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                .padding(.top, 5)
+            } else {
+                DisclosureGroup("Kết nối Gemini Gateway",
+                                isExpanded: $showConfiguration) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        TextField("https://your-worker.workers.dev",
+                                  text: $gatewayURL)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                        SecureField("Gateway access token",
+                                    text: $gatewayToken)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .textFieldStyle(.roundedBorder)
+                        Button("Lưu token vào Keychain") {
+                            AIGatewayCredentials.saveToken(gatewayToken)
+                        }
+                        .buttonStyle(.bordered)
+                        Text("API key nằm trên máy chủ Gateway, không nằm trong app.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                    .padding(.top, 5)
+                }
             }
 
             Group {
@@ -94,10 +163,14 @@ struct GeminiRevoiceStudioPanel: View {
                 .lineLimit(2...3)
                 .textFieldStyle(.roundedBorder)
             Button {
-                AIGatewayCredentials.saveToken(gatewayToken)
-                model.rewriteSubtitlesWithGemini(
-                    gatewayURL: gatewayURL, token: gatewayToken
-                )
+                if connectionMode == "direct" {
+                    model.rewriteSubtitlesDirectGemini(apiKey: directAPIKey)
+                } else {
+                    AIGatewayCredentials.saveToken(gatewayToken)
+                    model.rewriteSubtitlesWithGemini(
+                        gatewayURL: gatewayURL, token: gatewayToken
+                    )
+                }
             } label: {
                 Label(model.isRewritingWithGemini ?
                       "Gemini đang viết…" : "Gemini viết lại thuyết minh",
@@ -180,6 +253,13 @@ struct GeminiRevoiceStudioPanel: View {
         .padding(12)
         .background(Color.secondary.opacity(0.05),
                     in: RoundedRectangle(cornerRadius: 14))
-        .onAppear { gatewayToken = AIGatewayCredentials.loadToken() }
+        .onAppear {
+            gatewayToken = AIGatewayCredentials.loadToken()
+            directAPIKey = GeminiAPIKeyStore.load()
+            if connectionMode == "direct" && !directAPIKey.isEmpty &&
+                model.aiGeminiModels.isEmpty {
+                model.discoverGeminiModels(apiKey: directAPIKey)
+            }
+        }
     }
 }
