@@ -47,7 +47,7 @@ final class PhotoExportTests: XCTestCase {
             kind: .image, fileURL: input,
             duration: 3, originalDuration: 3
         )
-        for format: PhotoExportFormat in [.jpeg, .png] {
+        for format in [PhotoExportFormat.jpeg, .png] {
             var settings = PhotoExportSettings()
             settings.format = format
             settings.resolution = .twoK
