@@ -115,6 +115,7 @@ jobs:
             -only-testing:SmartVideoTests/PhotoAutoPresetTests \
             -only-testing:SmartVideoTests/PhotoPortraitFocusTests \
             -only-testing:SmartVideoTests/AIAutoVideoCreatorTests \
+            -only-testing:SmartVideoTests/PhotoExportTests \
             test
 
       - name: Package simulator app for inspection
