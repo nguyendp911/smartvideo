@@ -121,6 +121,8 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     var photoPreset: PhotoPreset? = nil
     var photoPresetIntensity: Double = 0.75
     var autoEnhance: AutoEnhanceSettings = .off
+    /// Still-photo depth-look applied after color grading.
+    var portraitFocus: PhotoPortraitFocusSettings = .off
     var personBackground: PersonBackground = .original
     /// Independent source-audio settings; original media is never modified.
     var sourceAudioVolume: Float = 1
@@ -141,6 +143,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
          photoPreset: PhotoPreset? = nil,
          photoPresetIntensity: Double = 0.75,
          autoEnhance: AutoEnhanceSettings = .off,
+         portraitFocus: PhotoPortraitFocusSettings = .off,
          personBackground: PersonBackground = .original,
          sourceAudioVolume: Float = 1,
          sourceAudioMuted: Bool = false,
@@ -163,6 +166,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
         self.photoPresetIntensity = photoPresetIntensity.isFinite ?
             min(1, max(0, photoPresetIntensity)) : 0.75
         self.autoEnhance = autoEnhance
+        self.portraitFocus = kind == .image ? portraitFocus : .off
         self.personBackground = personBackground
         self.sourceAudioVolume = ClipAudioEnvelope.safeVolume(sourceAudioVolume)
         self.sourceAudioMuted = sourceAudioMuted
@@ -175,7 +179,7 @@ struct TimelineClip: Identifiable, Hashable, Codable {
     private enum CodingKeys: String, CodingKey {
         case id, kind, fileURL, duration, startTime, originalDuration
         case playbackSpeed, speedCurve, imageMotion, imageLook, lookIntensity, colorAdjustments
-        case autoEnhance, photoPreset, photoPresetIntensity
+        case autoEnhance, photoPreset, photoPresetIntensity, portraitFocus
         case flipHorizontal, flipVertical, personBackground
         case sourceAudioVolume, sourceAudioMuted, sourceAudioFadeIn, sourceAudioFadeOut
     }
@@ -211,6 +215,9 @@ struct TimelineClip: Identifiable, Hashable, Codable {
             min(1, max(0, rawPresetIntensity)) : 0.75
         autoEnhance = try c.decodeIfPresent(AutoEnhanceSettings.self,
                                           forKey: .autoEnhance) ?? .off
+        portraitFocus = kind == .image ?
+            try c.decodeIfPresent(PhotoPortraitFocusSettings.self,
+                                  forKey: .portraitFocus) ?? .off : .off
         personBackground = try c.decodeIfPresent(PersonBackground.self,
                                                   forKey: .personBackground) ?? .original
         sourceAudioVolume = ClipAudioEnvelope.safeVolume(
