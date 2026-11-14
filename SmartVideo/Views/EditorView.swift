@@ -1055,6 +1055,7 @@ struct EditorView: View {
         case .effects: effectsPanel
         case .ai:
             VStack(alignment: .leading, spacing: 12) {
+                AIAutoVideoCreatorPanel(model: model)
                 Hook3sStudioPanel(
                     model: model,
                     selectedClipID: selectedClipID,
