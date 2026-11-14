@@ -34,6 +34,7 @@ struct PhotoPresetStudioPanel: View {
     @State private var scanOnlyUngraded = true
     @State private var protectExistingLooks = true
     @State private var showSmartBatch = false
+    @State private var showSplitCompare = false
 
     private var selectedPhoto: TimelineClip? {
         model.clips.first { $0.id == selectedClipID && $0.kind == .image }
@@ -79,6 +80,13 @@ struct PhotoPresetStudioPanel: View {
             TextField("Tìm Đi biển, Hoàng hôn, Tone Hàn…", text: $searchText)
                 .textFieldStyle(.roundedBorder)
             categoryStrip
+            if let photo = selectedPhoto, photo.photoPreset != nil {
+                DisclosureGroup("So sánh ảnh trước/sau bằng thanh kéo",
+                                isExpanded: $showSplitCompare) {
+                    PhotoSplitCompareView(clip: photo)
+                }
+                .font(.subheadline.bold())
+            }
             smartBatchEditor
             referenceEditor
 
