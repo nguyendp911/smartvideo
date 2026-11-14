@@ -31,6 +31,9 @@ struct PhotoPresetStudioPanel: View {
     @State private var showImportPresets = false
     @State private var showExportPresets = false
     @State private var transferStatus = ""
+    @State private var scanOnlyUngraded = true
+    @State private var protectExistingLooks = true
+    @State private var showSmartBatch = false
 
     private var selectedPhoto: TimelineClip? {
         model.clips.first { $0.id == selectedClipID && $0.kind == .image }
@@ -76,6 +79,7 @@ struct PhotoPresetStudioPanel: View {
             TextField("Tìm Đi biển, Hoàng hôn, Tone Hàn…", text: $searchText)
                 .textFieldStyle(.roundedBorder)
             categoryStrip
+            smartBatchEditor
             referenceEditor
 
             HStack {
@@ -229,6 +233,141 @@ struct PhotoPresetStudioPanel: View {
                     error.localizedDescription
             }
         }
+    }
+
+    private var smartBatchEditor: some View {
+        DisclosureGroup("Smart Batch • AI tự chọn preset từng ảnh",
+                        isExpanded: $showSmartBatch) {
+            VStack(alignment: .leading, spacing: 9) {
+                Text("Vision quét ảnh ngay trên iPhone rồi gợi ý phong cách riêng cho từng ảnh. Bạn có thể đổi preset hoặc bỏ chọn trước khi áp dụng.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Toggle("Chỉ quét ảnh chưa có preset",
+                       isOn: $scanOnlyUngraded)
+                    .font(.caption)
+                Toggle("Không thay preset đang có khi áp dụng",
+                       isOn: $protectExistingLooks)
+                    .font(.caption)
+                HStack(spacing: 8) {
+                    Button {
+                        model.scanPhotoPresets(
+                            onlyWithoutPreset: scanOnlyUngraded)
+                    } label: {
+                        Label(model.isScanningPhotoPresets ?
+                              "Đang quét ảnh…" : "Quét và gợi ý cho ảnh",
+                              systemImage: "sparkles.rectangle.stack")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isScanningPhotoPresets ||
+                              !model.clips.contains {
+                                  $0.kind == .image
+                              })
+                    if model.isScanningPhotoPresets {
+                        Button("Dừng") {
+                            model.cancelPhotoPresetScan()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+                if model.isScanningPhotoPresets { ProgressView() }
+                if !model.photoAutoPresetStatus.isEmpty {
+                    Text(model.photoAutoPresetStatus)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                if !model.photoAutoPresetPlan.isEmpty {
+                    Text("Xem và sửa đề xuất trước khi áp dụng")
+                        .font(.caption.bold())
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 9) {
+                            ForEach(model.photoAutoPresetPlan) { proposal in
+                                smartBatchRow(proposal)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 320)
+                    HStack {
+                        Button("Chọn tất cả") {
+                            for proposal in model.photoAutoPresetPlan {
+                                model.setPhotoAutoPresetSelected(
+                                    clipID: proposal.clipID, selected: true)
+                            }
+                        }
+                        Button("Bỏ chọn tất cả") {
+                            for proposal in model.photoAutoPresetPlan {
+                                model.setPhotoAutoPresetSelected(
+                                    clipID: proposal.clipID, selected: false)
+                            }
+                        }
+                    }
+                    .font(.caption2)
+                    .buttonStyle(.bordered)
+                    Button {
+                        model.applyPhotoAutoPresetPlan(
+                            intensity: intensity,
+                            protectExisting: protectExistingLooks)
+                        compareOriginal = false
+                    } label: {
+                        Label("Áp dụng preset AI cho các ảnh đã duyệt",
+                              systemImage: "checkmark.square.stack")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(model.isScanningPhotoPresets ||
+                        !model.photoAutoPresetPlan.contains {
+                            $0.isSelected
+                        })
+                }
+            }
+            .padding(.vertical, 6)
+        }
+        .font(.subheadline.bold())
+        .padding(10)
+        .background(Color.cyan.opacity(0.06),
+                    in: RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func smartBatchRow(_ proposal: PhotoAutoPresetProposal)
+        -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Toggle(isOn: Binding(
+                get: {
+                    model.photoAutoPresetPlan.first {
+                        $0.clipID == proposal.clipID
+                    }?.isSelected ?? false
+                },
+                set: {
+                    model.setPhotoAutoPresetSelected(
+                        clipID: proposal.clipID, selected: $0)
+                }
+            )) {
+                Text(proposal.filename)
+                    .font(.caption.bold())
+                    .lineLimit(1)
+            }
+            Text(proposal.reason)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Picker("Đổi preset", selection: Binding(
+                get: {
+                    model.photoAutoPresetPlan.first {
+                        $0.clipID == proposal.clipID
+                    }?.presetID ?? proposal.presetID
+                },
+                set: {
+                    model.setPhotoAutoPreset(
+                        clipID: proposal.clipID, presetID: $0)
+                }
+            )) {
+                ForEach(PhotoPresetLibrary.all) { preset in
+                    Text(preset.name).tag(preset.id)
+                }
+            }
+            .pickerStyle(.menu)
+            .font(.caption)
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.055),
+                    in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var referenceEditor: some View {
