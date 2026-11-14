@@ -32,7 +32,7 @@ enum PhotoPresetSuggester {
             // Some scenes include people but the main subject can be a beach.
             // Prefer confident environment labels before face heuristics.
             let labels = (classification.results ?? [])
-                .filter { $0.confidence >= 0.06 }
+                .filter { $0.confidence >= 0.15 }
                 .prefix(12)
             let categories: [(String, String, [String])] = [
                 ("beach", "Có biển hoặc bãi cát", ["beach", "ocean", "seashore", "sea", "coast"]),
