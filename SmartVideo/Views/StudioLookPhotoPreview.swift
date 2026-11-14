@@ -12,6 +12,7 @@ struct StudioLookPhotoPreview: View {
     let autoEnhance: AutoEnhanceSettings
     let photoPreset: PhotoPreset?
     let photoPresetIntensity: Double
+    let portraitFocus: PhotoPortraitFocusSettings
     let personBackground: PersonBackground
     let contentMode: CanvasContentMode
 
@@ -50,7 +51,8 @@ struct StudioLookPhotoPreview: View {
                      autoEnhance.contrast, autoEnhance.saturation,
                      autoEnhance.noiseReduction, autoEnhance.sharpness) + "|" +
               (photoPreset?.id ?? "none") + "|" +
-              String(format: "%.3f", photoPresetIntensity)) {
+              String(format: "%.3f", photoPresetIntensity) + "|" +
+              String(describing: portraitFocus)) {
             gradedImage = nil
             cutoutError = nil
             guard let input = CIImage(
@@ -73,7 +75,8 @@ struct StudioLookPhotoPreview: View {
             let filtered: CIImage
             do {
                 filtered = try PersonCutoutProcessor.apply(
-                    prepared, mode: personBackground, foreground: graded
+                    prepared, mode: personBackground, foreground: graded,
+                    portraitFocus: portraitFocus
                 )
             } catch {
                 cutoutError = "Không thể tách nền: " + error.localizedDescription
