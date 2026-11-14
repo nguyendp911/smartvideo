@@ -267,9 +267,8 @@ struct PhotoPresetStudioPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isScanningPhotoPresets ||
-                              !model.clips.contains {
-                                  $0.kind == .image
-                              })
+                              !model.clips.contains(
+                                  where: { $0.kind == .image }))
                     if model.isScanningPhotoPresets {
                         Button("Dừng") {
                             model.cancelPhotoPresetScan()
@@ -321,9 +320,8 @@ struct PhotoPresetStudioPanel: View {
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.isScanningPhotoPresets ||
-                        !model.photoAutoPresetPlan.contains {
-                            $0.isSelected
-                        })
+                        !model.photoAutoPresetPlan.contains(
+                            where: { $0.isSelected }))
                 }
             }
             .padding(.vertical, 6)
