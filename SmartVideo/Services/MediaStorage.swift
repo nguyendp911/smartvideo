@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ImageIO
 import UniformTypeIdentifiers
 import CoreTransferable
 
@@ -30,20 +31,43 @@ enum MediaStorage {
     }
 
     static func storeImage(data: Data) throws -> URL {
-        guard let image = UIImage(data: data) else {
-            throw SmartVideoError.invalidMedia("Tệp ảnh không được hỗ trợ.")
+        // Preserve original full-resolution HEIC/JPEG/PNG bytes instead
+        // of flattening every image into a re-encoded 90% quality JPEG.
+        // Original metadata is retained in Media; export defaults to
+        // stripping it unless the user opts to preserve it.
+        guard let source = CGImageSourceCreateWithData(
+            data as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let typeID = CGImageSourceGetType(source) else {
+            throw SmartVideoError.invalidMedia("Ảnh nhập không hợp lệ.")
         }
-        // Flatten EXIF orientation so that photos display correctly in the encoder.
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        let painter = UIGraphicsImageRenderer(size: image.size, format: format)
-        let jpeg = painter.jpegData(withCompressionQuality: 0.90) { _ in
-            image.draw(in: CGRect(origin: .zero, size: image.size))
+        let type = UTType(typeID as String)
+        let suffix: String
+        if type?.conforms(to: .heic) == true ||
+           type?.conforms(to: .heif) == true {
+            suffix = "heic"
+        } else if type?.conforms(to: .png) == true {
+            suffix = "png"
+        } else if type?.conforms(to: .jpeg) == true {
+            suffix = "jpg"
+        } else {
+            // Preserve support for PhotosPicker images such as TIFF by
+            // normalizing only when the format is not natively supported.
+            guard let input = UIImage(data: data),
+                  let normalized = input.jpegData(
+                    compressionQuality: 0.96) else {
+                throw SmartVideoError.invalidMedia(
+                    "Định dạng ảnh chưa được hỗ trợ.")
+            }
+            let destination = mediaDirectory.appendingPathComponent(
+                UUID().uuidString + ".jpg")
+            try normalized.write(to: destination, options: .atomic)
+            return destination
         }
-        let destination = mediaDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
-        try jpeg.write(to: destination, options: .atomic)
-        return destination
+        let target = mediaDirectory.appendingPathComponent(
+            UUID().uuidString + "." + suffix)
+        try data.write(to: target, options: .atomic)
+        return target
     }
 
     /// Preserve the alpha channel of logos, stickers and transparent PNGs.
