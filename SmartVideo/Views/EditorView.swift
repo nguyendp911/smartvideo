@@ -1055,6 +1055,9 @@ struct EditorView: View {
         case .effects: effectsPanel
         case .ai:
             VStack(alignment: .leading, spacing: 12) {
+                AIPhotoEditorPanel(
+                    model: model, selectedClipID: selectedClipID
+                )
                 AIAutoVideoCreatorPanel(model: model)
                 Hook3sStudioPanel(
                     model: model,
@@ -1493,6 +1496,10 @@ struct EditorView: View {
                         model: model,
                         selectedClipID: selectedClipID,
                         compareOriginal: $compareOriginalFootage
+                    )
+                    AIPhotoEditorPanel(
+                        model: model,
+                        selectedClipID: selectedClipID
                     )
 
                 }
