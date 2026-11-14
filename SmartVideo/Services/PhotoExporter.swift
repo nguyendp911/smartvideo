@@ -108,7 +108,7 @@ enum PhotoExporter {
                 try context.writeJPEGRepresentation(
                     of: final, to: output,
                     colorSpace: colorSpace,
-                    options: [.lossyCompressionQuality: quality]
+                    options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
                 )
             case .png:
                 try context.writePNGRepresentation(
@@ -121,7 +121,7 @@ enum PhotoExporter {
                     of: final, to: output,
                     format: .RGBA8,
                     colorSpace: colorSpace,
-                    options: [.lossyCompressionQuality: quality]
+                    options: [CIImageRepresentationOption(rawValue: kCGImageDestinationLossyCompressionQuality as String): quality]
                 )
             }
             if !settings.removeSourceMetadata {
