@@ -19,7 +19,9 @@ struct PhotoSplitCompareView: View {
             String(describing: clip.colorAdjustments),
             String(describing: clip.autoEnhance),
             String(describing: clip.photoPreset),
-            String(format: "%.3f", clip.photoPresetIntensity)
+            String(format: "%.3f", clip.photoPresetIntensity),
+            String(describing: clip.portraitFocus),
+            clip.personBackground.rawValue
         ].joined(separator: "|")
     }
 
@@ -114,9 +116,13 @@ struct PhotoSplitCompareView: View {
             photoPreset: clip.photoPreset,
             photoPresetIntensity: clip.photoPresetIntensity
         )
+        let composed = (try? PersonCutoutProcessor.apply(
+            ciImage, mode: clip.personBackground, foreground: result,
+            portraitFocus: clip.portraitFocus
+        )) ?? result
         let context = CIContext(options: [.cacheIntermediates: false])
         guard let rendered = context.createCGImage(
-            result, from: ciImage.extent) else { return nil }
+            composed, from: ciImage.extent) else { return nil }
         return (UIImage(cgImage: frame), UIImage(cgImage: rendered))
     }
 }
