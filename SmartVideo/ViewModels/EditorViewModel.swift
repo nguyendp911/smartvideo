@@ -848,7 +848,8 @@ final class EditorViewModel: ObservableObject {
                   PhotoPresetLibrary.find(proposal.presetID) != nil else {
                 return false
             }
-            return !protectExisting || clip.photoPreset == nil
+            return !protectExisting ||
+                (clip.photoPreset == nil && clip.imageLook == .original)
         }
         guard !indexes.isEmpty else {
             photoAutoPresetStatus =
