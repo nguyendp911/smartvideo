@@ -8,6 +8,13 @@ import UIKit
 @MainActor
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
+    @Published var photoExportSettings = PhotoExportSettings()
+    @Published var isExportingPhoto = false
+    @Published var photoExportStatus = ""
+    @Published var exportedPhotoURL: URL?
+    @Published var exportedPhotoFiles: [URL] = []
+    @Published var photoBatchZIPURL: URL?
+
     @Published var isRunningAIAutoCreator = false
     @Published var aiAutoCreatorStatus = ""
     @Published var aiAutoCreatorPlan: AIAutoCreationPlan?
@@ -404,6 +411,180 @@ final class EditorViewModel: ObservableObject {
                 aiAutoCreatorStatus = "Tự dựng thất bại: " +
                     error.localizedDescription
                 errorText = aiAutoCreatorStatus
+            }
+        }
+    }
+
+    // MARK: - AI Photo Editor & true high-resolution photo export
+
+    func exportPhoto(
+        clipID: UUID?, autoEdit: Bool = false,
+        saveToPhotos: Bool = false
+    ) {
+        guard !isExportingPhoto, !isExporting,
+              let clip = clips.first(where: {
+                  $0.id == clipID && $0.kind == .image
+              }) else {
+            errorText = "Hãy chọn một ảnh tĩnh để xuất."
+            return
+        }
+        let projectAtStart = projectID
+        let settings = photoExportSettings
+        isExportingPhoto = true
+        exportedPhotoURL = nil
+        exportedPhotoFiles = []
+        photoBatchZIPURL = nil
+        photoExportStatus = autoEdit ?
+            "AI đang phân tích và tự chỉnh ảnh…" :
+            "Đang xuất ảnh chất lượng cao…"
+        Task {
+            defer { isExportingPhoto = false }
+            do {
+                var outputClip = clip
+                var explanation = ""
+                if autoEdit {
+                    let result = try await AIPhotoAutoEditor.analyzeAndEdit(clip)
+                    outputClip = result.edited
+                    explanation = result.explanation + " "
+                }
+                guard projectID == projectAtStart else {
+                    photoExportStatus = "Dự án đã thay đổi, đã dừng xuất ảnh."
+                    return
+                }
+                photoExportStatus = explanation + "Đang render " +
+                    settings.format.rawValue + "…"
+                let finalClip = outputClip
+                let output = try await Task.detached(
+                    priority: .userInitiated
+                ) {
+                    try PhotoExporter.export(
+                        clip: finalClip, settings: settings)
+                }.value
+                guard projectID == projectAtStart else {
+                    photoExportStatus = "Ảnh đã được lưu trong Exports, nhưng dự án đã thay đổi."
+                    return
+                }
+                if autoEdit, let index = clips.firstIndex(where: {
+                    $0.id == clip.id &&
+                    $0.fileURL == clip.fileURL
+                }) {
+                    checkpoint()
+                    clips[index].autoEnhance = outputClip.autoEnhance
+                    clips[index].photoPreset = outputClip.photoPreset
+                    clips[index].photoPresetIntensity =
+                        outputClip.photoPresetIntensity
+                    clips[index].imageLook = .original
+                }
+                exportedPhotoURL = output
+                exportedPhotoFiles = [output]
+                photoExportStatus = explanation +
+                    "Đã xuất ảnh " +
+                    settings.format.rawValue + " thành công."
+                if saveToPhotos {
+                    try await saveExportedPhotos([output])
+                    photoExportStatus += " Đã lưu vào thư viện Ảnh."
+                }
+            } catch {
+                photoExportStatus = "Xuất ảnh thất bại: " +
+                    error.localizedDescription
+                errorText = photoExportStatus
+            }
+        }
+    }
+
+    func exportBatchPhotos(
+        autoEdit: Bool = false, saveToPhotos: Bool = false
+    ) {
+        guard !isExportingPhoto, !isExporting else { return }
+        let photos = clips.filter { $0.kind == .image }
+        guard !photos.isEmpty && photos.count <= 50 else {
+            errorText = "Xuất hàng loạt hỗ trợ từ 1 đến 50 ảnh."
+            return
+        }
+        let settings = photoExportSettings
+        let projectAtStart = projectID
+        isExportingPhoto = true
+        exportedPhotoURL = nil
+        exportedPhotoFiles = []
+        photoBatchZIPURL = nil
+        photoExportStatus = "Chuẩn bị xuất \(photos.count) ảnh…"
+        Task {
+            defer { isExportingPhoto = false }
+            do {
+                var resultURLs: [URL] = []
+                for (i, input) in photos.enumerated() {
+                    try Task.checkCancellation()
+                    guard projectID == projectAtStart else {
+                        photoExportStatus =
+                            "Dự án đã thay đổi; tạm ngừng xuất ảnh."
+                        return
+                    }
+                    photoExportStatus = "Đang xuất ảnh \(i + 1)/\(photos.count)…"
+                    var candidate = input
+                    if autoEdit {
+                        candidate = try await AIPhotoAutoEditor
+                            .analyzeAndEdit(input).edited
+                    }
+                    let work = candidate
+                    let output = try await Task.detached(
+                        priority: .userInitiated
+                    ) {
+                        try PhotoExporter.export(
+                            clip: work, settings: settings)
+                    }.value
+                    resultURLs.append(output)
+                    exportedPhotoFiles = resultURLs
+                }
+                photoExportStatus = "Đang đóng gói ZIP…"
+                let copies = resultURLs
+                let archive = try await Task.detached(
+                    priority: .utility
+                ) {
+                    try PhotoBatchZIP.create(files: copies)
+                }.value
+                photoBatchZIPURL = archive
+                exportedPhotoURL = resultURLs.first
+                photoExportStatus =
+                    "Đã xuất \(resultURLs.count) ảnh " +
+                    settings.format.rawValue + " và tạo ZIP."
+                if saveToPhotos {
+                    try await saveExportedPhotos(resultURLs)
+                    photoExportStatus += " Đã lưu ảnh vào thư viện Ảnh."
+                }
+            } catch {
+                photoExportStatus = "Xuất hàng loạt thất bại: " +
+                    error.localizedDescription
+                errorText = photoExportStatus
+            }
+        }
+    }
+
+    func savePhotoExportsToLibrary() {
+        let files = exportedPhotoFiles
+        guard !files.isEmpty else {
+            errorText = "Chưa xuất ảnh nào để lưu."
+            return
+        }
+        Task {
+            do {
+                try await saveExportedPhotos(files)
+                photoExportStatus = "Đã lưu \(files.count) ảnh vào thư viện Ảnh."
+            } catch {
+                errorText = error.localizedDescription
+            }
+        }
+    }
+
+    private func saveExportedPhotos(_ files: [URL]) async throws {
+        let permission = await PHPhotoLibrary.requestAuthorization(
+            for: .addOnly)
+        guard permission == .authorized || permission == .limited else {
+            throw SmartVideoError.photoPermission
+        }
+        try await PHPhotoLibrary.shared().performChanges {
+            for url in files {
+                _ = PHAssetChangeRequest
+                    .creationRequestForAssetFromImage(atFileURL: url)
             }
         }
     }
