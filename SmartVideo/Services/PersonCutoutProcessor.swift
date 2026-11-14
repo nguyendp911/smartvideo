@@ -71,9 +71,15 @@ enum PersonCutoutProcessor {
     static func apply(
         _ source: CIImage, mode: PersonBackground,
         quality: VNGeneratePersonSegmentationRequest.QualityLevel = .balanced,
-        foreground: CIImage? = nil
+        foreground: CIImage? = nil,
+        portraitFocus: PhotoPortraitFocusSettings = .off
     ) throws -> CIImage {
-        guard mode != .original else { return foreground ?? source }
+        if mode == .original {
+            let graded = foreground ?? source
+            return portraitFocus.enabled ?
+                try PhotoPortraitFocusProcessor.apply(
+                    graded, settings: portraitFocus) : graded
+        }
         let extent = source.extent
         guard extent.width > 0, extent.height > 0 else {
             throw SmartVideoError.invalidMedia("Khung hình không hợp lệ để tách nền.")
