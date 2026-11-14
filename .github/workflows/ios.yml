@@ -112,6 +112,7 @@ jobs:
             -only-testing:SmartVideoTests/TextExportSmokeTests \
             -only-testing:SmartVideoTests/PhotoPresetStudioTests \
             -only-testing:SmartVideoTests/PhotoReferenceMatcherTests \
+            -only-testing:SmartVideoTests/PhotoAutoPresetTests \
             test
 
       - name: Package simulator app for inspection
