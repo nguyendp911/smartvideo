@@ -838,8 +838,11 @@ final class EditorViewModel: ObservableObject {
             photoAutoPresetStatus = "Chưa chọn gợi ý nào để áp dụng."
             return
         }
-        let planByID = Dictionary(uniqueKeysWithValues:
-            selected.map { ($0.clipID, $0) })
+        let planByID = selected.reduce(
+            into: [UUID: PhotoAutoPresetProposal]()
+        ) { result, proposal in
+            result[proposal.clipID] = proposal
+        }
         let indexes = clips.indices.filter { index in
             let clip = clips[index]
             guard clip.kind == .image,
