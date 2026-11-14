@@ -40,13 +40,13 @@ struct PhotoSplitCompareView: View {
                 let height = max(1, geometry.size.height)
                 ZStack(alignment: .topLeading) {
                     if let original, let enhanced {
-                        Image(uiImage: original)
+                        Image(uiImage: enhanced)
                             .resizable()
                             .scaledToFill()
                             .frame(width: width, height: height)
                             .clipped()
 
-                        Image(uiImage: enhanced)
+                        Image(uiImage: original)
                             .resizable()
                             .scaledToFill()
                             .frame(width: width, height: height)
