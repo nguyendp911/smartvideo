@@ -127,6 +127,7 @@ final class VideoRenderer {
                     autoEnhance: clip.autoEnhance,
                     photoPreset: clip.photoPreset,
                     photoPresetIntensity: clip.photoPresetIntensity,
+                    portraitFocus: clip.portraitFocus,
                     personBackground: clip.personBackground,
                     flipHorizontal: clip.flipHorizontal,
                     flipVertical: clip.flipVertical,
@@ -456,6 +457,7 @@ final class VideoRenderer {
         autoEnhance: AutoEnhanceSettings,
         photoPreset: PhotoPreset?,
         photoPresetIntensity: Double,
+        portraitFocus: PhotoPortraitFocusSettings,
         personBackground: PersonBackground,
         flipHorizontal: Bool,
         flipVertical: Bool,
@@ -487,7 +489,8 @@ final class VideoRenderer {
             photoPresetIntensity: photoPresetIntensity
         )
         let cutout = try PersonCutoutProcessor.apply(
-            image, mode: personBackground, foreground: gradedSource
+            image, mode: personBackground, foreground: gradedSource,
+            portraitFocus: portraitFocus
         )
         let fitted = cutout
             .transformed(by: CGAffineTransform(translationX: -extent.minX, y: -extent.minY))
