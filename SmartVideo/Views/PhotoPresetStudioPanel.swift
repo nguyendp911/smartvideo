@@ -80,7 +80,8 @@ struct PhotoPresetStudioPanel: View {
             TextField("Tìm Đi biển, Hoàng hôn, Tone Hàn…", text: $searchText)
                 .textFieldStyle(.roundedBorder)
             categoryStrip
-            if let photo = selectedPhoto, photo.photoPreset != nil {
+            if let photo = selectedPhoto,
+               photo.photoPreset != nil || photo.portraitFocus.enabled {
                 DisclosureGroup("So sánh ảnh trước/sau bằng thanh kéo",
                                 isExpanded: $showSplitCompare) {
                     PhotoSplitCompareView(clip: photo)
