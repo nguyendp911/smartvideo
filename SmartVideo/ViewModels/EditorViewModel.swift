@@ -734,6 +734,40 @@ final class EditorViewModel: ObservableObject {
         )
     }
 
+    // MARK: - AI Portrait Focus (still images)
+
+    func applyPortraitFocus(
+        to clipID: UUID?, settings: PhotoPortraitFocusSettings
+    ) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID && $0.kind == .image
+        }) else {
+            photoPresetFeedback = "Hãy chọn một ảnh trước khi xóa phông."
+            return
+        }
+        checkpoint()
+        clips[index].portraitFocus = settings
+        if settings.enabled {
+            // Portrait Focus is exclusive with replacement backgrounds.
+            clips[index].personBackground = .original
+        }
+        photoPresetFeedback = settings.enabled ?
+            "Đã bật Portrait Focus. Kiểm tra ảnh trước khi xuất." :
+            "Đã tắt Portrait Focus."
+    }
+
+    func beginPortraitFocusAdjustment() { checkpoint() }
+
+    func updatePortraitFocus(
+        clipID: UUID?, settings: PhotoPortraitFocusSettings
+    ) {
+        guard let index = clips.firstIndex(where: {
+            $0.id == clipID && $0.kind == .image
+        }) else { return }
+        clips[index].portraitFocus = settings
+        if settings.enabled { clips[index].personBackground = .original }
+    }
+
     // MARK: - Smart Photo Presets (local Vision batch scan)
 
     func scanPhotoPresets(onlyWithoutPreset: Bool = true) {
