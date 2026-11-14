@@ -9,6 +9,11 @@ import UIKit
 final class EditorViewModel: ObservableObject {
     @Published var clips: [TimelineClip] = []
     @Published var photoPresetFeedback = ""
+    @Published var photoAutoPresetPlan: [PhotoAutoPresetProposal] = []
+    @Published var isScanningPhotoPresets = false
+    @Published var photoAutoPresetStatus = ""
+    private var photoPresetScanTask: Task<Void, Never>?
+
     private var copiedPhotoPreset: (recipe: PhotoPreset, intensity: Double)?
     var hasCopiedPhotoPreset: Bool { copiedPhotoPreset != nil }
 
@@ -727,6 +732,145 @@ final class EditorViewModel: ObservableObject {
             recipe.recipe, to: clipID,
             intensity: recipe.intensity
         )
+    }
+
+    // MARK: - Smart Photo Presets (local Vision batch scan)
+
+    func scanPhotoPresets(onlyWithoutPreset: Bool = true) {
+        guard !isScanningPhotoPresets else { return }
+        let candidates = clips.filter {
+            $0.kind == .image &&
+            (!onlyWithoutPreset || $0.photoPreset == nil)
+        }
+        guard !candidates.isEmpty else {
+            photoAutoPresetStatus = "Không có ảnh phù hợp để phân tích."
+            return
+        }
+        let startProject = projectID
+        photoAutoPresetPlan = []
+        isScanningPhotoPresets = true
+        photoAutoPresetStatus = "Đang nhận diện bối cảnh từng ảnh trên iPhone…"
+        photoPresetScanTask = Task {
+            defer {
+                isScanningPhotoPresets = false
+                photoPresetScanTask = nil
+            }
+            var scanned = 0
+            var skipped = 0
+            for candidate in candidates.prefix(60) {
+                if Task.isCancelled || startProject != projectID {
+                    photoAutoPresetStatus = "Đã dừng quét preset."
+                    return
+                }
+                let match = try? await PhotoPresetSuggester.suggest(
+                    fileURL: candidate.fileURL)
+                if Task.isCancelled || startProject != projectID {
+                    photoAutoPresetStatus = "Đã dừng quét preset."
+                    return
+                }
+                scanned += 1
+                guard let current = clips.first(where: {
+                    $0.id == candidate.id &&
+                    $0.fileURL == candidate.fileURL &&
+                    $0.kind == .image
+                }) else {
+                    skipped += 1
+                    continue
+                }
+                if let match,
+                   PhotoPresetLibrary.find(match.presetID) != nil {
+                    photoAutoPresetPlan.append(PhotoAutoPresetProposal(
+                        clipID: current.id,
+                        fileURL: current.fileURL,
+                        filename: current.filename,
+                        presetID: match.presetID,
+                        reason: match.reason
+                    ))
+                } else {
+                    skipped += 1
+                }
+                photoAutoPresetStatus =
+                    "Đã quét \(scanned)/\(min(candidates.count, 60)) ảnh · " +
+                    "\(photoAutoPresetPlan.count) ảnh có gợi ý."
+            }
+            let remaining = candidates.count > 60 ?
+                " Chỉ quét 60 ảnh đầu mỗi lần." : ""
+            photoAutoPresetStatus =
+                "Đã quét \(scanned) ảnh; \(photoAutoPresetPlan.count) ảnh " +
+                "có gợi ý, \(skipped) ảnh bỏ qua vì chưa đủ chắc chắn." +
+                remaining
+        }
+    }
+
+    func cancelPhotoPresetScan() {
+        photoPresetScanTask?.cancel()
+        photoAutoPresetStatus = "Đã yêu cầu dừng quét ảnh."
+    }
+
+    func setPhotoAutoPreset(
+        clipID: UUID, presetID: String
+    ) {
+        guard PhotoPresetLibrary.find(presetID) != nil,
+              let idx = photoAutoPresetPlan.firstIndex(where: {
+                  $0.clipID == clipID
+              }) else { return }
+        photoAutoPresetPlan[idx].presetID = presetID
+    }
+
+    func setPhotoAutoPresetSelected(
+        clipID: UUID, selected: Bool
+    ) {
+        guard let idx = photoAutoPresetPlan.firstIndex(where: {
+            $0.clipID == clipID
+        }) else { return }
+        photoAutoPresetPlan[idx].isSelected = selected
+    }
+
+    func applyPhotoAutoPresetPlan(
+        intensity: Double, protectExisting: Bool
+    ) {
+        guard !isScanningPhotoPresets else {
+            photoAutoPresetStatus = "Hãy kết thúc quét ảnh trước khi áp dụng."
+            return
+        }
+        let selected = photoAutoPresetPlan.filter { $0.isSelected }
+        guard !selected.isEmpty else {
+            photoAutoPresetStatus = "Chưa chọn gợi ý nào để áp dụng."
+            return
+        }
+        let planByID = Dictionary(uniqueKeysWithValues:
+            selected.map { ($0.clipID, $0) })
+        let indexes = clips.indices.filter { index in
+            let clip = clips[index]
+            guard clip.kind == .image,
+                  let proposal = planByID[clip.id],
+                  proposal.fileURL == clip.fileURL,
+                  PhotoPresetLibrary.find(proposal.presetID) != nil else {
+                return false
+            }
+            return !protectExisting || clip.photoPreset == nil
+        }
+        guard !indexes.isEmpty else {
+            photoAutoPresetStatus =
+                "Không còn ảnh hợp lệ hoặc các ảnh đã có preset."
+            return
+        }
+        checkpoint()
+        let amount = intensity.isFinite ?
+            min(1, max(0, intensity)) : 0.75
+        for index in indexes {
+            guard let proposal = planByID[clips[index].id],
+                  let preset = PhotoPresetLibrary.find(
+                      proposal.presetID) else { continue }
+            clips[index].photoPreset = preset
+            clips[index].photoPresetIntensity = amount
+            clips[index].imageLook = .original
+        }
+        photoAutoPresetStatus =
+            "Đã áp dụng preset riêng cho \(indexes.count) ảnh. " +
+            "Có thể hoàn tác bằng nút Hoàn tác của trình chỉnh sửa."
+        photoPresetFeedback = photoAutoPresetStatus
+        photoAutoPresetPlan = []
     }
 
     // MARK: - Hook 3s and Auto Enhance
@@ -2976,6 +3120,9 @@ final class EditorViewModel: ObservableObject {
                 )
             }
             // An undo must never restore media from another project.
+            photoPresetScanTask?.cancel()
+            photoAutoPresetPlan = []
+            photoAutoPresetStatus = ""
             hook3sBackup = nil
             hook3sSuggestions = []
             undoStack.removeAll()
@@ -3099,6 +3246,9 @@ final class EditorViewModel: ObservableObject {
     }
 
     func newProject() {
+        photoPresetScanTask?.cancel()
+        photoAutoPresetPlan = []
+        photoAutoPresetStatus = ""
         hook3sBackup = nil
         hook3sSuggestions = []
         hook3sSourceClipID = nil
