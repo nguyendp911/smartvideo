@@ -333,11 +333,118 @@ extension EditorViewModel {
         return copy.id
     }
 
-    func removeClip(id: UUID) {
-        guard clips.contains(where: { $0.id == id }) else { return }
+    func removeClip(id: UUID, ripple: Bool? = nil) {
+        guard let index = clips.firstIndex(where: { $0.id == id }) else { return }
+        let cutStart = timelineStart(of: index)
+        let before = totalDuration
         checkpoint()
         clips.removeAll { $0.id == id }
+        if ripple ?? rippleEditing, !clips.isEmpty {
+            // Shift == change in total length (also correct with transitions).
+            let removed = max(0, before - totalDuration)
+            applyRipple(cutStart: cutStart, cutEnd: cutStart + removed)
+        }
         timelineSecond = min(timelineSecond, totalDuration)
+    }
+
+    /// Pull everything after [cutStart, cutEnd) earlier. Does not call
+    /// `checkpoint()`: the caller already stored the undo snapshot.
+    func applyRipple(cutStart: Double, cutEnd: Double) {
+        guard cutEnd > cutStart + 0.001 else { return }
+        typealias R = RippleMath
+
+        subtitles = subtitles.compactMap { cue in
+            guard let r = R.range(start: cue.start, end: cue.end,
+                                  cutStart: cutStart, cutEnd: cutEnd) else { return nil }
+            var next = cue
+            next.start = r.start
+            next.end = r.end
+            next.words = cue.words.compactMap { word in
+                guard let w = R.range(start: word.start, end: word.end,
+                                      cutStart: cutStart, cutEnd: cutEnd,
+                                      minLength: 0.01) else { return nil }
+                var moved = word
+                moved.start = w.start
+                moved.end = w.end
+                return moved
+            }
+            return next
+        }
+        textOverlays = textOverlays.compactMap { item in
+            guard let r = R.range(start: item.start, end: item.end,
+                                  cutStart: cutStart, cutEnd: cutEnd) else { return nil }
+            var next = item
+            next.start = r.start
+            next.duration = r.end - r.start
+            return next
+        }
+        imageOverlays = imageOverlays.compactMap { item in
+            guard let r = R.range(start: item.start, end: item.end,
+                                  cutStart: cutStart, cutEnd: cutEnd) else { return nil }
+            var next = item
+            next.start = r.start
+            next.duration = r.end - r.start
+            return next
+        }
+        videoOverlays = videoOverlays.compactMap { item in
+            guard let r = R.range(start: item.start, end: item.end,
+                                  cutStart: cutStart, cutEnd: cutEnd) else { return nil }
+            var next = item
+            next.start = r.start
+            next.duration = r.end - r.start
+            next.sourceStart = item.sourceStart + r.headTrim
+            return next
+        }
+        mockupOverlays = mockupOverlays.compactMap { item in
+            guard let r = R.range(start: item.start, end: item.end,
+                                  cutStart: cutStart, cutEnd: cutEnd) else { return nil }
+            var next = item
+            next.start = r.start
+            next.duration = r.end - r.start
+            return next
+        }
+        soundEffects = soundEffects.compactMap {
+            rippledAudio($0, cutStart: cutStart, cutEnd: cutEnd)
+        }
+        musicRegions = musicRegions.compactMap {
+            rippledAudio($0, cutStart: cutStart, cutEnd: cutEnd)
+        }
+
+        vfxStartTime = R.point(vfxStartTime, cutStart: cutStart, cutEnd: cutEnd)
+        // 0 means "until the end of the project".
+        if vfxEndTime > 0 {
+            vfxEndTime = max(vfxStartTime + 0.1,
+                             R.point(vfxEndTime, cutStart: cutStart, cutEnd: cutEnd))
+        }
+        musicTimelineOffset = R.point(musicTimelineOffset,
+                                      cutStart: cutStart, cutEnd: cutEnd)
+        voiceoverOffset = R.point(voiceoverOffset,
+                                  cutStart: cutStart, cutEnd: cutEnd)
+        objectWillChange.send()
+    }
+
+    private func rippledAudio(
+        _ effect: SoundEffectClip, cutStart: Double, cutEnd: Double
+    ) -> SoundEffectClip? {
+        guard let r = RippleMath.range(
+            start: effect.start, end: effect.end,
+            cutStart: cutStart, cutEnd: cutEnd, straddle: .keepHead
+        ) else { return nil }
+        var next = effect
+        next.start = r.start
+        next.duration = r.end - r.start
+        next.sourceStart = effect.sourceStart + r.headTrim
+        if r.headTrim > 0 || abs(next.duration - effect.duration) > 0.0001 {
+            next.volumeKeyframes = effect.volumeKeyframes.compactMap { frame in
+                guard let progress = RippleMath.remapProgress(
+                    frame.progress, oldDuration: effect.duration,
+                    headTrim: r.headTrim, newDuration: next.duration
+                ) else { return nil }
+                return AudioGainKeyframe(id: frame.id, progress: progress,
+                                         gain: frame.gain)
+            }
+        }
+        return next
     }
 
     /// One-tap edit template using real motion and dissolve exports.

@@ -252,6 +252,9 @@ final class EditorViewModel: ObservableObject {
     @Published var musicFadeIn: Double = 0.3
     @Published var musicFadeOut: Double = 1.2
     @Published var voiceDuck = VoiceDuckSettings()
+    /// Deleting a main-timeline clip also pulls later subtitles, overlays,
+    /// effects and music left by the removed length.
+    @Published var rippleEditing = true
     @Published var separatedBackgroundURL: URL?
     @Published var isSeparatingAudio = false
     @Published var separationStatus = ""

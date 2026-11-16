@@ -60,6 +60,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
           /tmp/project-audio-track-tests
 
+      - name: Validate ripple delete timing math
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/RippleMath.swift scripts/ripple-edit-tests.swift -o /tmp/ripple-edit-tests
+          /tmp/ripple-edit-tests
+
       - name: Validate speech-aware music auto-ducking
         run: |
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/voice-ducking-tests.swift -o /tmp/voice-ducking-tests

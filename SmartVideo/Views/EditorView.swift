@@ -1154,6 +1154,9 @@ struct EditorView: View {
                         scrubTimeline(to: model.timelineSecond)
                     } label: { Image(systemName: "trash") }
                 }
+                Toggle("Ripple: xoá clip thì dời phụ đề, lớp phủ, FX, nhạc phía sau", isOn: $model.rippleEditing)
+                    .font(.caption2)
+                    .tint(accent)
 
                 HStack(spacing: 8) {
                     Button {
