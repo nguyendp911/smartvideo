@@ -1660,6 +1660,7 @@ struct EditorView: View {
                 clip.id, keyPath: \.warmth
             ), range: -1...1, display: clip.colorAdjustments.warmth < -0.01
                 ? "Lạnh" : clip.colorAdjustments.warmth > 0.01 ? "Ấm" : "0")
+            ClipLUTControl(model: model, clipID: clip.id)
         }
         .padding(8)
         .background(Color.white.opacity(0.035),
