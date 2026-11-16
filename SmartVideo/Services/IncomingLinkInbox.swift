@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// Shared hand-off between the app's URL handler and the video vault panel.
-@MainActor
+/// Only touched from the main thread (onOpenURL and SwiftUI views).
 final class IncomingLinkInbox: ObservableObject {
     static let shared = IncomingLinkInbox()
     @Published var pendingLink: String?

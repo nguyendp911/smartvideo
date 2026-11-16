@@ -74,7 +74,7 @@ enum LUTLibrary {
         )
     }
 
-    private static func box(named name: String) -> Box? {
+    private static func entry(named name: String) -> Box? {
         // Never let a project file name escape the LUT folder.
         let safe = (name as NSString).lastPathComponent
         if let hit = cache.object(forKey: safe as NSString) { return hit }
@@ -88,7 +88,7 @@ enum LUTLibrary {
     /// Missing or invalid LUT files leave the image untouched.
     static func apply(_ image: CIImage, name: String, intensity: Double) -> CIImage {
         let amount = intensity.isFinite ? min(1, max(0, intensity)) : 1
-        guard amount > 0.001, let box = box(named: name) else { return image }
+        guard amount > 0.001, let box = entry(named: name) else { return image }
         let graded = image.applyingFilter("CIColorCubeWithColorSpace", parameters: [
             "inputCubeDimension": box.lut.size,
             "inputCubeData": box.data,

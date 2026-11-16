@@ -51,10 +51,8 @@ struct CubeLUT: Equatable {
         var values: [Float] = []
 
         var lineNumber = 0
-        for rawLine in text.split(
-            omittingEmptySubsequences: false,
-            whereSeparator: { $0 == "\n" || $0 == "\r" }
-        ) {
+        // Not split(whereSeparator:): "\r\n" is a single Character in Swift.
+        for rawLine in text.components(separatedBy: .newlines) {
             lineNumber += 1
             var line = rawLine.trimmingCharacters(in: .whitespaces)
             if let hash = line.firstIndex(of: "#") {
