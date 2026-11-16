@@ -9,6 +9,12 @@ struct SmartVideoApp: App {
                 .onOpenURL { url in
                     IncomingLinkInbox.shared.receive(url)
                 }
+                .task {
+                    // Nothing is rendering at launch: drop stale intermediates.
+                    _ = await Task.detached(priority: .utility) {
+                        StorageCleaner.sweepTemporary()
+                    }.value
+                }
         }
     }
 }

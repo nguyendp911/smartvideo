@@ -65,6 +65,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/IncomingLink.swift scripts/incoming-link-tests.swift -o /tmp/incoming-link-tests
           /tmp/incoming-link-tests
 
+      - name: Validate storage cleanup policy
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/StoragePolicy.swift scripts/storage-policy-tests.swift -o /tmp/storage-policy-tests
+          /tmp/storage-policy-tests
+
       - name: Validate .cube LUT parser
         run: |
           swiftc -swift-version 5 SmartVideo/Models/CubeLUT.swift scripts/cube-lut-tests.swift -o /tmp/cube-lut-tests

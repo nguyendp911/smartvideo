@@ -68,6 +68,7 @@ struct VideoLibraryPanel: View {
                  "xóa khỏi Kho không xóa bản sao đã nhập.")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
+            StorageCleanupView()
         }
         .padding(10)
         .onAppear {
