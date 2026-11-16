@@ -37,6 +37,10 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nguyendp911.smartvideo.link
+            CFBundleURLSchemes:
+              - smartvideo
   SmartVideoTests:
     type: bundle.unit-test
     platform: iOS

@@ -27,6 +27,7 @@ struct VideoLibraryPanel: View {
     let onImported: (UUID) -> Void
 
     @StateObject private var library = SocialVideoLibrary()
+    @ObservedObject private var incomingLinks = IncomingLinkInbox.shared
     @AppStorage("ViePN.Resolver.BaseURL") private var resolverBaseURL = ""
     @State private var resolverToken = ""
     @State private var linkText = ""
@@ -42,6 +43,13 @@ struct VideoLibraryPanel: View {
     @State private var showRename = false
     @State private var pendingDelete: SavedSocialVideo?
     @State private var showDelete = false
+
+    /// Pre-fill only; the user still presses download.
+    private func takeIncomingLink() {
+        guard let link = incomingLinks.pendingLink else { return }
+        linkText = link
+        incomingLinks.pendingLink = nil
+    }
 
     private var filtered: [SavedSocialVideo] {
         library.entries.filter {
@@ -65,7 +73,9 @@ struct VideoLibraryPanel: View {
         .onAppear {
             library.reload()
             resolverToken = SocialDownloadTokenStore.load()
+            takeIncomingLink()
         }
+        .onChange(of: incomingLinks.pendingLink) { _ in takeIncomingLink() }
         .onChange(of: photoSelection?.itemIdentifier) { _ in
             guard let selection = photoSelection else { return }
             Task {

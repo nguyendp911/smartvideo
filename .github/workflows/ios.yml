@@ -60,6 +60,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
           /tmp/project-audio-track-tests
 
+      - name: Validate incoming shared-link parsing
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/IncomingLink.swift scripts/incoming-link-tests.swift -o /tmp/incoming-link-tests
+          /tmp/incoming-link-tests
+
       - name: Validate .cube LUT parser
         run: |
           swiftc -swift-version 5 SmartVideo/Models/CubeLUT.swift scripts/cube-lut-tests.swift -o /tmp/cube-lut-tests

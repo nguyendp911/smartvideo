@@ -48,6 +48,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
 
 struct EditorView: View {
     @StateObject private var model = EditorViewModel()
+    @ObservedObject private var incomingLinks = IncomingLinkInbox.shared
     @StateObject private var recorder = VoiceRecorder()
     @StateObject private var audioMonitor = LiveAudioPreview()
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -254,6 +255,10 @@ struct EditorView: View {
             previewTask?.cancel()
             pauseContinuousPlayback()
             audioMonitor.invalidate()
+        }
+        // A link shared in from a Shortcut opens the video vault.
+        .onChange(of: incomingLinks.pendingLink) { link in
+            if link != nil { activeTool = .vault }
         }
         // One native fileImporter, with no nested UIKit sheet dismissal.
         .fileImporter(
