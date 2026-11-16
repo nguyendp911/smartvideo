@@ -17,6 +17,10 @@ struct VideoOverlayClip: Identifiable, Codable, Equatable {
     var easing: OverlayEasing = .linear
     var pathMode: OverlayMotionPath = .straight
     var keyframes: [OverlayKeyframe] = []
+    /// Background removal applied while exporting (see AlphaVideoProcessor).
+    var alphaMode: VideoAlphaMode = .none
+    var chromaTolerance: Double = 0.25
+    var chromaSoftness: Double = 0.10
 
     var end: Double { start + duration }
     var filename: String { fileURL.lastPathComponent }
@@ -25,6 +29,7 @@ struct VideoOverlayClip: Identifiable, Codable, Equatable {
         case id, fileURL, start, duration, sourceStart, sourceDuration
         case startX, startY, endX, endY, width, opacity
         case easing, pathMode, keyframes
+        case alphaMode, chromaTolerance, chromaSoftness
     }
 
     init(fileURL: URL) {
@@ -50,7 +55,22 @@ struct VideoOverlayClip: Identifiable, Codable, Equatable {
                                          forKey: .pathMode) ?? .straight
         keyframes = try c.decodeIfPresent([OverlayKeyframe].self,
                                           forKey: .keyframes) ?? []
+        alphaMode = try c.decodeIfPresent(VideoAlphaMode.self,
+                                          forKey: .alphaMode) ?? .none
+        chromaTolerance = try c.decodeIfPresent(Double.self,
+                                                forKey: .chromaTolerance) ?? 0.25
+        chromaSoftness = try c.decodeIfPresent(Double.self,
+                                               forKey: .chromaSoftness) ?? 0.10
     }
+}
+
+/// How a PIP video loses its background before being composited.
+enum VideoAlphaMode: String, Codable, CaseIterable, Identifiable {
+    case none = "Không tách nền"
+    case chromaGreen = "Phông xanh lá"
+    case chromaBlue = "Phông xanh dương"
+    case person = "Tách người (AI)"
+    var id: String { rawValue }
 }
 
 enum OverlayEasing: String, Codable, CaseIterable, Identifiable {

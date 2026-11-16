@@ -69,6 +69,26 @@ struct VideoPIPStudioPanel: View {
                                               model.totalDuration - item.start)),
                        step: 0.1).tint(.cyan)
 
+                Picker("Tách nền", selection: $model.videoOverlays[idx].alphaMode) {
+                    ForEach(VideoAlphaMode.allCases) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .font(.caption)
+                if item.alphaMode == .chromaGreen || item.alphaMode == .chromaBlue {
+                    row("Dung sai màu", value: item.chromaTolerance * 100, suffix: "%")
+                    Slider(value: $model.videoOverlays[idx].chromaTolerance,
+                           in: 0.06...0.85, step: 0.01).tint(.cyan)
+                    row("Độ mềm viền", value: item.chromaSoftness * 100, suffix: "%")
+                    Slider(value: $model.videoOverlays[idx].chromaSoftness,
+                           in: 0.01...0.40, step: 0.01).tint(.cyan)
+                }
+                if item.alphaMode != .none {
+                    Text("Nền được tách khi xuất MP4 bằng bản sao HEVC có alpha (lưu cache, không sửa file gốc, tối đa 60 giây). Khung xem nhanh vẫn hiện hình tĩnh chưa tách nền; dùng Xem thử 720p để kiểm tra. Tách người chỉ nhận diện người.")
+                        .font(.caption2).foregroundStyle(.secondary)
+                }
+
                 MultiPointKeyframePanel(
                     keyframes: $model.videoOverlays[idx].keyframes,
                     easing: $model.videoOverlays[idx].easing,

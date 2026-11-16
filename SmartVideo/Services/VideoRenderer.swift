@@ -210,6 +210,8 @@ final class VideoRenderer {
 
         // Compose into two alternating tracks. Adjacent segments overlap
         // only when the user chooses the dissolve transition.
+        // Keyed / person-cutout PIPs become transparent HEVC copies first.
+        let videoOverlays = try await AlphaVideoProcessor.resolve(videoOverlays)
         let timeline = try await TimelineComposer().compose(
             clips: workingClips,
             sourceURLs: sourceURLs,
