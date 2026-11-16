@@ -171,6 +171,7 @@ extension EditorViewModel {
         let workMetadata = addCustomMetadata ? metadata : ExportMetadata()
         let workFadeIn = musicFadeIn
         let workFadeOut = musicFadeOut
+        let workVoiceDuck = voiceDuck
         let workVoice = voiceoverURL
         let workSubtitles = subtitles
         let workSubtitleAppearance = subtitleAppearance
@@ -221,7 +222,8 @@ extension EditorViewModel {
                         stripMetadata: workStripMetadata,
                         exportMetadata: workMetadata,
                         musicFadeIn: workFadeIn,
-                        musicFadeOut: workFadeOut
+                        musicFadeOut: workFadeOut,
+                        voiceDuck: workVoiceDuck
                     )
                 }.value
                 if previewOnly {

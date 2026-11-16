@@ -50,7 +50,8 @@ final class VideoRenderer {
         stripMetadata: Bool,
         exportMetadata: ExportMetadata,
         musicFadeIn: Double,
-        musicFadeOut: Double
+        musicFadeOut: Double,
+        voiceDuck: VoiceDuckSettings = .legacy
     ) async throws -> URL {
         guard !clips.isEmpty else {
             throw SmartVideoError.invalidMedia("Hãy thêm ảnh hoặc video trước khi xuất.")
@@ -229,6 +230,9 @@ final class VideoRenderer {
         // AVAudioMix ramps must never overlap or overwrite each other.
         var narrationStart: Double?
         var narrationEnd: Double?
+        // Project-time intervals where speech is really present. nil keeps
+        // the legacy flat duck over the whole narration file.
+        var speechIntervals: [VoiceActivityMath.Interval]?
 
         func rampMix(
             track: AVMutableCompositionTrack, at start: Double,
@@ -286,6 +290,25 @@ final class VideoRenderer {
                 )
                 narrationStart = at
                 narrationEnd = at + seconds
+                if voiceDuck.smart {
+                    do {
+                        let local = try await VoiceActivityAnalyzer.analyze(
+                            url: voiceoverURL
+                        )
+                        speechIntervals = VoiceActivityMath.normalized(
+                            VoiceActivityMath.shifted(
+                                VoiceActivityMath.normalized(
+                                    local, duration: seconds
+                                ), by: at
+                            ), duration: cursor.seconds
+                        )
+                    } catch is CancellationError {
+                        throw CancellationError()
+                    } catch {
+                        // Analysis is best-effort: fall back to the flat duck.
+                        speechIntervals = nil
+                    }
+                }
                 mixParameters.append(rampMix(
                     track: track, at: at,
                     points: ProjectAudioTrackMath.points(
@@ -356,7 +379,11 @@ final class VideoRenderer {
                         fadeIn: musicFadeIn, fadeOut: musicFadeOut,
                         keyframes: musicVolumeKeyframes,
                         narrationStart: narrationStart.map { $0 - at },
-                        narrationEnd: narrationEnd.map { $0 - at }
+                        narrationEnd: narrationEnd.map { $0 - at },
+                        speechIntervals: speechIntervals.map {
+                            VoiceActivityMath.shifted($0, by: -at)
+                        },
+                        duckLevel: voiceDuck.clampedLevel
                     )
                 ))
             }
@@ -367,7 +394,9 @@ final class VideoRenderer {
         let regionParameters = try await SoundEffectsMixer.add(
             musicRegions, to: composition, timelineDuration: cursor,
             narrationStart: narrationStart,
-            narrationEnd: narrationEnd
+            narrationEnd: narrationEnd,
+            speechIntervals: speechIntervals,
+            duckLevel: voiceDuck.clampedLevel
         )
         mixParameters.append(contentsOf: regionParameters)
 

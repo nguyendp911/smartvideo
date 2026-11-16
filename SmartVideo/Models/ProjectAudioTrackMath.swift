@@ -57,8 +57,16 @@ enum ProjectAudioTrackMath {
     /// Two 150/200ms shoulders match the existing renderer's intention.
     static func duck(
         at second: Double, narrationStart: Double?,
-        narrationEnd: Double?
+        narrationEnd: Double?,
+        speechIntervals: [VoiceActivityMath.Interval]? = nil,
+        duckLevel: Double = 0.25
     ) -> Double {
+        // Smart ducking: only dip while speech is really present.
+        if let speechIntervals {
+            return VoiceActivityMath.duckGain(
+                at: second, intervals: speechIntervals, level: duckLevel
+            )
+        }
         guard let narrationStart, let narrationEnd,
               narrationEnd > narrationStart else { return 1 }
         let attack = min(0.15, (narrationEnd - narrationStart) / 2)
@@ -79,7 +87,9 @@ enum ProjectAudioTrackMath {
         volume: Float, fadeIn: Double, fadeOut: Double,
         keyframes: [AudioGainKeyframe],
         narrationStart: Double? = nil,
-        narrationEnd: Double? = nil
+        narrationEnd: Double? = nil,
+        speechIntervals: [VoiceActivityMath.Interval]? = nil,
+        duckLevel: Double = 0.25
     ) -> Float {
         let normal = AudioAutomationMath.gain(
             at: localSecond, duration: duration, volume: volume,
@@ -88,7 +98,8 @@ enum ProjectAudioTrackMath {
         )
         return normal * Float(duck(
             at: localSecond, narrationStart: narrationStart,
-            narrationEnd: narrationEnd
+            narrationEnd: narrationEnd,
+            speechIntervals: speechIntervals, duckLevel: duckLevel
         ))
     }
 
@@ -98,7 +109,9 @@ enum ProjectAudioTrackMath {
         duration: Double, volume: Float, fadeIn: Double, fadeOut: Double,
         keyframes: [AudioGainKeyframe],
         narrationStart: Double? = nil,
-        narrationEnd: Double? = nil
+        narrationEnd: Double? = nil,
+        speechIntervals: [VoiceActivityMath.Interval]? = nil,
+        duckLevel: Double = 0.25
     ) -> [(second: Double, gain: Float)] {
         guard duration.isFinite, duration >= 0.05 else { return [] }
         var times = AudioAutomationMath.envelope(
@@ -114,7 +127,9 @@ enum ProjectAudioTrackMath {
                 times.append(lo + Double(i) / Double(samples) * (hi - lo))
             }
         }
-        if let narrationStart, let narrationEnd {
+        if let speechIntervals {
+            times.append(contentsOf: VoiceActivityMath.keyTimes(speechIntervals))
+        } else if let narrationStart, let narrationEnd {
             addShoulder(narrationStart, narrationStart + 0.15)
             addShoulder(narrationEnd, narrationEnd + 0.20)
         }
@@ -128,7 +143,8 @@ enum ProjectAudioTrackMath {
                 volume: volume, fadeIn: fadeIn, fadeOut: fadeOut,
                 keyframes: keyframes,
                 narrationStart: narrationStart,
-                narrationEnd: narrationEnd
+                narrationEnd: narrationEnd,
+                speechIntervals: speechIntervals, duckLevel: duckLevel
             ))
         }
     }

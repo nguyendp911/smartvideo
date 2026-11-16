@@ -57,8 +57,13 @@ jobs:
 
       - name: Validate movable music and narration gain automation
         run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
+          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
           /tmp/project-audio-track-tests
+
+      - name: Validate speech-aware music auto-ducking
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/voice-ducking-tests.swift -o /tmp/voice-ducking-tests
+          /tmp/voice-ducking-tests
 
       - name: Validate independent multi-music editing
         run: |

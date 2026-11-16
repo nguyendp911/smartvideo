@@ -59,7 +59,8 @@ extension EditorViewModel {
                 voiceVolumeKeyframes: voiceVolumeKeyframes,
                 musicRegions: musicRegions,
                 musicRegionMode: musicRegionMode,
-                mockupOverlays: mockupOverlays
+                mockupOverlays: mockupOverlays,
+                voiceDuck: voiceDuck
             )
             try ProjectStore.save(snapshot)
             projectName = name
@@ -159,6 +160,7 @@ extension EditorViewModel {
                 return item
             }
             musicRegionMode = p.musicRegionMode
+            voiceDuck = p.voiceDuck
             copiedMusicRegion = nil
             subtitles = p.subtitles
             subtitleAppearance = p.subtitleAppearance
@@ -254,6 +256,7 @@ extension EditorViewModel {
         soundEffects = []
         musicRegions = []
         musicRegionMode = false
+        voiceDuck = VoiceDuckSettings()
         copiedMusicRegion = nil
         musicBeatSourceTimes = []
         detectedTempoBPM = 0

@@ -2316,7 +2316,23 @@ struct EditorView: View {
                 Slider(value: $model.musicFadeOut, in: 0...5, step: 0.1)
                     .tint(accent)
 
-                Text("Tùy chỉnh fade-in / fade-out khi xuất và tự giảm nhạc trong lúc có giọng đọc.")
+                Toggle("Tự hạ nhạc khi có người nói", isOn: $model.voiceDuck.smart)
+                    .font(.caption)
+                    .tint(accent)
+                if model.voiceDuck.smart {
+                    HStack {
+                        Text("Mức nhạc khi có giọng")
+                        Spacer()
+                        Text("\(Int(model.voiceDuck.clampedLevel * 100))%")
+                    }
+                    .font(.caption)
+                    Slider(value: $model.voiceDuck.level, in: 0.05...0.8, step: 0.05)
+                        .tint(accent)
+                }
+
+                Text(model.voiceDuck.smart
+                     ? "Phân tích tệp thuyết minh và chỉ hạ nhạc đúng lúc có tiếng nói (hạ trước 0,12s, hồi lại 0,35s). Áp dụng khi xuất MP4; nghe thử nhanh vẫn dùng mức hạ cố định."
+                     : "Tùy chỉnh fade-in / fade-out khi xuất; nhạc tự giảm còn khoảng 25% trong toàn bộ thời lượng giọng đọc.")
                     .font(.caption2).foregroundStyle(.secondary)
 
                 MusicMasteringPanel(model: model)

@@ -251,6 +251,7 @@ final class EditorViewModel: ObservableObject {
     @Published var addCustomMetadata = false
     @Published var musicFadeIn: Double = 0.3
     @Published var musicFadeOut: Double = 1.2
+    @Published var voiceDuck = VoiceDuckSettings()
     @Published var separatedBackgroundURL: URL?
     @Published var isSeparatingAudio = false
     @Published var separationStatus = ""

@@ -17,6 +17,7 @@ struct SmartVideoProject: Codable {
     var musicRegions: [SoundEffectClip]
     /// When true, independent music regions replace the legacy music track.
     var musicRegionMode: Bool
+    var voiceDuck: VoiceDuckSettings
     var beatSourceTimes: [Double]
     var detectedTempoBPM: Double
     var subtitles: [SubtitleCue]
@@ -83,7 +84,8 @@ struct SmartVideoProject: Codable {
          voiceVolumeKeyframes: [AudioGainKeyframe] = [],
          musicRegions: [SoundEffectClip] = [],
          musicRegionMode: Bool = false,
-         mockupOverlays: [MockupOverlayClip] = []) {
+         mockupOverlays: [MockupOverlayClip] = [],
+         voiceDuck: VoiceDuckSettings = VoiceDuckSettings()) {
         self.id = id
         self.name = name
         self.savedAt = savedAt
@@ -95,6 +97,7 @@ struct SmartVideoProject: Codable {
         self.soundEffects = soundEffects
         self.musicRegions = Array(musicRegions.prefix(12))
         self.musicRegionMode = musicRegionMode
+        self.voiceDuck = voiceDuck
         self.beatSourceTimes = beatSourceTimes
         self.detectedTempoBPM = detectedTempoBPM
         self.subtitles = subtitles
@@ -141,7 +144,7 @@ struct SmartVideoProject: Codable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, savedAt, clips, imageOverlays, videoOverlays,
-             textOverlays, mockupOverlays, soundEffects, musicRegions, musicRegionMode,
+             textOverlays, mockupOverlays, soundEffects, musicRegions, musicRegionMode, voiceDuck,
              beatSourceTimes,
              detectedTempoBPM, subtitles, subtitleAppearance, transition,
              transitionSeconds, canvas, contentMode, quality, musicFileName,
@@ -177,6 +180,9 @@ struct SmartVideoProject: Codable {
         musicRegions = Array((try values.decodeIfPresent(
             [SoundEffectClip].self, forKey: .musicRegions
         ) ?? []).prefix(12))
+        voiceDuck = try values.decodeIfPresent(
+            VoiceDuckSettings.self, forKey: .voiceDuck
+        ) ?? VoiceDuckSettings()
         musicRegionMode = try values.decodeIfPresent(
             Bool.self, forKey: .musicRegionMode
         ) ?? false
