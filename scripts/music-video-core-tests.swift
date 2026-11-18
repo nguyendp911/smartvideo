@@ -24,6 +24,10 @@ struct MusicVideoCoreTests {
         audioEditing()
         waveformAndVinyl()
         try audioCoding()
+        lyricsParsing()
+        lyricsSyncAndKaraoke()
+        lyricsAligner()
+        try lyricsProject()
         print("music video core tests passed")
     }
 
@@ -762,5 +766,187 @@ struct MusicVideoCoreTests {
         let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
         precondition(old.audios[0].volume == 1 && old.audios[0].sourceStart == 0 && !old.audios[0].loops)
         precondition(old.vinyls[0].rpm == 33.33 && old.vinyls[0].size == 0.55 && old.vinyls[0].phase == 0 && old.vinyls[0].glowColorHex == "#4DD0E1")
+    }
+
+    // MARK: Lyrics (phase 5)
+
+    static func lyricsParsing() {
+        let lrc = "[ti:Test]\n[00:01.00]Xin chào các bạn\n[00:05.50]Hôm nay trời đẹp\n[00:09.00]\n[00:12.00]Cuối bài"
+        let lines = MV.LRCParser.parse(lrc)
+        precondition(lines.count == 3, "metadata and the empty instrumental row are skipped")
+        near(lines[0].start, 1.0); precondition(lines[0].words.count == 4)
+        near(lines[0].end, 5.5, 1e-6, "a line lasts until the next time tag")
+        near(lines[1].end, 9.0)
+        near(lines[2].end, 16.0, 1e-6, "the last line gets 4 s")
+        for line in lines { for pair in zip(line.words, line.words.dropFirst()) { precondition(pair.0.end <= pair.1.start + 1e-9) } }
+
+        let many = MV.LRCParser.parse("[00:10.00][00:20.00]Điệp khúc")
+        precondition(many.count == 2 && many[0].start == 10 && many[1].start == 20, "several time tags repeat a line")
+
+        near(MV.LRCParser.parse("[offset:500]\n[00:02.00]A b")[0].start, 1.5, 1e-9, "positive offset = earlier")
+        precondition(MV.LRCParser.parse("[00:00.20]A")[0].start >= 0)
+
+        let enhanced = MV.LRCParser.parse("[00:01.00]<00:01.00>Hello <00:01.50>world <00:02.20>again")
+        precondition(enhanced.count == 1 && enhanced[0].words.map(\.text) == ["Hello", "world", "again"])
+        near(enhanced[0].words[0].end, 1.5); near(enhanced[0].words[1].start, 1.5); near(enhanced[0].words[1].end, 2.2)
+
+        // Write -> parse keeps text and word starts (10 ms resolution).
+        let back = MV.LRCParser.parse(MV.LRCWriter.string(enhanced + lines, title: "x"))
+        precondition(back.count == 4 && back.map(\.text) == (enhanced + lines).map(\.text))
+        for (a, b) in zip(back, enhanced + lines) {
+            for (x, y) in zip(a.words, b.words) { near(x.start, y.start, 0.011) }
+        }
+        precondition(MV.LRCParser.parse("just text\nno tags").isEmpty)
+
+        let srt = "1\n00:00:01,000 --> 00:00:03,500\nHello big world\n\n2\n00:00:04,000 --> 00:00:06,000\n<i>Second</i> line\n"
+        let cues = MV.SRTParser.parse(srt.replacingOccurrences(of: "\n", with: "\r\n"))
+        precondition(cues.count == 2 && cues[1].text == "Second line")
+        near(cues[0].start, 1.0); near(cues[0].end, 3.5)
+        precondition(MV.SRTParser.parse("1\n00:00:05,000 --> 00:00:02,000\nbackwards").isEmpty)
+
+        let plain = MV.PlainLyrics.distribute("a b\n\nc d e f", start: 10, duration: 30)
+        precondition(plain.count == 2, "blank rows are ignored")
+        near(plain[0].start, 10); near(plain[0].end, 20); near(plain[1].end, 40, 1e-9, "time follows word count")
+        precondition(MV.PlainLyrics.distribute("   \n", start: 0, duration: 10).isEmpty)
+        precondition(MV.PlainLyrics.distribute("a", start: 0, duration: 0).isEmpty)
+    }
+
+    static func lyricsSyncAndKaraoke() {
+        let base = MV.PlainLyrics.distribute("one two\nthree four", start: 1, duration: 8)
+        precondition(MV.LyricsSynchronizer.shift(base, by: -50).first!.start == 0, "never before zero")
+        near(MV.LyricsSynchronizer.shift(base, by: 2).first!.start, 3)
+        near(MV.LyricsSynchronizer.shift(base, by: -0.5).last!.end, base.last!.end - 0.5)
+
+        let moved = MV.LyricsSynchronizer.moveLine(base, index: 1, toStart: 7)
+        near(moved[1].start, 7); near(moved[1].end - moved[1].start, base[1].end - base[1].start, 1e-9, "line keeps its length")
+
+        let w1 = base[0].words[1]
+        let dragged = MV.LyricsSynchronizer.moveBoundary(base, line: 0, word: 1, to: w1.start + 0.5)
+        near(dragged[0].words[1].start, w1.start + 0.5)
+        near(dragged[0].words[0].end, w1.start + 0.5, 1e-9, "touching words move together")
+        let clamped = MV.LyricsSynchronizer.moveBoundary(base, line: 0, word: 1, to: 999)
+        precondition(clamped[0].words[1].start < clamped[0].words[1].end, "a word never inverts")
+        precondition(MV.LyricsSynchronizer.moveBoundary(base, line: 5, word: 0, to: 1) == base)
+        precondition(MV.LyricsSynchronizer.moveBoundary(base, line: 0, word: 0, to: .nan) == base)
+        let ended = MV.LyricsSynchronizer.setWordEnd(base, line: 1, word: 1, to: 0)
+        precondition(ended[1].words[1].end > ended[1].words[1].start)
+
+        let tapped = MV.LyricsSynchronizer.tapSync(base, taps: [1, 2, 3, 4.2])
+        near(tapped[0].words[1].start, 2); near(tapped[0].words[0].end, 2)
+        near(tapped[1].words[1].start, 4.2); near(tapped[1].words[1].end, 4.7, 1e-9, "the last tap gets 0.5 s")
+        precondition(MV.LyricsSynchronizer.tapSync(base, taps: [1, 2])[1].words[0] == base[1].words[0], "untapped words stay")
+        near(MV.LyricsSynchronizer.tapSync(base, taps: [1, 9, 10, 11])[0].words[0].end, 1.5, 1e-9, "a long pause = a short word")
+
+        var messy = base
+        messy[0].words[0].start = 5; messy[0].words[0].end = 4
+        let fixed = MV.LyricsSynchronizer.normalized(messy)
+        precondition(fixed[0].words[0].end > fixed[0].words[0].start)
+        for pair in zip(fixed.flatMap(\.words), fixed.flatMap(\.words).dropFirst()) { precondition(pair.0.start <= pair.1.start) }
+
+        // Karaoke maths: every value is a pure function of time.
+        let word = MV.LyricWord(text: "abcd", start: 10, end: 12)
+        near(MV.KaraokeMath.progress(word, at: 11), 0.5); near(MV.KaraokeMath.progress(word, at: 5), 0); near(MV.KaraokeMath.progress(word, at: 99), 1)
+        let fill = MV.KaraokeMath.style(.fill, word: word, at: 11)
+        near(fill.fill, 0.5); near(fill.colorMix, 0)
+        near(MV.KaraokeMath.style(.fill, word: word, at: 12).colorMix, 1)
+        precondition(MV.KaraokeMath.style(.fill, word: word, at: 9) == MV.KaraokeMath.style(.fill, word: word, at: 9))
+        near(MV.KaraokeMath.style(.highlight, word: word, at: 9).colorMix, 0)
+        near(MV.KaraokeMath.style(.highlight, word: word, at: 10.5).colorMix, 1)
+        near(MV.KaraokeMath.style(.glow, word: word, at: 11).glow, 1)
+        precondition(MV.KaraokeMath.style(.glow, word: word, at: 13).glow < 0.5 && MV.KaraokeMath.style(.glow, word: word, at: 9).glow == 0)
+        near(MV.KaraokeMath.style(.scale, word: word, at: 11).scale, 1.22)
+        near(MV.KaraokeMath.style(.scale, word: word, at: 13).scale, 1)
+        precondition(MV.KaraokeMath.style(.fade, word: word, at: 0).opacity < MV.KaraokeMath.style(.fade, word: word, at: 12).opacity)
+        precondition(MV.KaraokeMath.style(.typewriter, word: word, at: 9).visibleCharacters == 0)
+        precondition(MV.KaraokeMath.style(.typewriter, word: word, at: 11).visibleCharacters == 2)
+        precondition(MV.KaraokeMath.style(.typewriter, word: word, at: 12).visibleCharacters == 4)
+
+        let lines = MV.PlainLyrics.distribute("a b\nc d", start: 10, duration: 10)       // 10-15, 15-20
+        precondition(MV.KaraokeMath.currentLine(lines, at: 0) == nil, "nothing yet, next is far")
+        precondition(MV.KaraokeMath.currentLine(lines, at: 9) == 0, "next line shows just before it starts")
+        precondition(MV.KaraokeMath.currentLine(lines, at: 12) == 0 && MV.KaraokeMath.currentLine(lines, at: 16) == 1)
+        precondition(MV.KaraokeMath.currentLine(lines, at: 20.5) == 1, "last line is held briefly")
+        precondition(MV.KaraokeMath.currentLine(lines, at: 30) == nil)
+        precondition(MV.KaraokeMath.currentLine([], at: 3) == nil)
+    }
+
+    static func lyricsAligner() {
+        let heard = [
+            MV.RecognizedWord(text: "xin", start: 1.0, end: 1.4), MV.RecognizedWord(text: "chao", start: 1.5, end: 1.9),
+            MV.RecognizedWord(text: "cac", start: 2.0, end: 2.3), MV.RecognizedWord(text: "hom", start: 4.0, end: 4.4),
+            MV.RecognizedWord(text: "nay", start: 4.5, end: 4.9),
+        ]
+        let aligned = MV.LyricsAligner.align(rows: ["Xin chào các bạn", "Hôm nay"], recognized: heard)
+        precondition(aligned.count == 2 && aligned[0].words.count == 4 && aligned[1].words.count == 2, "typed text is kept")
+        precondition(aligned[0].text == "Xin chào các bạn", "diacritics are the user's, not the recogniser's")
+        near(aligned[0].words[0].start, 1.0); near(aligned[0].words[2].end, 2.3)
+        near(aligned[0].words[3].start, 2.3, 1e-9, "a missed word is interpolated between neighbours")
+        near(aligned[0].words[3].end, 4.0, 1e-9)
+        near(aligned[1].words[0].start, 4.0)
+
+        // A wrong extra recognised word does not shift the rest.
+        let noisy = [heard[0], MV.RecognizedWord(text: "uh", start: 1.45, end: 1.5)] + Array(heard.dropFirst())
+        let again = MV.LyricsAligner.align(rows: ["Xin chào các bạn", "Hôm nay"], recognized: noisy)
+        near(again[1].words[1].start, 4.5)
+
+        precondition(MV.LyricsAligner.align(rows: ["abc"], recognized: []).isEmpty)
+        precondition(MV.LyricsAligner.align(rows: [], recognized: heard).isEmpty)
+        precondition(MV.LyricsAligner.align(rows: ["abc def"], recognized: [.init(text: "xyz", start: 0, end: 1)]).isEmpty, "no anchor = no guess")
+        for line in aligned { for pair in zip(line.words, line.words.dropFirst()) { precondition(pair.0.start <= pair.1.start) } }
+
+        let grouped = MV.LyricsAligner.lines(from: heard)
+        precondition(grouped.count == 2 && grouped[0].words.count == 3, "a pause over 0.8 s starts a new line")
+        precondition(MV.LyricsAligner.lines(from: []).isEmpty)
+        precondition(MV.LyricsAligner.normalize("Đường-Phố!") == "duongpho")
+    }
+
+    static func lyricsProject() throws {
+        var p = MV.VideoProject()
+        p.audios.append(audioLayer())                                   // project 2-8 plays file 1-7
+        let audio = p.audios[0]
+        let lines = MV.PlainLyrics.distribute("a b\nc d", start: 1, duration: 6)
+        let id = MV.TimelineEngine.addLyrics(lines, audioID: audio.core.id, to: &p)!
+        precondition(p.lyrics.count == 1 && p.layerCount == 2)
+        near(p.lyrics[0].core.start.seconds, 2); near(p.lyrics[0].core.duration.seconds, 6)
+        near(p.lyrics[0].core.transform.y, 0.78)
+        precondition(MV.TimelineEngine.activeLayerIDs(in: p, at: sec(3)).contains(id))
+        precondition(!MV.TimelineEngine.activeLayerIDs(in: p, at: sec(9)).contains(id))
+
+        // File time <-> project time follows the linked audio, also after the audio moves or is trimmed.
+        near(MV.LyricsTiming.offset(p.lyrics[0], in: p), 1)
+        near(MV.LyricsTiming.sourceTime(p.lyrics[0], in: p, at: sec(5)), 4)
+        p.audios[0].core.start = sec(5)
+        near(MV.LyricsTiming.sourceTime(p.lyrics[0], in: p, at: sec(5)), 1, 1e-9, "moving the music moves the lyrics' timing")
+        p.audios[0].sourceStart = 3
+        near(MV.LyricsTiming.sourceTime(p.lyrics[0], in: p, at: sec(5)), 3, 1e-9, "trimming the music start follows too")
+        p.audios.removeAll()
+        near(MV.LyricsTiming.offset(p.lyrics[0], in: p), p.lyrics[0].core.start.seconds, 1e-9, "unlinked: relative to the layer")
+
+        p.audios.append(audioLayer())
+        let copies = MV.TimelineEngine.duplicate([id], in: &p)
+        precondition(copies.count == 1 && p.lyrics.count == 2 && p.lyrics[1].lines == p.lyrics[0].lines)
+        let cut = MV.TimelineEditing.split([id], at: sec(5), in: &p)
+        precondition(cut.count == 1 && p.lyrics.count == 3)
+        near(p.lyrics[0].core.end.seconds, 5); near(p.lyrics[2].core.start.seconds, 5)
+        precondition(p.lyrics[2].lines == p.lyrics[0].lines && p.lyrics[2].audioLayerID == p.lyrics[0].audioLayerID, "both halves keep the same sync")
+        p.lyrics[1].core.isLocked = true
+        precondition(MV.TimelineEditing.split([p.lyrics[1].core.id], at: sec(4), in: &p).isEmpty)
+        p.remove([id])
+        precondition(p.lyrics.contains { $0.core.id == id } == false)
+
+        var q = MV.VideoProject()
+        q.audios.append(audioLayer())
+        MV.TimelineEngine.addLyrics(lines, audioID: q.audios[0].core.id, to: &q)
+        q.lyrics[0].animation = .glow; q.lyrics[0].fontSize = 0.1; q.lyrics[0].highlightColorHex = "#FF00FF"; q.lyrics[0].showNextLine = false
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(q))
+        precondition(back.lyrics == q.lyrics)
+
+        precondition(try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8)).lyrics.isEmpty)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(q)) as! [String: Any]
+        var layers = json["lyrics"] as! [[String: Any]]
+        for key in ["animation", "fontSize", "weight", "alignment", "highlightColorHex", "normalColorHex", "showNextLine", "hasShadow", "lines"] { layers[0].removeValue(forKey: key) }
+        json["lyrics"] = layers
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.lyrics[0].animation == .fill && old.lyrics[0].fontSize == 0.06 && old.lyrics[0].lines.isEmpty && old.lyrics[0].showNextLine)
     }
 }

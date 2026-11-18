@@ -46,6 +46,14 @@ extension MusicVideoStudio {
             }
             .background(Color(red: 0.06, green: 0.06, blue: 0.075).ignoresSafeArea())
             .preferredColorScheme(.dark)
+            .sheet(item: Binding(
+                get: { model.lyricsEditorLayerID.map { LyricsSheetID(id: $0) } },
+                set: { model.lyricsEditorLayerID = $0?.id })) { sheet in
+                LyricsEditorView(model: model, layerID: sheet.id)
+                    .presentationDetents([.fraction(0.55), .large])
+                    .presentationDragIndicator(.visible)
+                    .preferredColorScheme(.dark)
+            }
             .onChange(of: scenePhase) { phase in
                 if phase != .active { model.playback.pause(); model.saveNow() }
             }
@@ -103,6 +111,8 @@ extension MusicVideoStudio {
             .padding(.horizontal, 12).padding(.vertical, 8)
         }
     }
+
+    struct LyricsSheetID: Identifiable { let id: UUID }
 
     /// Entry card shown in the main editor's tool tab.
     struct MusicVideoStudioLauncherPanel: View {

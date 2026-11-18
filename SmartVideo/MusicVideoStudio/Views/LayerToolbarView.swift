@@ -29,6 +29,7 @@ extension MusicVideoStudio {
                     }
                     Button { showAudioImporter = true } label: { item("Nhạc", "music.note") }
                         .disabled(model.isImporting)
+                    Button { model.addLyrics() } label: { item("Lời", "music.mic") }
                     Button { model.addVinyl() } label: { item("Đĩa than", "opticaldisc") }
                     Button { model.addText() } label: { item("Chữ", "textformat") }
                     Divider().frame(height: 28)

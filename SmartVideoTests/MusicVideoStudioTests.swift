@@ -700,4 +700,130 @@ final class MusicVideoStudioTests: XCTestCase {
         await model.importAudio(from: root.appendingPathComponent("missing.wav"))
         XCTAssertNotNil(model.statusMessage, "a bad file is reported, not ignored")
     }
+
+    // MARK: Phase 5 - karaoke lyrics
+
+    @MainActor
+    func testLyricsNeedMusicAndThenFollowTheSong() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        let model = MV.MusicVideoEditorModel(manager: manager, project: MV.VideoProject())
+        model.addLyrics()
+        XCTAssertTrue(model.project.lyrics.isEmpty, "no music, no lyrics layer")
+        XCTAssertNotNil(model.statusMessage)
+
+        await model.importAudio(from: try writeSine("song.wav", seconds: 4))
+        model.addLyrics()
+        let layer = try XCTUnwrap(model.project.lyrics.first)
+        XCTAssertEqual(layer.audioLayerID, model.project.audios[0].core.id)
+        XCTAssertEqual(model.lyricsEditorLayerID, layer.core.id, "the editor opens for the new layer")
+        XCTAssertEqual(layer.core.start, model.project.audios[0].core.start)
+
+        model.distributePlainLyrics("xin chào\ncác bạn", into: layer.core.id)
+        let spread = try XCTUnwrap(model.lyrics(layer.core.id))
+        XCTAssertEqual(spread.lines.count, 2)
+        XCTAssertEqual(spread.lines[0].start, model.project.audios[0].sourceStart, accuracy: 1e-9, "spread over the audio's range")
+        model.undo()
+        XCTAssertTrue(try XCTUnwrap(model.lyrics(layer.core.id)).lines.isEmpty, "importing lyrics is one undo step")
+
+        model.shiftLyrics(layer.core.id, by: 1)          // no lines: harmless
+        XCTAssertTrue(try XCTUnwrap(model.lyrics(layer.core.id)).lines.isEmpty)
+    }
+
+    @MainActor
+    func testImportLRCSRTAndExportRoundTrip() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        let model = MV.MusicVideoEditorModel(manager: manager, project: MV.VideoProject())
+        await model.importAudio(from: try writeSine("song.wav", seconds: 6))
+        model.addLyrics()
+        let id = try XCTUnwrap(model.project.lyrics.first).core.id
+
+        let lrc = root.appendingPathComponent("a.lrc")
+        try "[00:01.00]Hello world\n[00:03.00]Second line\n".write(to: lrc, atomically: true, encoding: .utf8)
+        model.importLyricsFile(lrc, into: id)
+        XCTAssertEqual(try XCTUnwrap(model.lyrics(id)).lines.map(\.text), ["Hello world", "Second line"])
+
+        let srt = root.appendingPathComponent("a.srt")
+        try "1\n00:00:00,500 --> 00:00:02,000\nFrom srt\n".write(to: srt, atomically: true, encoding: .utf8)
+        model.importLyricsFile(srt, into: id)
+        XCTAssertEqual(try XCTUnwrap(model.lyrics(id)).lines.map(\.text), ["From srt"])
+
+        let txt = root.appendingPathComponent("a.txt")
+        try "just\nplain words".write(to: txt, atomically: true, encoding: .utf8)
+        model.importLyricsFile(txt, into: id)
+        XCTAssertEqual(try XCTUnwrap(model.lyrics(id)).lines.count, 2, "untimed text is spread over the song")
+
+        let out = try XCTUnwrap(model.exportLRC(id))
+        let written = try String(contentsOf: out, encoding: .utf8)
+        XCTAssertTrue(written.contains("just") && written.contains("<"), "enhanced LRC with word tags")
+        XCTAssertEqual(MV.LRCParser.parse(written).map(\.text), ["just", "plain words"])
+
+        model.importLyricsFile(root.appendingPathComponent("missing.lrc"), into: id)
+        XCTAssertNotNil(model.statusMessage, "a bad file is reported")
+    }
+
+    /// A recogniser from another provider plugs in without touching the lyrics engine.
+    private struct FakeRecognizer: MV.LyricsRecognizer {
+        var name: String { "fake" }
+        var words: [MV.RecognizedWord]
+        func recognize(audioURL: URL, from: Double, to: Double, locale: Locale) async throws -> [MV.RecognizedWord] { words }
+    }
+
+    @MainActor
+    func testRecognizerResultsAlignTheTypedLyrics() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        let model = MV.MusicVideoEditorModel(manager: manager, project: MV.VideoProject())
+        await model.importAudio(from: try writeSine("song.wav", seconds: 5))
+        model.addLyrics()
+        let id = try XCTUnwrap(model.project.lyrics.first).core.id
+        let fake = FakeRecognizer(words: [.init(text: "xin", start: 0.5, end: 0.9), .init(text: "chao", start: 1.0, end: 1.4),
+                                          .init(text: "ban", start: 2.0, end: 2.5)])
+        await model.recognizeLyrics(id, rows: ["Xin chào", "bạn"], recognizer: fake)
+        let lines = try XCTUnwrap(model.lyrics(id)).lines
+        XCTAssertEqual(lines.map(\.text), ["Xin chào", "bạn"])
+        XCTAssertEqual(lines[0].words[0].start, 0.5, accuracy: 1e-9)
+        XCTAssertEqual(lines[1].words[0].start, 2.0, accuracy: 1e-9)
+        XCTAssertEqual(model.lyricsBusy, "")
+
+        // With no typed rows the recognised words become the lyrics.
+        await model.recognizeLyrics(id, rows: [], recognizer: fake)
+        XCTAssertEqual(try XCTUnwrap(model.lyrics(id)).wordCount, 3)
+
+        await model.recognizeLyrics(id, rows: ["a"], recognizer: FakeRecognizer(words: []))
+        XCTAssertNotNil(model.statusMessage, "no recognised words is reported")
+        XCTAssertEqual(try XCTUnwrap(model.lyrics(id)).wordCount, 3, "and the lyrics are left alone")
+    }
+
+    @MainActor
+    func testKaraokeFillsTheWordAsTimePasses() async throws {
+        let manager = MV.ProjectManager(root: root)
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        let line = MV.LyricLine(words: [MV.LyricWord(text: "WWWW", start: 0, end: 2)])
+        model.mutate { _ = MV.TimelineEngine.addLyrics([line], audioID: nil, to: &$0) }
+        model.mutate {
+            $0.lyrics[0].fontSize = 0.3; $0.lyrics[0].showNextLine = false; $0.lyrics[0].hasShadow = false
+            $0.lyrics[0].highlightColorHex = "#FFD54F"; $0.lyrics[0].normalColorHex = "#FFFFFF"
+        }
+
+        func counts(at seconds: Double) throws -> (yellow: Int, white: Int) {
+            let image = try render(model, at: seconds)
+            var yellow = 0, white = 0
+            for ny in stride(from: 0.55, through: 0.95, by: 0.02) {
+                for nx in stride(from: 0.05, through: 0.95, by: 0.01) {
+                    let p = try pixel(image, nx, ny)
+                    if p.r > 200 && p.g > 150 && p.b < 140 { yellow += 1 }
+                    if p.r > 220 && p.g > 220 && p.b > 220 { white += 1 }
+                }
+            }
+            return (yellow, white)
+        }
+        let start = try counts(at: 0.02), middle = try counts(at: 1.0), end = try counts(at: 1.98)
+        XCTAssertEqual(start.yellow, 0, "nothing sung yet")
+        XCTAssertGreaterThan(start.white, 10, "the word is visible before it is sung")
+        XCTAssertGreaterThan(middle.yellow, 5); XCTAssertGreaterThan(middle.white, 5, "half sung: both colours")
+        XCTAssertGreaterThan(end.yellow, middle.yellow); XCTAssertLessThan(end.white, middle.white)
+        let again = try counts(at: 1.0)
+        XCTAssertEqual(again.yellow, middle.yellow); XCTAssertEqual(again.white, middle.white, "same time, same picture")
+    }
 }

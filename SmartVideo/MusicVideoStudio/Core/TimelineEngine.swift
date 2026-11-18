@@ -6,6 +6,7 @@ extension MusicVideoStudio {
         case photo(PhotoLayer)
         case text(TextLayer)
         case vinyl(VinylLayer)
+        case lyrics(LyricsLayer)
 
         var id: UUID { core.id }
 
@@ -14,6 +15,7 @@ extension MusicVideoStudio {
             case .photo(let layer): return layer.core
             case .text(let layer): return layer.core
             case .vinyl(let layer): return layer.core
+            case .lyrics(let layer): return layer.core
             }
         }
     }
@@ -35,6 +37,9 @@ extension MusicVideoStudio {
             }
             for (i, layer) in project.vinyls.enumerated() where layer.core.isActive(at: time) {
                 items.append((project.photos.count + project.texts.count + i, .vinyl(layer)))
+            }
+            for (i, layer) in project.lyrics.enumerated() where layer.core.isActive(at: time) {
+                items.append((project.photos.count + project.texts.count + project.vinyls.count + i, .lyrics(layer)))
             }
             return items.sorted {
                 $0.item.core.zIndex != $1.item.core.zIndex
@@ -134,6 +139,20 @@ extension MusicVideoStudio {
             return core.id
         }
 
+        /// A lyrics layer covering `audioID`'s clip (or the whole project). `lines` are in the audio FILE's time.
+        @discardableResult
+        static func addLyrics(_ lines: [LyricLine], audioID: UUID?, to project: inout VideoProject) -> UUID? {
+            guard project.layerCount < VideoProject.maxLayers else { return nil }
+            let audio = audioID.flatMap { id in project.audios.first { $0.core.id == id } }
+            var core = LayerCore(name: "Lời \(project.lyrics.count + 1)", track: .lyrics,
+                                 start: audio?.core.start ?? .zero,
+                                 duration: audio?.core.duration ?? max(defaultTextDuration, project.duration),
+                                 zIndex: project.nextZIndex(for: .lyrics))
+            core.transform.y = 0.78                           // lower third, like subtitles
+            project.lyrics.append(LyricsLayer(core: core, lines: lines, audioLayerID: audio?.core.id))
+            return core.id
+        }
+
         /// Spreads the photos evenly across the music (`seconds`) and packs them.
         static func fitPhotos(toDuration seconds: Double, in project: inout VideoProject) {
             let count = max(1, project.photos.filter { !$0.core.isLocked }.count)
@@ -175,6 +194,16 @@ extension MusicVideoStudio {
                 copy.core.start = layer.core.end
                 copy.core.isLocked = false
                 project.audios.append(copy)
+                created.append(copy.core.id)
+            }
+            for layer in project.lyrics where ids.contains(layer.core.id) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var copy = layer
+                copy.core.id = UUID()
+                copy.core.name = layer.core.name + " (bản sao)"
+                copy.core.isLocked = false
+                copy.core.zIndex = project.nextZIndex(for: .lyrics)
+                project.lyrics.append(copy)
                 created.append(copy.core.id)
             }
             for layer in project.vinyls where ids.contains(layer.core.id) {

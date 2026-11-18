@@ -181,6 +181,18 @@ extension MusicVideoStudio {
                 project.vinyls.append(right)
                 created.append(right.core.id)
             }
+            for i in project.lyrics.indices where canSplit(project.lyrics[i].core) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var right = project.lyrics[i]
+                let end = right.core.end
+                project.lyrics[i].core.duration = cut - project.lyrics[i].core.start
+                right.core.id = UUID()
+                right.core.name = project.lyrics[i].core.name + " (2)"
+                right.core.start = cut
+                right.core.duration = end - cut
+                project.lyrics.append(right)
+                created.append(right.core.id)
+            }
             for i in project.texts.indices where canSplit(project.texts[i].core) {
                 guard project.layerCount < VideoProject.maxLayers else { break }
                 var right = project.texts[i]

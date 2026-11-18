@@ -48,7 +48,7 @@ extension MusicVideoStudio {
             GeometryReader { geo in
                 let total = max(0.1, layer.sourceDuration)
                 let width = geo.size.width
-                func x(_ seconds: Double) -> CGFloat { CGFloat(seconds / total) * width }
+                let x = { (seconds: Double) -> CGFloat in CGFloat(seconds / total) * width }
                 ZStack(alignment: .leading) {
                     Canvas { context, size in
                         context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white.opacity(0.05)))

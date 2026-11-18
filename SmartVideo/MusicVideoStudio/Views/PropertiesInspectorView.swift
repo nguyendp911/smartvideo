@@ -162,6 +162,9 @@ extension MusicVideoStudio {
                     if single?.track == .audio, let audio = model.selectedAudioLayer() {
                         audioSection(audio)
                     }
+                    if single?.track == .lyrics, let lyrics = model.selectedLyricsLayer() {
+                        lyricsSection(lyrics)
+                    }
                     if single?.track == .vinyl, let vinyl = model.selectedVinylLayer() {
                         group("Đĩa than") { VinylCustomizationView(model: model, layer: vinyl) }
                     }
@@ -171,6 +174,36 @@ extension MusicVideoStudio {
                     Label("Đặt lại biến đổi", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).disabled(locked)
+            }
+        }
+
+        private func lyricsSection(_ lyrics: LyricsLayer) -> some View {
+            group("Lời karaoke") {
+                infoLine("Số dòng / từ", "\(lyrics.lines.count) / \(lyrics.wordCount)")
+                Button { model.lyricsEditorLayerID = lyrics.core.id } label: {
+                    Label("Nhập lời & chỉnh thời gian…", systemImage: "slider.horizontal.below.rectangle").frame(maxWidth: .infinity)
+                }.buttonStyle(.borderedProminent).tint(.cyan).font(.caption)
+                Picker("Hiệu ứng", selection: model.lyricsBinding(\.animation, fallback: .fill)) {
+                    ForEach(LyricAnimation.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                slider("Cỡ chữ", model.lyricsBinding(\.fontSize, fallback: 0.06), LyricsLayer.sizeRange) { String(format: "%.1f%%", $0 * 100) }
+                row("Độ đậm") {
+                    Picker("Độ đậm", selection: model.lyricsBinding(\.weight, fallback: .bold)) {
+                        ForEach(TextWeight.allCases) { Text($0.rawValue).tag($0) }
+                    }.pickerStyle(.menu).labelsHidden()
+                }
+                ColorPicker("Màu từ đang hát", selection: MusicVideoStudio.colorBinding(model.lyricsBinding(\.highlightColorHex, fallback: "#FFD54F"), beginEdit: model.beginEdit)).font(.caption)
+                ColorPicker("Màu chữ thường", selection: MusicVideoStudio.colorBinding(model.lyricsBinding(\.normalColorHex, fallback: "#FFFFFF"), beginEdit: model.beginEdit)).font(.caption)
+                Toggle("Hiện dòng kế tiếp", isOn: model.lyricsBinding(\.showNextLine, fallback: true)).font(.caption)
+                Toggle("Đổ bóng", isOn: model.lyricsBinding(\.hasShadow, fallback: true)).font(.caption)
+                if !model.project.audios.isEmpty {
+                    row("Gắn với nhạc (thời gian từ đi theo clip nhạc)") {
+                        Picker("Nhạc", selection: model.lyricsBinding(\.audioLayerID, fallback: nil)) {
+                            Text("Không gắn").tag(UUID?.none)
+                            ForEach(model.project.audios) { Text($0.originalName).tag(Optional($0.core.id)) }
+                        }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }
         }
 

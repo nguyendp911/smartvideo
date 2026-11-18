@@ -17,6 +17,9 @@ extension MusicVideoStudio {
         @Published private(set) var statusMessage: String?
         /// Where a dragged clip edge is snapping (drawn as a guide line).
         @Published private(set) var snapGuide: ProjectTime?
+        /// The lyrics layer whose editor sheet is open.
+        @Published var lyricsEditorLayerID: UUID?
+        @Published private(set) var lyricsBusy = ""
 
         let playback = PlaybackEngine()
         let audio = AudioPlaybackEngine()
@@ -462,6 +465,125 @@ extension MusicVideoStudio {
 
         var timelineHeight: CGFloat {
             min(300, TimelineRulerView.height + 48 * CGFloat(visibleTracks.count) + 44)
+        }
+
+        // MARK: Lyrics
+
+        func lyrics(_ id: UUID) -> LyricsLayer? { project.lyrics.first { $0.core.id == id } }
+        func selectedLyricsLayer() -> LyricsLayer? { project.lyrics.first { selection.contains($0.core.id) } }
+
+        func addLyrics() {
+            guard let audio = selectedAudioLayer() ?? project.audios.first else {
+                statusMessage = "Thêm nhạc trước, rồi thêm lời bài hát."
+                return
+            }
+            var created: UUID?
+            edit { created = TimelineEngine.addLyrics([], audioID: audio.core.id, to: &$0) }
+            if let created { selection = [created]; lyricsEditorLayerID = created }
+        }
+
+        func lyricsBinding<T>(_ keyPath: WritableKeyPath<LyricsLayer, T>, fallback: T) -> Binding<T> {
+            Binding(
+                get: { [weak self] in self?.selectedLyricsLayer()?[keyPath: keyPath] ?? fallback },
+                set: { [weak self] value in
+                    guard let self else { return }
+                    let ids = self.editableSelection
+                    self.mutate { project in
+                        for i in project.lyrics.indices where ids.contains(project.lyrics[i].core.id) {
+                            project.lyrics[i][keyPath: keyPath] = value
+                        }
+                    }
+                }
+            )
+        }
+
+        /// Change one lyrics layer. `checkpoint: false` while dragging (call `beginEdit()` first).
+        func updateLyrics(_ id: UUID, checkpoint: Bool = true, _ change: (inout LyricsLayer) -> Void) {
+            let apply: (inout VideoProject) -> Void = { project in
+                guard let i = project.lyrics.firstIndex(where: { $0.core.id == id }), !project.lyrics[i].core.isLocked else { return }
+                change(&project.lyrics[i])
+            }
+            if checkpoint { edit(apply) } else { mutate(apply) }
+        }
+
+        /// Source-file range the lyrics' linked audio plays (what plain lyrics are spread over).
+        func lyricsSourceRange(_ layer: LyricsLayer) -> (start: Double, duration: Double) {
+            if let id = layer.audioLayerID, let audio = project.audios.first(where: { $0.core.id == id }) {
+                return (audio.sourceStart, max(0.5, min(audio.availableSource, audio.core.duration.seconds)))
+            }
+            return (0, max(0.5, layer.core.duration.seconds))
+        }
+
+        func distributePlainLyrics(_ text: String, into id: UUID) {
+            guard let layer = lyrics(id) else { return }
+            let range = lyricsSourceRange(layer)
+            let lines = PlainLyrics.distribute(text, start: range.start, duration: range.duration)
+            guard !lines.isEmpty else { statusMessage = "Chưa có lời để chia."; return }
+            updateLyrics(id) { $0.lines = lines }
+            statusMessage = nil
+        }
+
+        /// Imports `.lrc`, `.srt` or plain text.
+        func importLyricsFile(_ url: URL, into id: UUID) {
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1) else {
+                statusMessage = "Không đọc được tệp lời."
+                return
+            }
+            var lines: [LyricLine]
+            switch url.pathExtension.lowercased() {
+            case "srt": lines = SRTParser.parse(text)
+            case "lrc": lines = LRCParser.parse(text)
+            default:
+                lines = LRCParser.parse(text)
+                if lines.isEmpty { lines = SRTParser.parse(text) }
+            }
+            if lines.isEmpty { distributePlainLyrics(text, into: id); return }
+            updateLyrics(id) { $0.lines = LyricsSynchronizer.normalized(lines) }
+            statusMessage = nil
+        }
+
+        func shiftLyrics(_ id: UUID, by seconds: Double) {
+            updateLyrics(id) { $0.lines = LyricsSynchronizer.shift($0.lines, by: seconds) }
+        }
+
+        /// Recognise the linked audio with `recognizer`, then either align the typed rows to it
+        /// or, with no rows, use the recognised words as the lyrics.
+        func recognizeLyrics(_ id: UUID, rows: [String], recognizer: LyricsRecognizer = SpeechLyricsRecognizer(),
+                             locale: Locale = Locale(identifier: "vi-VN")) async {
+            guard lyricsBusy.isEmpty, let layer = lyrics(id),
+                  let audioID = layer.audioLayerID, let audio = project.audios.first(where: { $0.core.id == audioID }) else {
+                statusMessage = "Lớp lời cần gắn với một clip nhạc."
+                return
+            }
+            lyricsBusy = "Đang nhận diện bằng \(recognizer.name)…"
+            defer { lyricsBusy = "" }
+            let url = manager.mediaURL(projectID: project.id, file: audio.mediaFile)
+            let range = lyricsSourceRange(layer)
+            do {
+                let words = try await recognizer.recognize(audioURL: url, from: range.start, to: range.start + range.duration, locale: locale)
+                guard !words.isEmpty else { statusMessage = "Không nhận ra từ nào (nhạc quá lớn hoặc không có giọng)."; return }
+                let lines = rows.isEmpty ? LyricsAligner.lines(from: words) : LyricsAligner.align(rows: rows, recognized: words)
+                guard !lines.isEmpty else { statusMessage = "Không khớp được lời với giọng hát."; return }
+                updateLyrics(id) { $0.lines = lines }
+                statusMessage = "Đã nhận \(words.count) từ. Hãy tinh chỉnh mốc thời gian nếu cần."
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+        }
+
+        func exportLRC(_ id: UUID) -> URL? {
+            guard let layer = lyrics(id), !layer.lines.isEmpty else { return nil }
+            let url = MediaStorage.exportsDirectory.appendingPathComponent("\(project.name)-\(layer.core.name).lrc")
+            do {
+                try LRCWriter.string(layer.lines, title: project.name).write(to: url, atomically: true, encoding: .utf8)
+                return url
+            } catch {
+                statusMessage = "Không ghi được tệp LRC."
+                return nil
+            }
         }
 
         // MARK: Persistence
