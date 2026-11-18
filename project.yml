@@ -17,8 +17,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
-        MARKETING_VERSION: "6.1.0"
-        CURRENT_PROJECT_VERSION: "48"
+        MARKETING_VERSION: "6.2.0"
+        CURRENT_PROJECT_VERSION: "49"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
         ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -37,6 +37,10 @@ targets:
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiresFullScreen: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.nguyendp911.smartvideo.link
+            CFBundleURLSchemes:
+              - smartvideo
   SmartVideoTests:
     type: bundle.unit-test
     platform: iOS

@@ -63,24 +63,31 @@ struct ColorAdjustments: Codable, Hashable {
     var saturation: Double = 1
     /// -1 cools the image, +1 warms it.
     var warmth: Double = 0
+    /// File name of an imported `.cube` LUT (see LUTLibrary); nil = none.
+    var lutName: String?
+    var lutIntensity: Double = 1
 
     static let neutral = ColorAdjustments()
 
     var isNeutral: Bool {
         abs(exposureEV) < 0.001 && abs(contrast - 1) < 0.001 &&
-        abs(saturation - 1) < 0.001 && abs(warmth) < 0.001
+        abs(saturation - 1) < 0.001 && abs(warmth) < 0.001 &&
+        lutName == nil
     }
 
     private enum CodingKeys: String, CodingKey {
-        case exposureEV, contrast, saturation, warmth
+        case exposureEV, contrast, saturation, warmth, lutName, lutIntensity
     }
 
     init(exposureEV: Double = 0, contrast: Double = 1,
-         saturation: Double = 1, warmth: Double = 0) {
+         saturation: Double = 1, warmth: Double = 0,
+         lutName: String? = nil, lutIntensity: Double = 1) {
         self.exposureEV = Self.clamp(exposureEV, -2...2, fallback: 0)
         self.contrast = Self.clamp(contrast, 0.5...1.5, fallback: 1)
         self.saturation = Self.clamp(saturation, 0...2, fallback: 1)
         self.warmth = Self.clamp(warmth, -1...1, fallback: 0)
+        self.lutName = lutName
+        self.lutIntensity = Self.clamp(lutIntensity, 0...1, fallback: 1)
     }
 
     init(from decoder: Decoder) throws {
@@ -89,7 +96,10 @@ struct ColorAdjustments: Codable, Hashable {
             exposureEV: try c.decodeIfPresent(Double.self, forKey: .exposureEV) ?? 0,
             contrast: try c.decodeIfPresent(Double.self, forKey: .contrast) ?? 1,
             saturation: try c.decodeIfPresent(Double.self, forKey: .saturation) ?? 1,
-            warmth: try c.decodeIfPresent(Double.self, forKey: .warmth) ?? 0
+            warmth: try c.decodeIfPresent(Double.self, forKey: .warmth) ?? 0,
+            lutName: try c.decodeIfPresent(String.self, forKey: .lutName),
+            lutIntensity: try c.decodeIfPresent(Double.self,
+                                                forKey: .lutIntensity) ?? 1
         )
     }
 

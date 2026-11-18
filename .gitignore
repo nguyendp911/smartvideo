@@ -6,3 +6,6 @@ DerivedData/
 *.xcuserdatad/
 .DS_Store
 .swiftpm/
+
+scripts/mockup-assets/node_modules/
+scripts/mockup-assets/out/

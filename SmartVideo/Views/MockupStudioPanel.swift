@@ -7,6 +7,7 @@ struct MockupStudioPanel: View {
     @State private var category: MockupCategory = .window
     @State private var selectedID: UUID?
     @State private var showPresets = false
+    @State private var showStudio = false
 
     private var selectedIndex: Int? {
         guard let selectedID else { return nil }
@@ -25,7 +26,21 @@ struct MockupStudioPanel: View {
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            Text("42 mẫu bóng cửa sổ, bóng cây, ánh nắng, phản sáng và bụi sáng. Có thể chồng nhiều lớp và xuất cùng MP4.")
+            Button {
+                showStudio = true
+            } label: {
+                Label("Mở Mockup Studio · \(MockupStudioCatalog.allAssets.count) mẫu", systemImage: "sparkles.rectangle.stack")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.cyan)
+            .disabled(model.clips.isEmpty)
+            Text(model.clips.isEmpty
+                 ? "Thêm ảnh hoặc video vào dự án để dùng Mockup Studio: thư viện ánh sáng, bóng, chất liệu, kính, thời tiết, retro, nền, khung và mockup sản phẩm, kéo thả trực tiếp lên ảnh."
+                 : "Thư viện ánh sáng, bóng, chất liệu, kính, thời tiết, retro, nền, khung và mockup sản phẩm — kéo thả trực tiếp lên ảnh, chỉnh blend/mask và xuất ảnh gốc.")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("42 mẫu bóng cửa sổ, bóng cây, ánh nắng, phản sáng và bụi sáng (procedural) bên dưới có thể chồng nhiều lớp và xuất cùng MP4.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -105,8 +120,7 @@ struct MockupStudioPanel: View {
                                 model.timelineSecond = layer.start
                             } label: {
                                 VStack(spacing: 2) {
-                                    Text(MockupAssetLibrary.asset(
-                                        layer.assetID)?.name ?? layer.assetID)
+                                    Text(MockupOverlayRenderer.displayName(for: layer.assetID))
                                         .lineLimit(1)
                                     Text(String(
                                         format: "%.1fs – %.1fs",
@@ -137,6 +151,9 @@ struct MockupStudioPanel: View {
         .padding(12)
         .background(Color.secondary.opacity(0.055),
                     in: RoundedRectangle(cornerRadius: 14))
+        .fullScreenCover(isPresented: $showStudio) {
+            MockupStudioView(model: model)
+        }
     }
 
     @ViewBuilder
@@ -144,8 +161,7 @@ struct MockupStudioPanel: View {
         let item = model.mockupOverlays[index]
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                Text(MockupAssetLibrary.asset(item.assetID)?.name ??
-                     item.assetID)
+                Text(MockupOverlayRenderer.displayName(for: item.assetID))
                     .font(.subheadline.bold())
                 Spacer()
                 Button {

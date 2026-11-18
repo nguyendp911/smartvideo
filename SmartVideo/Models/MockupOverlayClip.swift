@@ -19,7 +19,16 @@ enum MockupBlendMode: String, CaseIterable, Codable, Identifiable {
     case add = "Add"
     case darken = "Darken"
     case lighten = "Lighten"
+    case colorDodge = "Color Dodge"
+    case colorBurn = "Color Burn"
+    case difference = "Difference"
     var id: String { rawValue }
+
+    /// The eleven modes offered by Mockup Studio, in menu order.
+    static let studioModes: [MockupBlendMode] = [
+        .normal, .multiply, .screen, .overlay, .softLight, .hardLight,
+        .darken, .lighten, .colorDodge, .colorBurn, .difference
+    ]
 }
 enum MockupDepthMode: String, CaseIterable, Codable, Identifiable {
     case front = "Trước người"
@@ -56,6 +65,8 @@ struct MockupOverlayClip: Identifiable, Codable, Equatable {
     var brightness: Double = 0
     var contrast: Double = 1
     var warmth: Double = 0
+    var saturation: Double = 1
+    var mask = MockupMask()
     var animationStyle: MockupAnimationStyle = .none
     var animationSpeed: Double = 1
     var animationAmount: Double = 0.35
@@ -66,6 +77,53 @@ struct MockupOverlayClip: Identifiable, Codable, Equatable {
     var isHidden = false
 
     var end: Double { start + duration }
+
+    /// True for the new file-based Mockup Studio assets (vs the 42 procedural ones).
+    var usesStudioAsset: Bool { MockupStudioCatalog.contains(assetID) }
+}
+
+extension MockupOverlayClip {
+    private enum CodingKeys: String, CodingKey {
+        case id, assetID, start, duration, opacity, blendMode, centerX, centerY
+        case scale, rotationDegrees, flipHorizontal, flipVertical, blurRadius
+        case feather, brightness, contrast, warmth, saturation, mask
+        case animationStyle, animationSpeed, animationAmount, depthMode
+        case avoidFace, loop, locked, isHidden
+    }
+
+    /// Projects saved by older builds lack the newer keys; every field falls
+    /// back to its default instead of failing the whole project load.
+    init(from decoder: Decoder) throws {
+        self.init()
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? id
+        assetID = try c.decodeIfPresent(String.self, forKey: .assetID) ?? assetID
+        start = try c.decodeIfPresent(Double.self, forKey: .start) ?? start
+        duration = try c.decodeIfPresent(Double.self, forKey: .duration) ?? duration
+        opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? opacity
+        blendMode = try c.decodeIfPresent(MockupBlendMode.self, forKey: .blendMode) ?? blendMode
+        centerX = try c.decodeIfPresent(Double.self, forKey: .centerX) ?? centerX
+        centerY = try c.decodeIfPresent(Double.self, forKey: .centerY) ?? centerY
+        scale = try c.decodeIfPresent(Double.self, forKey: .scale) ?? scale
+        rotationDegrees = try c.decodeIfPresent(Double.self, forKey: .rotationDegrees) ?? rotationDegrees
+        flipHorizontal = try c.decodeIfPresent(Bool.self, forKey: .flipHorizontal) ?? flipHorizontal
+        flipVertical = try c.decodeIfPresent(Bool.self, forKey: .flipVertical) ?? flipVertical
+        blurRadius = try c.decodeIfPresent(Double.self, forKey: .blurRadius) ?? blurRadius
+        feather = try c.decodeIfPresent(Double.self, forKey: .feather) ?? feather
+        brightness = try c.decodeIfPresent(Double.self, forKey: .brightness) ?? brightness
+        contrast = try c.decodeIfPresent(Double.self, forKey: .contrast) ?? contrast
+        warmth = try c.decodeIfPresent(Double.self, forKey: .warmth) ?? warmth
+        saturation = try c.decodeIfPresent(Double.self, forKey: .saturation) ?? saturation
+        mask = try c.decodeIfPresent(MockupMask.self, forKey: .mask) ?? mask
+        animationStyle = try c.decodeIfPresent(MockupAnimationStyle.self, forKey: .animationStyle) ?? animationStyle
+        animationSpeed = try c.decodeIfPresent(Double.self, forKey: .animationSpeed) ?? animationSpeed
+        animationAmount = try c.decodeIfPresent(Double.self, forKey: .animationAmount) ?? animationAmount
+        depthMode = try c.decodeIfPresent(MockupDepthMode.self, forKey: .depthMode) ?? depthMode
+        avoidFace = try c.decodeIfPresent(Bool.self, forKey: .avoidFace) ?? avoidFace
+        loop = try c.decodeIfPresent(Bool.self, forKey: .loop) ?? loop
+        locked = try c.decodeIfPresent(Bool.self, forKey: .locked) ?? locked
+        isHidden = try c.decodeIfPresent(Bool.self, forKey: .isHidden) ?? isHidden
+    }
 }
 struct MockupAsset: Identifiable {
     let id: String

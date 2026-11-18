@@ -10,7 +10,10 @@ enum SoundEffectsMixer {
         timelineDuration: CMTime,
         /// Absolute project seconds, only when mixing independent music.
         narrationStart: Double? = nil,
-        narrationEnd: Double? = nil
+        narrationEnd: Double? = nil,
+        /// Absolute project seconds with real speech; nil = flat duck.
+        speechIntervals: [VoiceActivityMath.Interval]? = nil,
+        duckLevel: Double = 0.25
     ) async throws -> [AVAudioMixInputParameters] {
         let total = timelineDuration.seconds
         guard total.isFinite, total > 0 else { return [] }
@@ -68,7 +71,11 @@ enum SoundEffectsMixer {
                     fadeIn: effect.fadeIn, fadeOut: effect.fadeOut,
                     keyframes: effect.volumeKeyframes,
                     narrationStart: narrationStart - start,
-                    narrationEnd: narrationEnd - start
+                    narrationEnd: narrationEnd - start,
+                    speechIntervals: speechIntervals.map {
+                        VoiceActivityMath.shifted($0, by: -start)
+                    },
+                    duckLevel: duckLevel
                 )
             } else {
                 points = AudioAutomationMath.envelope(

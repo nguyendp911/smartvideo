@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import ImageIO
 import CoreImage
 import Vision
 
@@ -15,13 +16,46 @@ enum MockupOverlayRenderer {
         textureCache.totalCostLimit = 48 * 1024 * 1024
     }()
 
+    // MARK: - Asset lookup (procedural designs + Mockup Studio files)
+
+    static func isKnown(_ id: String) -> Bool {
+        MockupStudioCatalog.contains(id) || MockupAssetLibrary.asset(id) != nil
+    }
+
+    static func displayName(for id: String) -> String {
+        MockupStudioCatalog.asset(id)?.name ?? MockupAssetLibrary.asset(id)?.name ?? id
+    }
+
+    /// Decoded image of a Studio asset (cached, bounded by `cacheLimit`).
+    static func studioImage(_ asset: MockupStudioAsset) -> CGImage? {
+        let _ = cacheLimit
+        let key = "studio:\(asset.id)" as NSString
+        if let hit = textureCache.object(forKey: key)?.cgImage { return hit }
+        guard let url = asset.imageURL,
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, [
+                kCGImageSourceShouldCacheImmediately: true
+              ] as CFDictionary) else { return nil }
+        textureCache.setObject(UIImage(cgImage: image), forKey: key,
+                               cost: image.width * image.height * 4)
+        return image
+    }
+
+    static func textureImage(forID id: String) -> CGImage? {
+        if let studio = MockupStudioCatalog.asset(id) { return studioImage(studio) }
+        guard let asset = MockupAssetLibrary.asset(id) else { return nil }
+        return texture(for: asset).cgImage
+    }
+
+    // MARK: - Composition
+
     static func apply(_ source: CIImage, overlays: [MockupOverlayClip],
                       second: Double, depth: MockupDepthMode,
                       personMask: CIImage? = nil) throws -> CIImage {
         let active = overlays.prefix(12).filter {
             $0.depthMode == depth &&
                 MockupAnimationSampler.active($0, at: second) &&
-                MockupAssetLibrary.asset($0.assetID) != nil
+                isKnown($0.assetID)
         }
         guard !active.isEmpty else { return source }
         let ext = source.extent
@@ -34,10 +68,16 @@ enum MockupOverlayRenderer {
         } else { mask = nil }
 
         var composite = source
+        if depth == .front {
+            // A scene (frame / product) or background re-frames the photo
+            // first; overlays then sit on top of the framed result.
+            composite = framed(composite, layers: Array(active), ext: ext)
+        }
         for clip in active {
-            guard let asset = MockupAssetLibrary.asset(clip.assetID),
-                  let texture = texture(for: asset).cgImage
-            else { continue }
+            if let studio = MockupStudioCatalog.asset(clip.assetID), studio.kind != .overlay {
+                continue
+            }
+            guard let texture = textureImage(forID: clip.assetID) else { continue }
             let state = MockupAnimationSampler.sample(clip, at: second)
             let base = CIImage(cgImage: texture)
             let effectiveScale = max(ext.width, ext.height) /
@@ -74,28 +114,7 @@ enum MockupOverlayRenderer {
                 )
             }
             let alpha = CGFloat(min(1, max(0, state.opacity)))
-            let brightness = min(0.8, max(-0.8, clip.brightness))
-            let contrast = min(2, max(0.5, clip.contrast))
-            transformed = transformed.applyingFilter(
-                "CIColorControls",
-                parameters: [
-                    kCIInputBrightnessKey: brightness,
-                    kCIInputContrastKey: contrast
-                ]
-            )
-            if clip.warmth != 0 {
-                let warm = min(0.6, max(-0.6, clip.warmth))
-                transformed = transformed.applyingFilter(
-                    "CIColorMatrix", parameters: [
-                        "inputRVector": CIVector(x: 1 + warm * 0.25,
-                                                 y: 0, z: 0, w: 0),
-                        "inputGVector": CIVector(x: 0, y: 1,
-                                                 z: 0, w: 0),
-                        "inputBVector": CIVector(x: 0, y: 0,
-                                                 z: 1 - warm * 0.28, w: 0)
-                    ]
-                )
-            }
+            transformed = colorGraded(transformed, clip: clip)
             transformed = transformed.applyingFilter(
                 "CIColorMatrix",
                 parameters: [
@@ -103,6 +122,21 @@ enum MockupOverlayRenderer {
                                               w: alpha)
                 ]
             ).cropped(to: ext)
+
+            // Soft mask over the canvas (Mockup Studio).
+            if clip.mask.isActive, let maskImage = MockupMaskRaster.image(for: clip.mask) {
+                let side = CGFloat(MockupMaskRaster.side)
+                let maskCI = CIImage(cgImage: maskImage)
+                    .transformed(by: CGAffineTransform(scaleX: ext.width / side, y: ext.height / side))
+                    .transformed(by: CGAffineTransform(translationX: ext.minX, y: ext.minY))
+                transformed = transformed.applyingFilter(
+                    "CIBlendWithMask",
+                    parameters: [
+                        kCIInputBackgroundImageKey: CIImage(color: CIColor.clear).cropped(to: ext),
+                        kCIInputMaskImageKey: maskCI
+                    ]
+                ).cropped(to: ext)
+            }
 
             // Clip against the person foreground, not against the entire
             // video. A white subject mask means light/shadow is occluded.
@@ -122,25 +156,185 @@ enum MockupOverlayRenderer {
 
             // Applying a blend directly to a transparent overlay is
             // compatible with Core Image premultiplied alpha.
-            let filter: String
-            switch clip.blendMode {
-            case .normal: filter = "CISourceOverCompositing"
-            case .multiply: filter = "CIMultiplyBlendMode"
-            case .screen: filter = "CIScreenBlendMode"
-            case .overlay: filter = "CIOverlayBlendMode"
-            case .softLight: filter = "CISoftLightBlendMode"
-            case .hardLight: filter = "CIHardLightBlendMode"
-            case .add: filter = "CIAdditionCompositing"
-            case .darken: filter = "CIDarkenBlendMode"
-            case .lighten: filter = "CILightenBlendMode"
-            }
             composite = transformed.applyingFilter(
-                filter, parameters: [
+                blendFilterName(clip.blendMode), parameters: [
                     kCIInputBackgroundImageKey: composite
                 ]
             ).cropped(to: ext)
         }
         return composite
+    }
+
+    static func blendFilterName(_ mode: MockupBlendMode) -> String {
+        switch mode {
+        case .normal: return "CISourceOverCompositing"
+        case .multiply: return "CIMultiplyBlendMode"
+        case .screen: return "CIScreenBlendMode"
+        case .overlay: return "CIOverlayBlendMode"
+        case .softLight: return "CISoftLightBlendMode"
+        case .hardLight: return "CIHardLightBlendMode"
+        case .add: return "CIAdditionCompositing"
+        case .darken: return "CIDarkenBlendMode"
+        case .lighten: return "CILightenBlendMode"
+        case .colorDodge: return "CIColorDodgeBlendMode"
+        case .colorBurn: return "CIColorBurnBlendMode"
+        case .difference: return "CIDifferenceBlendMode"
+        }
+    }
+
+    private static func colorGraded(_ image: CIImage, clip: MockupOverlayClip) -> CIImage {
+        let brightness = min(0.8, max(-0.8, clip.brightness))
+        let contrast = min(2, max(0.5, clip.contrast))
+        let saturation = min(2, max(0, clip.saturation.isFinite ? clip.saturation : 1))
+        var result = image.applyingFilter(
+            "CIColorControls",
+            parameters: [
+                kCIInputBrightnessKey: brightness,
+                kCIInputContrastKey: contrast,
+                kCIInputSaturationKey: saturation
+            ]
+        )
+        if clip.warmth != 0 {
+            let warm = min(0.6, max(-0.6, clip.warmth))
+            result = result.applyingFilter(
+                "CIColorMatrix", parameters: [
+                    "inputRVector": CIVector(x: 1 + warm * 0.25,
+                                             y: 0, z: 0, w: 0),
+                    "inputGVector": CIVector(x: 0, y: 1,
+                                             z: 0, w: 0),
+                    "inputBVector": CIVector(x: 0, y: 0,
+                                             z: 1 - warm * 0.28, w: 0)
+                ]
+            )
+        }
+        return result
+    }
+
+    // MARK: - Scenes (frames / products) and backgrounds
+
+    /// The last active scene wins; otherwise the last active background.
+    private static func framed(_ source: CIImage, layers: [MockupOverlayClip],
+                               ext: CGRect) -> CIImage {
+        var scene: (MockupOverlayClip, MockupStudioAsset)?
+        var backdrop: (MockupOverlayClip, MockupStudioAsset)?
+        for clip in layers {
+            guard let asset = MockupStudioCatalog.asset(clip.assetID) else { continue }
+            if asset.kind == .scene, asset.slot != nil { scene = (clip, asset) }
+            if asset.kind == .background { backdrop = (clip, asset) }
+        }
+        if let scene, let image = studioImage(scene.1) {
+            return applyScene(source, clip: scene.0, asset: scene.1, art: image, ext: ext)
+        }
+        if let backdrop, let image = studioImage(backdrop.1) {
+            return applyBackground(source, clip: backdrop.0, art: image, ext: ext)
+        }
+        return source
+    }
+
+    /// Place `art` over `ext` like CSS `object-fit: cover`.
+    private static func coverPlacement(artSize: CGSize, in ext: CGRect) -> (scale: CGFloat, rect: CGRect) {
+        let scale = max(ext.width / artSize.width, ext.height / artSize.height)
+        let size = CGSize(width: artSize.width * scale, height: artSize.height * scale)
+        return (scale, CGRect(x: ext.minX + (ext.width - size.width) / 2,
+                              y: ext.minY + (ext.height - size.height) / 2,
+                              width: size.width, height: size.height))
+    }
+
+    private static func applyScene(_ source: CIImage, clip: MockupOverlayClip,
+                                   asset: MockupStudioAsset, art: CGImage,
+                                   ext: CGRect) -> CIImage {
+        guard let slot = asset.slot else { return source }
+        let artSize = CGSize(width: art.width, height: art.height)
+        let placement = coverPlacement(artSize: artSize, in: ext)
+        // Slot rectangle in canvas coordinates (Core Image: origin bottom-left).
+        let window = CGRect(
+            x: placement.rect.minX + CGFloat(slot.x) * placement.rect.width,
+            y: placement.rect.minY + CGFloat(1 - slot.y - slot.height) * placement.rect.height,
+            width: CGFloat(slot.width) * placement.rect.width,
+            height: CGFloat(slot.height) * placement.rect.height
+        )
+        // Photo fills the window (cover); scale>1 zooms, X/Y pan inside it.
+        let zoom = CGFloat(min(4, max(1, clip.scale)))
+        let fit = max(window.width / ext.width, window.height / ext.height) * zoom
+        let photoSize = CGSize(width: ext.width * fit, height: ext.height * fit)
+        let spareX = max(0, photoSize.width - window.width)
+        let spareY = max(0, photoSize.height - window.height)
+        let panX = -CGFloat(min(1, max(0, clip.centerX)) - 0.5) * spareX
+        let panY = CGFloat(min(1, max(0, clip.centerY)) - 0.5) * spareY
+        var photo = source
+        if clip.flipHorizontal {
+            photo = photo.transformed(by: CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: ext.minX * 2 + ext.width, ty: 0))
+        }
+        if clip.flipVertical {
+            photo = photo.transformed(by: CGAffineTransform(a: 1, b: 0, c: 0, d: -1, tx: 0, ty: ext.minY * 2 + ext.height))
+        }
+        photo = photo
+            .transformed(by: CGAffineTransform(translationX: -ext.minX, y: -ext.minY))
+            .transformed(by: CGAffineTransform(scaleX: fit, y: fit))
+            .transformed(by: CGAffineTransform(
+                translationX: window.midX - photoSize.width / 2 + panX,
+                y: window.midY - photoSize.height / 2 + panY
+            ))
+            .cropped(to: window)
+        let black = CIImage(color: CIColor.black).cropped(to: ext)
+
+        var artImage = CIImage(cgImage: art)
+            .transformed(by: CGAffineTransform(scaleX: placement.scale, y: placement.scale))
+            .transformed(by: CGAffineTransform(translationX: placement.rect.minX, y: placement.rect.minY))
+        artImage = colorGraded(artImage, clip: clip)
+        artImage = artImage.applyingFilter("CIColorMatrix", parameters: [
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: CGFloat(min(1, max(0, clip.opacity))))
+        ])
+        return artImage.composited(over: photo.composited(over: black)).cropped(to: ext)
+    }
+
+    private static func applyBackground(_ source: CIImage, clip: MockupOverlayClip,
+                                        art: CGImage, ext: CGRect) -> CIImage {
+        let artSize = CGSize(width: art.width, height: art.height)
+        let placement = coverPlacement(artSize: artSize, in: ext)
+        var backdrop = CIImage(cgImage: art)
+            .transformed(by: CGAffineTransform(scaleX: placement.scale, y: placement.scale))
+            .transformed(by: CGAffineTransform(translationX: placement.rect.minX, y: placement.rect.minY))
+            .cropped(to: ext)
+        backdrop = colorGraded(backdrop, clip: clip)
+
+        // The photo becomes an inset card (scale = card size, X/Y = position).
+        let card = CGFloat(min(0.95, max(0.3, 0.78 * clip.scale)))
+        let cardSize = CGSize(width: ext.width * card, height: ext.height * card)
+        let cx = ext.minX + ext.width * CGFloat(min(1, max(0, clip.centerX)))
+        let cy = ext.minY + ext.height * CGFloat(1 - min(1, max(0, clip.centerY)))
+        let cardRect = CGRect(x: cx - cardSize.width / 2, y: cy - cardSize.height / 2,
+                              width: cardSize.width, height: cardSize.height)
+        let photo = source
+            .transformed(by: CGAffineTransform(translationX: -ext.minX, y: -ext.minY))
+            .transformed(by: CGAffineTransform(scaleX: card, y: card))
+            .transformed(by: CGAffineTransform(translationX: cardRect.minX, y: cardRect.minY))
+        let radius = min(cardRect.width, cardRect.height) * 0.03
+        guard let rounded = CIFilter(name: "CIRoundedRectangleGenerator", parameters: [
+            "inputExtent": CIVector(cgRect: cardRect),
+            "inputRadius": radius,
+            "inputColor": CIColor.white
+        ])?.outputImage else {
+            return photo.cropped(to: cardRect).composited(over: backdrop).cropped(to: ext)
+        }
+        let clear = CIImage(color: CIColor.clear).cropped(to: ext)
+        let maskedPhoto = photo.applyingFilter("CIBlendWithMask", parameters: [
+            kCIInputBackgroundImageKey: clear,
+            kCIInputMaskImageKey: rounded.cropped(to: ext)
+        ]).cropped(to: ext)
+        let shadowAlpha = CGFloat(min(1, max(0, clip.opacity))) * 0.5
+        let shadow = CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: shadowAlpha))
+            .cropped(to: ext)
+            .applyingFilter("CIBlendWithMask", parameters: [
+                kCIInputBackgroundImageKey: clear,
+                kCIInputMaskImageKey: rounded.transformed(
+                    by: CGAffineTransform(translationX: 0, y: -ext.height * 0.012)
+                ).cropped(to: ext)
+            ])
+            .clampedToExtent()
+            .applyingFilter("CIGaussianBlur", parameters: [kCIInputRadiusKey: max(6, ext.width * 0.018)])
+            .cropped(to: ext)
+        return maskedPhoto.composited(over: shadow.composited(over: backdrop)).cropped(to: ext)
     }
 
     static func texture(for asset: MockupAsset) -> UIImage {

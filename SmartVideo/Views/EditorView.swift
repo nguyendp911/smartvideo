@@ -20,6 +20,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
     case title = "Chữ"
     case sfx = "Âm FX"
     case vault = "Kho video"
+    case musicVideo = "Music Video"
     case inspector = "Media Inspector"
 
     var id: String { rawValue }
@@ -41,6 +42,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
         case .title: return "textformat"
         case .sfx: return "waveform"
         case .vault: return "square.and.arrow.down.on.square"
+        case .musicVideo: return "music.note.tv"
         case .inspector: return "waveform.path.ecg"
         }
     }
@@ -48,6 +50,7 @@ private enum EditorTool: String, CaseIterable, Identifiable {
 
 struct EditorView: View {
     @StateObject private var model = EditorViewModel()
+    @ObservedObject private var incomingLinks = IncomingLinkInbox.shared
     @StateObject private var recorder = VoiceRecorder()
     @StateObject private var audioMonitor = LiveAudioPreview()
     @State private var pickerItems: [PhotosPickerItem] = []
@@ -265,6 +268,10 @@ struct EditorView: View {
             previewTask?.cancel()
             pauseContinuousPlayback()
             audioMonitor.invalidate()
+        }
+        // A link shared in from a Shortcut opens the video vault.
+        .onChange(of: incomingLinks.pendingLink) { link in
+            if link != nil { activeTool = .vault }
         }
         // One native fileImporter, with no nested UIKit sheet dismissal.
         .fileImporter(
@@ -1137,6 +1144,7 @@ struct EditorView: View {
             activeFilePicker = .soundEffect
             showDocumentImporter = true
         }
+        case .musicVideo: MusicVideoStudio.MusicVideoStudioLauncherPanel()
         case .inspector: MediaInspectorPanel(clip: selectedClip)
         case .vault: VideoLibraryPanel(model: model) { id in
             selectedClipID = id
@@ -1172,6 +1180,9 @@ struct EditorView: View {
                         scrubTimeline(to: model.timelineSecond)
                     } label: { Image(systemName: "trash") }
                 }
+                Toggle("Ripple: xoá clip thì dời phụ đề, lớp phủ, FX, nhạc phía sau", isOn: $model.rippleEditing)
+                    .font(.caption2)
+                    .tint(accent)
 
                 HStack(spacing: 8) {
                     Button {
@@ -1675,6 +1686,7 @@ struct EditorView: View {
                 clip.id, keyPath: \.warmth
             ), range: -1...1, display: clip.colorAdjustments.warmth < -0.01
                 ? "Lạnh" : clip.colorAdjustments.warmth > 0.01 ? "Ấm" : "0")
+            ClipLUTControl(model: model, clipID: clip.id)
         }
         .padding(8)
         .background(Color.white.opacity(0.035),
@@ -2334,7 +2346,23 @@ struct EditorView: View {
                 Slider(value: $model.musicFadeOut, in: 0...5, step: 0.1)
                     .tint(accent)
 
-                Text("Tùy chỉnh fade-in / fade-out khi xuất và tự giảm nhạc trong lúc có giọng đọc.")
+                Toggle("Tự hạ nhạc khi có người nói", isOn: $model.voiceDuck.smart)
+                    .font(.caption)
+                    .tint(accent)
+                if model.voiceDuck.smart {
+                    HStack {
+                        Text("Mức nhạc khi có giọng")
+                        Spacer()
+                        Text("\(Int(model.voiceDuck.clampedLevel * 100))%")
+                    }
+                    .font(.caption)
+                    Slider(value: $model.voiceDuck.level, in: 0.05...0.8, step: 0.05)
+                        .tint(accent)
+                }
+
+                Text(model.voiceDuck.smart
+                     ? "Phân tích tệp thuyết minh và chỉ hạ nhạc đúng lúc có tiếng nói (hạ trước 0,12s, hồi lại 0,35s). Áp dụng khi xuất MP4; nghe thử nhanh vẫn dùng mức hạ cố định."
+                     : "Tùy chỉnh fade-in / fade-out khi xuất; nhạc tự giảm còn khoảng 25% trong toàn bộ thời lượng giọng đọc.")
                     .font(.caption2).foregroundStyle(.secondary)
 
                 MusicMasteringPanel(model: model)

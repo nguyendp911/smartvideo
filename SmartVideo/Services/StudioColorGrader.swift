@@ -64,6 +64,10 @@ enum StudioColorGrader {
                 "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1)
             ])
         }
+        if let lut = adjustments.lutName {
+            result = LUTLibrary.apply(result, name: lut,
+                                      intensity: adjustments.lutIntensity)
+        }
         return result.cropped(to: image.extent)
     }
 
