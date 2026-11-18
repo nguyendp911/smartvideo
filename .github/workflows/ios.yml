@@ -60,6 +60,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
           /tmp/project-audio-track-tests
 
+      - name: Validate Mockup Studio catalog, search, masks and geometry
+        run: |
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift SmartVideo/Models/MockupStudioGeometry.swift scripts/mockup-studio-tests.swift -o /tmp/mockup-studio-tests
+          /tmp/mockup-studio-tests
+
       - name: Validate incoming shared-link parsing
         run: |
           swiftc -swift-version 5 SmartVideo/Models/IncomingLink.swift scripts/incoming-link-tests.swift -o /tmp/incoming-link-tests
@@ -135,6 +140,7 @@ jobs:
             -parallel-testing-enabled NO \
             CODE_SIGNING_ALLOWED=NO \
             -only-testing:SmartVideoTests/TextExportSmokeTests \
+            -only-testing:SmartVideoTests/MockupStudioTests \
             -only-testing:SmartVideoTests/PhotoPresetStudioTests \
             -only-testing:SmartVideoTests/PhotoReferenceMatcherTests \
             -only-testing:SmartVideoTests/PhotoAutoPresetTests \
