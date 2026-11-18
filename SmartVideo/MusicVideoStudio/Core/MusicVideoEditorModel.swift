@@ -394,12 +394,11 @@ extension MusicVideoStudio {
             }
             var added = 0
             if !imported.isEmpty, project.id == projectID {
-                let hadNoPhotos = project.photos.isEmpty
                 var created: [UUID] = []
                 edit { created = TimelineEngine.appendPhotos(imported, to: &$0) }
                 added = created.count
                 if !created.isEmpty { selection = Set(created) }
-                if hadNoPhotos, let firstID = created.first,
+                if !playback.isPlaying, let firstID = created.first,
                    let firstPhoto = project.photos.first(where: { $0.core.id == firstID }) {
                     playback.seek(to: firstPhoto.core.start)
                 }

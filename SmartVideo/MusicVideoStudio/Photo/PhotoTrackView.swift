@@ -16,6 +16,8 @@ extension MusicVideoStudio {
                 RoundedRectangle(cornerRadius: 6).fill(color.opacity(0.35))
                 if track == .photo, let layer = model.project.photos.first(where: { $0.core.id == clip.id }) {
                     PhotoThumbnailView(url: model.mediaURL(for: layer))
+                        .frame(maxWidth: .infinity, maxHeight: height)
+                        .clipped()
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .opacity(clip.isVisible ? 0.9 : 0.3)
                 }
