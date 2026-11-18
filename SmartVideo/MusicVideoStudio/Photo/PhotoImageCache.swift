@@ -25,6 +25,25 @@ extension MusicVideoStudio {
 
         func cached(_ url: URL, maxPixel: Int) -> UIImage? { cache.object(forKey: key(url, maxPixel)) }
 
+        private let lock = NSLock()
+        private var failedKeys = Set<String>()
+
+        /// Decodes right now on the calling thread (a downsampled thumbnail is quick) so a photo is on screen
+        /// in the very first frame instead of waiting for an asynchronous load to be noticed. A file that cannot
+        /// be read is remembered, so it is not retried on every redraw.
+        func loadNow(_ url: URL, maxPixel: Int) -> UIImage? {
+            if let hit = cached(url, maxPixel: maxPixel) { return hit }
+            let id = key(url, maxPixel) as String
+            lock.lock(); let known = failedKeys.contains(id); lock.unlock()
+            if known { return nil }
+            guard let image = Self.decode(url, maxPixel: maxPixel) else {
+                lock.lock(); failedKeys.insert(id); lock.unlock()
+                return nil
+            }
+            store(image, url: url, maxPixel: maxPixel)
+            return image
+        }
+
         func load(_ url: URL, maxPixel: Int) async -> UIImage? {
             if let hit = cached(url, maxPixel: maxPixel) { return hit }
             let image = await Task.detached(priority: .userInitiated) {
@@ -73,6 +92,9 @@ extension MusicVideoStudio {
             return UIImage(cgImage: image)
         }
 
-        func removeAll() { cache.removeAllObjects() }
+        func removeAll() {
+            cache.removeAllObjects()
+            lock.lock(); failedKeys.removeAll(); lock.unlock()
+        }
     }
 }

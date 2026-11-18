@@ -121,6 +121,11 @@ extension MusicVideoStudio {
         @State private var image: UIImage?
         @State private var failed = false
 
+        init(url: URL) {
+            self.url = url
+            _image = State(initialValue: PhotoImageCache.shared.loadNow(url, maxPixel: 256))
+        }
+
         var body: some View {
             ZStack {
                 if let image {

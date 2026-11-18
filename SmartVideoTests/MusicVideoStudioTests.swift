@@ -1570,7 +1570,10 @@ final class MusicVideoStudioTests: XCTestCase {
         let frame = try liveRed(MV.ProjectFrameView(resources: m3.resources, canvas: CGSize(width: 400, height: 300), time: .zero))
         let (m5, _) = try fresh()
         let preview = try liveRed(MV.VideoPreviewView(model: m5, playback: m5.playback).frame(width: 400, height: 300))
-        let summary = "task probe \(probeTask), onAppear probe \(probeAppear), PhotoLayerView \(photoOnly), ProjectFrameView \(frame), VideoPreviewView \(preview)"
-        XCTAssertTrue(probeTask.red && probeAppear.red && photoOnly.red && frame.red && preview.red, summary)
+        let (m6, _) = try fresh()
+        m6.selection = Set(m6.project.photos.map(\.core.id))
+        let previewSelected = try liveRed(MV.VideoPreviewView(model: m6, playback: m6.playback).frame(width: 400, height: 300))
+        let summary = "preview with the photo selected \(previewSelected), task probe \(probeTask), onAppear probe \(probeAppear), PhotoLayerView \(photoOnly), ProjectFrameView \(frame), VideoPreviewView \(preview)"
+        XCTAssertTrue(probeTask.red && probeAppear.red && photoOnly.red && frame.red && preview.red && previewSelected.red, summary)
     }
 }

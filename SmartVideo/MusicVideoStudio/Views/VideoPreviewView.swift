@@ -146,7 +146,8 @@ extension MusicVideoStudio {
             self.time = time
             self.selected = selected
             self.renderScale = renderScale
-            _image = State(initialValue: PhotoImageCache.shared.cached(
+            // Decoded right away when it is not cached yet: the photo is in the first frame it is drawn.
+            _image = State(initialValue: PhotoImageCache.shared.loadNow(
                 url, maxPixel: PhotoImageCache.bucket(max(canvas.width, canvas.height) * renderScale)))
         }
 
