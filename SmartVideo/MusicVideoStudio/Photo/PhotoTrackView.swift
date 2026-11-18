@@ -127,9 +127,10 @@ extension MusicVideoStudio {
         }
 
         var body: some View {
+            let displayed = image ?? PhotoImageCache.shared.loadNow(url, maxPixel: 256)
             ZStack {
-                if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
+                if let displayed {
+                    Image(uiImage: displayed).resizable().scaledToFill()
                 } else if failed {
                     Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }

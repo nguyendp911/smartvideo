@@ -394,10 +394,15 @@ extension MusicVideoStudio {
             }
             var added = 0
             if !imported.isEmpty, project.id == projectID {
+                let hadNoPhotos = project.photos.isEmpty
                 var created: [UUID] = []
                 edit { created = TimelineEngine.appendPhotos(imported, to: &$0) }
                 added = created.count
                 if !created.isEmpty { selection = Set(created) }
+                if hadNoPhotos, let firstID = created.first,
+                   let firstPhoto = project.photos.first(where: { $0.core.id == firstID }) {
+                    playback.seek(to: firstPhoto.core.start)
+                }
                 prefetch(around: playback.state.frameTime)
                 if created.isEmpty { reasons.append("dự án đã đạt tối đa \(VideoProject.maxLayers) lớp") }
             }

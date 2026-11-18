@@ -161,9 +161,10 @@ extension MusicVideoStudio {
                 layer.motion,
                 progress: KenBurnsEffect.progress(start: layer.core.start, duration: layer.core.duration, at: time))
             let tr = PhotoTransitionEngine.effect(for: layer, at: time)
+            let displayed = image ?? PhotoImageCache.shared.loadNow(url, maxPixel: pixels)
             ZStack {
-                if let image {
-                    Image(uiImage: image)
+                if let displayed {
+                    Image(uiImage: displayed)
                         .resizable()
                         .aspectRatio(contentMode: layer.fit == .fill ? .fill : .fit)
                         .frame(width: canvas.width, height: canvas.height)
@@ -186,9 +187,10 @@ extension MusicVideoStudio {
             .offset(x: CGFloat(t.x - 0.5 + tr.offsetX) * canvas.width, y: CGFloat(t.y - 0.5 + tr.offsetY) * canvas.height)
             .opacity(t.opacity * tr.opacity)
             .task(id: url) {
-                if image == nil { image = PhotoImageCache.shared.cached(url, maxPixel: pixels) }
-                if image == nil { image = await PhotoImageCache.shared.load(url, maxPixel: pixels) }
-                loadFailed = image == nil
+                var loaded = PhotoImageCache.shared.cached(url, maxPixel: pixels)
+                if loaded == nil { loaded = await PhotoImageCache.shared.load(url, maxPixel: pixels) }
+                image = loaded
+                loadFailed = loaded == nil
             }
         }
     }
