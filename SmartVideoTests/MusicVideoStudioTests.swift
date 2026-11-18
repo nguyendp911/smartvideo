@@ -1476,18 +1476,22 @@ final class MusicVideoStudioTests: XCTestCase {
         XCTAssertTrue(model.visibleTracks.contains(.photo))
 
         let host = UIHostingController(rootView: MV.VideoPreviewView(model: model, playback: model.playback).frame(width: 400, height: 300))
-        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+        window.frame = CGRect(x: 0, y: 0, width: 400, height: 300)
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         var seen = false
         var last = (r: 0, g: 0, b: 0)
+        var outside = (r: 0, g: 0, b: 0)
         for _ in 0..<120 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
             last = try pixel(image, 0.5, 0.5)
+            outside = try pixel(image, 0.01, 0.5)
             if last.r > 150 && last.g < 90 && last.b < 90 { seen = true; break }
         }
         if !seen {
@@ -1498,7 +1502,7 @@ final class MusicVideoStudioTests: XCTestCase {
             for scale in [1, 2, 3] where MV.PhotoImageCache.shared.cached(url, maxPixel: MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * CGFloat(scale))) != nil { cached.append(scale) }
             model.playback.seek(to: .zero)
             let direct = try pixel(try render(model, at: 0), 0.5, 0.5)
-            XCTFail("photo not visible in the live window: centre \(last), cached at scales \(cached) (screen scale \(UIScreen.main.scale)), direct render centre \(direct), file exists \(FileManager.default.fileExists(atPath: url.path)), items \(MV.TimelineEngine.renderItems(in: model.project, at: .zero).count)")
+            XCTFail("photo not visible in the live window: centre \(last), cached at scales \(cached) (screen scale \(UIScreen.main.scale)), direct render centre \(direct), live window outside-canvas pixel \(outside) (about 8 if the window is captured at all), scene attached \(scene != nil), file exists \(FileManager.default.fileExists(atPath: url.path)), items \(MV.TimelineEngine.renderItems(in: model.project, at: .zero).count)")
         }
     }
 }
