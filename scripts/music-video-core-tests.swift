@@ -1486,6 +1486,7 @@ struct MusicVideoCoreTests {
         precondition(good.fileName(projectName: String(repeating: "a", count: 200)).count < 70)
 
         let saved = MV.ExportSettings(resolution: .p2160, fps: 60, codec: .hevc, container: .mov)
-        precondition(try JSONDecoder().decode(MV.ExportSettings.self, from: JSONEncoder().encode(saved)) == saved)
+        let restored = try JSONDecoder().decode(MV.ExportSettings.self, from: JSONEncoder().encode(saved))
+        precondition(restored == saved)
     }
 }
