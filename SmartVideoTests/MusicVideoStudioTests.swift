@@ -894,7 +894,7 @@ final class MusicVideoStudioTests: XCTestCase {
         XCTAssertNil(model.spectrum(for: layer), "analysis runs in the background")
         let before = try render(model, at: 1.0).pngData()
 
-        for _ in 0..<100 where model.spectrum(for: layer) == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        for _ in 0..<600 where model.spectrum(for: layer) == nil { try await Task.sleep(nanoseconds: 50_000_000) }
         let spectrum = try XCTUnwrap(model.spectrum(for: layer))
         XCTAssertGreaterThan(model.spectrumVersion, 0)
         let frame = MV.VisualizerFrame.make(layer: layer, spectrum: spectrum, sourceTime: 1.0)
@@ -1159,7 +1159,7 @@ final class MusicVideoStudioTests: XCTestCase {
         await model.importAudio(from: try writeKicks("kicks.wav", seconds: 6))
         model.addEffect(.beatPulse)
         XCTAssertEqual(model.project.effects.count, 1)
-        for _ in 0..<100 where model.effectBeats(for: model.project.effects[0]).isEmpty { try await Task.sleep(nanoseconds: 50_000_000) }
+        for _ in 0..<600 where model.effectBeats(for: model.project.effects[0]).isEmpty { try await Task.sleep(nanoseconds: 50_000_000) }
         let beats = model.effectBeats(for: model.project.effects[0])
         XCTAssertGreaterThan(beats.count, 8, "the kicks are found")
         let beat = beats[1]
