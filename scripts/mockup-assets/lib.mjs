@@ -75,9 +75,20 @@ export class Svg {
       `<feFuncG type="linear" slope="${contrast}" intercept="${lift}"/><feFuncB type="linear" slope="${contrast}" intercept="${lift}"/></feComponentTransfer></filter>`);
     return id;
   }
+  /** Cut a transparent window through EVERYTHING drawn so far/after (scene mockups). */
+  cutWindow(slot, radius = 0) { this.hole = { slot, radius }; return this; }
   toString() {
+    let body = this.body.join('');
+    let defs = this.defs.join('');
+    if (this.hole) {
+      const { slot, radius } = this.hole;
+      defs += `<mask id="hole" maskUnits="userSpaceOnUse" x="0" y="0" width="${this.w}" height="${this.h}">` +
+        `<rect width="${this.w}" height="${this.h}" fill="#fff"/>` +
+        `<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" rx="${radius}" fill="#000"/></mask>`;
+      body = `<g mask="url(#hole)">${body}</g>`;
+    }
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${this.w}" height="${this.h}" viewBox="0 0 ${this.w} ${this.h}">` +
-      `<defs>${this.defs.join('')}</defs>${this.body.join('')}</svg>`;
+      `<defs>${defs}</defs>${body}</svg>`;
   }
 }
 

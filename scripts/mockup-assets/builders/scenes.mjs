@@ -6,13 +6,10 @@ import { Svg, f, rad, rng, pts } from '../lib.mjs';
 
 const rr = (x, y, w, h, r, fill, extra = '') => `<rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="${f(h)}" rx="${r}" fill="${fill}" ${extra}/>`;
 
-/** Wrap markup so that `slot` is cut out (transparent). */
+/** Draw `markup` and mark `slot` as a transparent window through the whole scene. */
 function withHole(svg, markup, slot, radius = 0) {
-  const m = svg.id('m');
-  svg.def(`<mask id="${m}" maskUnits="userSpaceOnUse" x="0" y="0" width="${svg.w}" height="${svg.h}">` +
-    `<rect width="${svg.w}" height="${svg.h}" fill="#fff"/>` +
-    `<rect x="${slot.x}" y="${slot.y}" width="${slot.w}" height="${slot.h}" rx="${radius}" fill="#000"/></mask>`);
-  svg.add(`<g mask="url(#${m})">${markup}</g>`);
+  svg.add(markup);
+  svg.cutWindow(slot, radius);
 }
 
 function dropShadow(svg, x, y, w, h, r, std, opacity, dx = 0, dy = 18) {

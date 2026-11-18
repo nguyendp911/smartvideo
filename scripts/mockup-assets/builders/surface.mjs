@@ -7,7 +7,7 @@ export const texture = {
   // Neutral light-grey surfaces: designed for Multiply (white = no change).
   'paper-texture'() {
     const svg = new Svg(S, S);
-    const s = svg.surface([0.05, 0.05], 4, 3, 1.4, 66, '#ffffff', 1.12, 0.02);
+    const s = svg.surface([0.05, 0.05], 4, 3, 2.8, 66, '#ffffff', 1.0, 0.08);
     svg.add(full(`filter="url(#${s})"`));
     const fibers = svg.noise([0.9, 0.04].join(' '), 2, 6, 'alpha');
     svg.add(full(`filter="url(#${fibers})" opacity=".06"`));
@@ -36,7 +36,7 @@ export const texture = {
 
   'folded-paper'() {
     const svg = new Svg(S, S);
-    const s = svg.surface([0.05, 0.05], 4, 5, 1.3, 66, '#ffffff', 1.1, 0.03);
+    const s = svg.surface([0.05, 0.05], 4, 5, 1.3, 66, '#ffffff', 1.1, 0.16);
     svg.add(full(`filter="url(#${s})"`));
     const shadeA = svg.linear([[0, '#000', 0], [0.5, '#000', 0.04], [0.52, '#000', 0.24], [0.56, '#000', 0]], 0, 0, 1, 0);
     const shadeB = svg.linear([[0, '#fff', 0.38], [0.42, '#fff', 0], [0.46, '#000', 0.14], [0.5, '#000', 0], [1, '#000', 0.08]], 0, 0, 1, 0);
@@ -51,7 +51,7 @@ export const texture = {
 
   'crumpled-paper'() {
     const svg = new Svg(S, S);
-    const s = svg.surface([0.007, 0.007], 6, 12, 14, 42, '#ffffff', 1.0, 0.0);
+    const s = svg.surface([0.007, 0.007], 6, 12, 14, 42, '#ffffff', 1.0, 0.27);
     svg.add(full(`filter="url(#${s})"`));
     const fine = svg.surface([0.03, 0.03], 3, 4, 3, 55, '#ffffff', 1.0, 0.0);
     svg.add(full(`filter="url(#${fine})" opacity=".4" style="mix-blend-mode:multiply"`));
@@ -60,7 +60,7 @@ export const texture = {
 
   'concrete-texture'() {
     const svg = new Svg(S, S);
-    const base = svg.surface([0.012, 0.012], 5, 22, 3, 60, '#e4e4e2', 1.0, 0.0);
+    const base = svg.surface([0.012, 0.012], 5, 22, 3, 60, '#f0f0ee', 1.05, 0.12);
     svg.add(full(`filter="url(#${base})"`));
     const grit = svg.noise(0.9, 2, 31, 'gray');
     svg.add(full(`filter="url(#${grit})" opacity=".18"`));
@@ -74,7 +74,7 @@ export const texture = {
 
   'plaster-wall'() {
     const svg = new Svg(S, S);
-    const s = svg.surface([0.0055, 0.0055], 3, 33, 2.4, 58, '#f6f0e6', 1.0, 0.02);
+    const s = svg.surface([0.0055, 0.0055], 3, 33, 6, 58, '#faf5ec', 1.0, 0.06);
     svg.add(full(`filter="url(#${s})"`));
     const r = rng(57);
     let arcs = '';
@@ -91,7 +91,7 @@ export const texture = {
     const svg = new Svg(S, S);
     const weave = svg.id('p');
     svg.def(`<pattern id="${weave}" width="8" height="8" patternUnits="userSpaceOnUse">` +
-      `<rect width="8" height="8" fill="#f2eee6"/><rect width="8" height="4" fill="#e3dccd"/><rect x="0" width="4" height="8" fill="#000" fill-opacity=".06"/>` +
+      `<rect width="8" height="8" fill="#fbf8f1"/><rect width="8" height="4" fill="#f0ebdf"/><rect x="0" width="4" height="8" fill="#000" fill-opacity=".06"/>` +
       `<rect x="4" y="4" width="4" height="4" fill="#fff" fill-opacity=".35"/></pattern>`);
     svg.add(full(`fill="url(#${weave})"`));
     const slubs = svg.noise([0.02, 0.5].join(' '), 3, 17, 'gray');
