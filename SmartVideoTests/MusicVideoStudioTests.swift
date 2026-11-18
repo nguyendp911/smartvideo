@@ -1549,7 +1549,7 @@ final class MusicVideoStudioTests: XCTestCase {
     }
 
     @MainActor
-    func testLiveLoadingPatternsDiagnostic() async throws {
+    func testPhotosShowInLiveViewsWithoutWaitingForAsyncState() async throws {
         let manager = MV.ProjectManager(root: root.appendingPathComponent("probe"))
         var project = MV.VideoProject()
         project.aspect = .landscape16x9
@@ -1574,6 +1574,7 @@ final class MusicVideoStudioTests: XCTestCase {
         m6.selection = Set(m6.project.photos.map(\.core.id))
         let previewSelected = try liveRed(MV.VideoPreviewView(model: m6, playback: m6.playback).frame(width: 400, height: 300))
         let summary = "preview with the photo selected \(previewSelected), task probe \(probeTask), onAppear probe \(probeAppear), PhotoLayerView \(photoOnly), ProjectFrameView \(frame), VideoPreviewView \(preview)"
-        XCTAssertTrue(probeTask.red && probeAppear.red && photoOnly.red && frame.red && preview.red && previewSelected.red, summary)
+        // The probes (state set by an async task) are reported but not required: that pattern is what the app no longer relies on.
+        XCTAssertTrue(photoOnly.red && frame.red && preview.red && previewSelected.red, summary)
     }
 }
