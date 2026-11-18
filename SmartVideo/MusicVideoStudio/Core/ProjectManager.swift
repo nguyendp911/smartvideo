@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import AVFoundation
 import UniformTypeIdentifiers
 
 extension MusicVideoStudio {
@@ -13,11 +14,13 @@ extension MusicVideoStudio {
     enum ProjectError: LocalizedError {
         case invalidImage
         case writeFailed
+        case notAudio
 
         var errorDescription: String? {
             switch self {
             case .invalidImage: return "Tệp không phải ảnh hợp lệ."
-            case .writeFailed: return "Không ghi được tệp ảnh vào dự án."
+            case .writeFailed: return "Không ghi được tệp vào dự án."
+            case .notAudio: return "Tệp không có âm thanh đọc được."
             }
         }
     }
@@ -83,6 +86,32 @@ extension MusicVideoStudio {
 
         func delete(_ id: UUID) throws {
             try FileManager.default.removeItem(at: directory(for: id))
+        }
+
+        struct ImportedAudio: Equatable {
+            var mediaFile: String
+            var originalName: String
+            var duration: Double
+        }
+
+        /// Copies an audio file (from the document picker) into the project and
+        /// validates that it really contains audio.
+        func storeAudio(from source: URL, projectID: UUID) async throws -> ImportedAudio {
+            let scoped = source.startAccessingSecurityScopedResource()
+            defer { if scoped { source.stopAccessingSecurityScopedResource() } }
+            let directory = mediaDirectory(for: projectID)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let ext = source.pathExtension.isEmpty ? "m4a" : source.pathExtension.lowercased()
+            let name = UUID().uuidString + "." + ext
+            let destination = directory.appendingPathComponent(name)
+            do { try FileManager.default.copyItem(at: source, to: destination) } catch { throw ProjectError.writeFailed }
+            let asset = AVURLAsset(url: destination)
+            guard let tracks = try? await asset.loadTracks(withMediaType: .audio), !tracks.isEmpty,
+                  let seconds = try? await asset.load(.duration).seconds, seconds.isFinite, seconds > 0.05 else {
+                try? FileManager.default.removeItem(at: destination)
+                throw ProjectError.notAudio
+            }
+            return ImportedAudio(mediaFile: name, originalName: source.deletingPathExtension().lastPathComponent, duration: seconds)
         }
 
         /// Stores the original bytes (HEIC/PNG/JPEG) and reads the real pixel

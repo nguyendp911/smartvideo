@@ -64,6 +64,10 @@ extension MusicVideoStudio {
                 PhotoLayerView(layer: layer, url: model.mediaURL(for: layer), canvas: canvas, time: time, selected: selected)
             case .text(let layer):
                 TextLayerView(layer: layer, canvas: canvas, selected: selected)
+            case .vinyl(let layer):
+                VinylLayerView(layer: layer, canvas: canvas, time: time,
+                               coverURL: layer.coverFile.map { model.manager.mediaURL(projectID: model.project.id, file: $0) },
+                               selected: selected)
             }
         }
     }

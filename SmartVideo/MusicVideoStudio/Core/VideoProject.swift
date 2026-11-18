@@ -47,6 +47,8 @@ extension MusicVideoStudio {
         var fps = 30
         var photos: [PhotoLayer] = []
         var texts: [TextLayer] = []
+        var audios: [AudioLayer] = []
+        var vinyls: [VinylLayer] = []
 
         init() {}
 
@@ -62,39 +64,44 @@ extension MusicVideoStudio {
             fps = ProjectTime.supportedFrameRates.contains(rawFPS) ? rawFPS : 30
             photos = try c.decodeIfPresent([PhotoLayer].self, forKey: .photos) ?? []
             texts = try c.decodeIfPresent([TextLayer].self, forKey: .texts) ?? []
+            audios = try c.decodeIfPresent([AudioLayer].self, forKey: .audios) ?? []
+            vinyls = try c.decodeIfPresent([VinylLayer].self, forKey: .vinyls) ?? []
         }
 
         /// End of the last layer, never shorter than the minimum.
         var duration: ProjectTime {
-            let end = (photos.map(\.core.end) + texts.map(\.core.end)).max() ?? .zero
+            let end = allCores.map(\.end).max() ?? .zero
             return max(Self.minimumDuration, end)
         }
 
-        var layerCount: Int { photos.count + texts.count }
+        var layerCount: Int { photos.count + texts.count + audios.count + vinyls.count }
 
-        var allCores: [LayerCore] { photos.map(\.core) + texts.map(\.core) }
+        var allCores: [LayerCore] {
+            photos.map(\.core) + texts.map(\.core) + audios.map(\.core) + vinyls.map(\.core)
+        }
 
         func core(for id: UUID) -> LayerCore? { allCores.first { $0.id == id } }
 
         /// Applies `change` to the core of the layer `id`. Returns false when missing.
         @discardableResult
         mutating func updateCore(_ id: UUID, _ change: (inout LayerCore) -> Void) -> Bool {
-            if let i = photos.firstIndex(where: { $0.core.id == id }) {
-                change(&photos[i].core)
-                photos[i].core.transform = photos[i].core.transform.sanitized
-                return true
-            }
-            if let i = texts.firstIndex(where: { $0.core.id == id }) {
-                change(&texts[i].core)
-                texts[i].core.transform = texts[i].core.transform.sanitized
-                return true
-            }
-            return false
+            Self.update(&photos, id, change) || Self.update(&texts, id, change) ||
+                Self.update(&audios, id, change) || Self.update(&vinyls, id, change)
+        }
+
+        private static func update<L: StudioLayer>(_ layers: inout [L], _ id: UUID,
+                                                   _ change: (inout LayerCore) -> Void) -> Bool {
+            guard let i = layers.firstIndex(where: { $0.core.id == id }) else { return false }
+            change(&layers[i].core)
+            layers[i].core.transform = layers[i].core.transform.sanitized
+            return true
         }
 
         mutating func removeLayers(_ ids: Set<UUID>) {
             photos.removeAll { ids.contains($0.core.id) }
             texts.removeAll { ids.contains($0.core.id) }
+            audios.removeAll { ids.contains($0.core.id) }
+            vinyls.removeAll { ids.contains($0.core.id) }
         }
 
         /// Highest z-index in use + 1 (new layers go on top of their track's base).

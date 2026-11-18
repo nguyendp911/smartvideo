@@ -20,6 +20,10 @@ struct MusicVideoCoreTests {
         editing()
         photoEffects()
         try photoCoding()
+        audioMath()
+        audioEditing()
+        waveformAndVinyl()
+        try audioCoding()
         print("music video core tests passed")
     }
 
@@ -326,7 +330,7 @@ struct MusicVideoCoreTests {
         var p = fourPhotos()
         let b = p.photos[1].core.id
         let points = MV.TimelineEditing.snapPoints(in: p, excluding: [b], playhead: sec(4.5))
-        precondition(points == [0, 3, 4.5, 6, 9, 12].map(sec) || points == [0, 4.5, 3, 6, 9, 12].map(sec).sorted(), "\\(points)")
+        precondition(points == [0, 3, 4.5, 6, 9, 12].map(sec) || points == [0, 4.5, 3, 6, 9, 12].map(sec).sorted(), "\(points)")
         precondition(!points.contains(sec(6)) == false && points.first == .zero)
         precondition(MV.TimelineEditing.nearest(to: sec(5.95), in: points, threshold: threshold) == sec(6))
         precondition(MV.TimelineEditing.nearest(to: sec(5.5), in: points, threshold: threshold) == nil)
@@ -457,7 +461,7 @@ struct MusicVideoCoreTests {
             for p in stride(from: 0.0, through: 1.0, by: 0.1) {
                 let t = k.transform(motion(preset), progress: p)
                 precondition(t.scale >= 1 - 1e-9)
-                precondition(abs(t.offsetX) <= (t.scale - 1) / 2 + 1e-9 && abs(t.offsetY) <= (t.scale - 1) / 2 + 1e-9, "\\(preset) \\(p)")
+                precondition(abs(t.offsetX) <= (t.scale - 1) / 2 + 1e-9 && abs(t.offsetY) <= (t.scale - 1) / 2 + 1e-9, "\(preset) \(p)")
             }
         }
         // Robust to bad input.
@@ -528,5 +532,235 @@ struct MusicVideoCoreTests {
         p.photos[0].transitionIn = MV.PhotoTransition(kind: .slideUp, duration: 1.5)
         let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(p))
         precondition(back.photos == p.photos)
+    }
+
+    // MARK: Phase 3/4 - audio
+
+    static func audioLayer(start: Double = 2, duration: Double = 6, sourceStart: Double = 1, sourceDuration: Double = 11,
+                           loops: Bool = false) -> MV.AudioLayer {
+        let core = MV.LayerCore(name: "song", track: .audio, start: sec(start), duration: sec(duration), zIndex: 0)
+        return MV.AudioLayer(core: core, mediaFile: "song.m4a", originalName: "song", sourceDuration: sourceDuration,
+                             sourceStart: sourceStart, loops: loops)
+    }
+
+    static func audioMath() {
+        let e = MV.AudioEnvelope.self
+        near(e.fade(local: 0, duration: 10, fadeIn: 2, fadeOut: 2), 0)
+        near(e.fade(local: 1, duration: 10, fadeIn: 2, fadeOut: 2), 0.5)
+        near(e.fade(local: 2, duration: 10, fadeIn: 2, fadeOut: 2), 1)
+        near(e.fade(local: 5, duration: 10, fadeIn: 2, fadeOut: 2), 1)
+        near(e.fade(local: 9, duration: 10, fadeIn: 2, fadeOut: 2), 0.5)
+        near(e.fade(local: 10, duration: 10, fadeIn: 2, fadeOut: 2), 0)
+        near(e.fade(local: 2.5, duration: 10, fadeIn: 8, fadeOut: 8), 0.5, 1e-9, "oversized fades are scaled to fit")
+        near(e.fade(local: -1, duration: 10, fadeIn: 0, fadeOut: 0), 0)
+        near(e.fade(local: 11, duration: 10, fadeIn: 0, fadeOut: 0), 0)
+        near(e.fade(local: .nan, duration: 10, fadeIn: 0, fadeOut: 0), 0)
+        near(e.fade(local: 5, duration: 10, fadeIn: .nan, fadeOut: -3), 1)
+
+        var layer = audioLayer()
+        layer.volume = 0.5; layer.fadeIn = 2
+        near(e.gain(layer, at: sec(3)), 0.25, 1e-9, "1 s into a 2 s fade at volume 0.5")
+        near(e.gain(layer, at: sec(5)), 0.5)
+        near(e.gain(layer, at: sec(1)), 0); near(e.gain(layer, at: sec(8)), 0)
+        layer.core.isVisible = false
+        near(e.gain(layer, at: sec(5)), 0, 1e-9, "the eye toggle mutes")
+        layer.core.isVisible = true; layer.volume = 9
+        near(e.gain(layer, at: sec(5)), MV.AudioLayer.volumeRange.upperBound)
+        layer.volume = .nan
+        near(e.gain(layer, at: sec(5)), 1)
+
+        // Scheduling (1 kHz "sample rate" keeps the numbers readable).
+        let s = MV.AudioScheduling.self
+        var a = audioLayer()                                     // clip 2-8 s, file 1-11 s
+        var segs = s.segments(layer: a, from: .zero, sampleRate: 1000, fileFrames: 11_000)
+        precondition(segs == [MV.AudioSegment(delay: 2, startFrame: 1000, frameCount: 6000)], "\(segs)")
+        segs = s.segments(layer: a, from: sec(4), sampleRate: 1000, fileFrames: 11_000)
+        precondition(segs == [MV.AudioSegment(delay: 0, startFrame: 3000, frameCount: 4000)], "\(segs)")
+        precondition(s.segments(layer: a, from: sec(8), sampleRate: 1000, fileFrames: 11_000).isEmpty)
+        precondition(s.segments(layer: a, from: sec(99), sampleRate: 1000, fileFrames: 11_000).isEmpty)
+        precondition(s.segments(layer: a, from: .zero, sampleRate: 0, fileFrames: 11_000).isEmpty)
+
+        a = audioLayer(duration: 6, sourceDuration: 3)           // only 2 s of music after the trim
+        segs = s.segments(layer: a, from: .zero, sampleRate: 1000, fileFrames: 3000)
+        precondition(segs == [MV.AudioSegment(delay: 2, startFrame: 1000, frameCount: 2000)], "no looping: silence after the file")
+        precondition(s.segments(layer: a, from: sec(6), sampleRate: 1000, fileFrames: 3000).isEmpty, "already past the music")
+
+        a = audioLayer(duration: 25, loops: true)
+        segs = s.segments(layer: a, from: .zero, sampleRate: 1000, fileFrames: 11_000)
+        precondition(segs == [MV.AudioSegment(delay: 2, startFrame: 1000, frameCount: 10_000),
+                              MV.AudioSegment(delay: 0, startFrame: 1000, frameCount: 10_000),
+                              MV.AudioSegment(delay: 0, startFrame: 1000, frameCount: 5000)], "\(segs)")
+        segs = s.segments(layer: a, from: sec(14), sampleRate: 1000, fileFrames: 11_000)       // 12 s into the clip
+        precondition(segs == [MV.AudioSegment(delay: 0, startFrame: 3000, frameCount: 8000),
+                              MV.AudioSegment(delay: 0, startFrame: 1000, frameCount: 5000)], "\(segs)")
+        let tiny = audioLayer(start: 0, duration: 1000, sourceStart: 0, sourceDuration: 0.01, loops: true)
+        precondition(s.segments(layer: tiny, from: .zero, sampleRate: 1000, fileFrames: 10).count <= MV.AudioScheduling.maxSegments + 0,
+                     "looping a tiny file stays bounded")
+        precondition(s.segments(layer: a, from: .zero, sampleRate: 1000, fileFrames: 500).allSatisfy { $0.startFrame + $0.frameCount <= 500 },
+                     "never reads past the end of the file")
+
+        let plain = audioLayer()
+        near(s.sourcePosition(layer: plain, at: sec(3))!, 2)
+        precondition(s.sourcePosition(layer: plain, at: sec(1)) == nil && s.sourcePosition(layer: plain, at: sec(8)) == nil)
+        let loopy = audioLayer(duration: 25, loops: true)
+        near(s.sourcePosition(layer: loopy, at: sec(15))!, 4)                                  // local 13 -> 13 mod 10 = 3 -> 1 + 3
+    }
+
+    static func audioEditing() {
+        // Project plumbing for the new layer kinds.
+        var p = MV.VideoProject()
+        precondition(p.audios.isEmpty && p.vinyls.isEmpty)
+        let imported = MV.ProjectManager.ImportedAudio(mediaFile: "a.m4a", originalName: "Song", duration: 30)
+        let audioID = MV.TimelineEngine.addAudio(imported, at: sec(1.013), to: &p)!
+        precondition(p.audios.count == 1 && p.layerCount == 1)
+        near(p.duration.seconds, 31, 0.05, "the music defines the project length")
+        precondition(p.core(for: audioID)?.track == .audio && p.audios[0].sourceDuration == 30)
+        let vinylID = MV.TimelineEngine.addVinyl(at: .zero, coverFile: "c.jpg", to: &p)!
+        precondition(p.vinyls[0].coverFile == "c.jpg" && p.core(for: vinylID)?.end == p.duration || p.vinyls[0].core.duration.seconds >= 3)
+        precondition(p.updateCore(audioID) { $0.isLocked = true } && p.audios[0].core.isLocked)
+        p.removeLayers([audioID, vinylID])
+        precondition(p.layerCount == 0)
+        precondition(MV.TrackKind.allCases.allSatisfy(\.isAvailable))
+        precondition(Set(MV.TrackKind.allCases.filter(\.alwaysVisible)) == [.photo, .audio, .text])
+        precondition(MV.TimelineEngine.renderItems(in: p, at: .zero).isEmpty)
+
+        // Vinyl is a render item, audio is not.
+        var q = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(1), to: &q)
+        MV.TimelineEngine.addAudio(imported, at: .zero, to: &q)
+        MV.TimelineEngine.addVinyl(at: .zero, coverFile: nil, to: &q)
+        let items = MV.TimelineEngine.renderItems(in: q, at: sec(1))
+        precondition(items.count == 2, "photo + vinyl; audio has no picture")
+        if case .vinyl = items.last! { } else { preconditionFailure("vinyl draws above photos") }
+        let clips = MV.TimelineEngine.clips(in: q)
+        precondition(clips.map(\.track) == [.photo, .audio, .vinyl], "\(clips.map(\.track))")
+
+        // Fit photos to the music.
+        var f = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(3), to: &f)
+        MV.TimelineEngine.fitPhotos(toDuration: 12, in: &f)
+        precondition(f.photos.map(\.core.start.seconds) == [0, 4, 8] && f.photos.allSatisfy { $0.core.duration == sec(4) })
+
+        // Trimming the head of audio moves the trim point so the music stays aligned.
+        var a = MV.VideoProject()
+        let id = MV.TimelineEngine.addAudio(.init(mediaFile: "a", originalName: "a", duration: 20), at: .zero, to: &a)!
+        let origin = a.audios[0].core.range
+        MV.TimelineEditing.trim(id: id, origin: origin, edge: .start, delta: sec(2), in: &a, snapPoints: [], threshold: sec(0.1))
+        near(a.audios[0].core.start.seconds, 2); near(a.audios[0].sourceStart, 2); near(a.audios[0].core.duration.seconds, 18)
+        MV.TimelineEditing.trim(id: id, origin: origin, edge: .start, delta: sec(-3), in: &a, snapPoints: [], threshold: sec(0.1))
+        near(a.audios[0].core.start.seconds, 0); near(a.audios[0].sourceStart, 0, 1e-9, "back to the file's beginning")
+        // A clip starting at 5 that already skips 1 s cannot reveal music before the file's start.
+        var b = MV.VideoProject()
+        let bid = MV.TimelineEngine.addAudio(.init(mediaFile: "b", originalName: "b", duration: 20), at: sec(5), to: &b)!
+        b.audios[0].sourceStart = 1; b.audios[0].core.duration = sec(10)
+        MV.TimelineEditing.trim(id: bid, origin: b.audios[0].core.range, edge: .start, delta: sec(-4), in: &b, snapPoints: [], threshold: .zero)
+        near(b.audios[0].sourceStart, 0); near(b.audios[0].core.start.seconds, 4, 1e-6)
+        near(b.audios[0].core.end.seconds, 15, 1e-6)
+
+        // Split continues the music where the first half stops.
+        var s = MV.VideoProject()
+        let sid = MV.TimelineEngine.addAudio(.init(mediaFile: "s", originalName: "s", duration: 10), at: .zero, to: &s)!
+        s.audios[0].sourceStart = 1; s.audios[0].core.duration = sec(9); s.audios[0].fadeIn = 1; s.audios[0].fadeOut = 2
+        let created = MV.TimelineEditing.split([sid], at: sec(4), in: &s)
+        precondition(created.count == 1 && s.audios.count == 2)
+        near(s.audios[0].core.duration.seconds, 4); near(s.audios[1].core.start.seconds, 4)
+        near(s.audios[1].sourceStart, 5, 1e-9, "second half continues at 1 + 4 s")
+        precondition(s.audios[1].fadeIn == 0 && s.audios[0].fadeOut == 0 && s.audios[1].fadeOut == 2 && s.audios[0].fadeIn == 1)
+
+        // Explicit trim from the trimmer handles.
+        var t = MV.VideoProject()
+        let tid = MV.TimelineEngine.addAudio(.init(mediaFile: "t", originalName: "t", duration: 20), at: sec(3), to: &t)!
+        precondition(MV.TimelineEditing.setAudioTrim(tid, sourceStart: 2, sourceEnd: 7, in: &t))
+        near(t.audios[0].sourceStart, 2); near(t.audios[0].core.duration.seconds, 5); near(t.audios[0].core.start.seconds, 3)
+        MV.TimelineEditing.setAudioTrim(tid, sourceStart: 19.99, sourceEnd: 5, in: &t)
+        precondition(t.audios[0].core.duration >= MV.LayerCore.minimumDuration && t.audios[0].sourceStart <= 20 - 0.1 + 1e-9)
+        t.audios[0].loops = true
+        let keep = t.audios[0].core.duration
+        MV.TimelineEditing.setAudioTrim(tid, sourceStart: 1, sourceEnd: 4, in: &t)
+        precondition(t.audios[0].core.duration == keep, "a looping clip keeps its length")
+        t.audios[0].core.isLocked = true
+        precondition(!MV.TimelineEditing.setAudioTrim(tid, sourceStart: 0, sourceEnd: 1, in: &t))
+        precondition(!MV.TimelineEditing.setAudioTrim(UUID(), sourceStart: 0, sourceEnd: 1, in: &t))
+
+        // Duplicate keeps the music settings.
+        var d = MV.VideoProject()
+        let did = MV.TimelineEngine.addAudio(.init(mediaFile: "d", originalName: "d", duration: 5), at: .zero, to: &d)!
+        d.audios[0].volume = 0.4
+        let copies = MV.TimelineEngine.duplicate([did], in: &d)
+        precondition(copies.count == 1 && d.audios.count == 2 && d.audios[1].volume == 0.4 && d.audios[1].core.start == d.audios[0].core.end)
+    }
+
+    static func waveformAndVinyl() {
+        // Peaks of real samples.
+        var samples = [Float](repeating: 0, count: 2000)
+        for i in 0..<1000 { samples[i] = 0.5 * sinf(Float(i) * 0.3) }                // 1 s of tone then 1 s of silence
+        let peaks = MV.WaveformMath.peaks(samples: samples, sampleRate: 1000, bucketsPerSecond: 10)
+        precondition(peaks.count == 20)
+        precondition(peaks[0..<10].allSatisfy { $0 > 0.45 && $0 <= 0.5 + 1e-6 })
+        precondition(peaks[10...].allSatisfy { $0 == 0 })
+        precondition(MV.WaveformMath.peaks(samples: [], sampleRate: 1000, bucketsPerSecond: 10).isEmpty)
+        precondition(MV.WaveformMath.peaks(samples: [5, -9], sampleRate: 2, bucketsPerSecond: 1) == [1], "peaks are clamped to 1")
+
+        let wave = MV.Waveform(bucketsPerSecond: 10, peaks: (0..<100).map { Float($0 / 10 + 1) / 10 })     // second s -> (s+1)/10
+        near(Double(MV.WaveformMath.peak(wave, from: 3, to: 3.9)), 0.4, 0.11)
+        precondition(MV.WaveformMath.peak(wave, from: 50, to: 60) == 0 && MV.WaveformMath.peak(wave, from: 5, to: 4) == 0)
+        near(wave.duration, 10)
+        let trimmed = MV.WaveformMath.clipColumns(wave, sourceStart: 2, sourceDuration: 10, clipDuration: 4, loops: false, count: 4)
+        precondition(trimmed.count == 4 && trimmed[0] > 0.29 && trimmed[0] < 0.45, "\(trimmed)")
+        precondition(trimmed == trimmed.sorted(), "the drawing follows the music forward in time")
+        let tail = MV.WaveformMath.clipColumns(wave, sourceStart: 8, sourceDuration: 10, clipDuration: 6, loops: false, count: 6)
+        precondition(tail[0] > 0.8 && tail[2...].allSatisfy { $0 == 0 }, "silence after the file ends: \(tail)")
+        let looped = MV.WaveformMath.clipColumns(wave, sourceStart: 8, sourceDuration: 10, clipDuration: 6, loops: true, count: 6)
+        precondition(looped.allSatisfy { $0 > 0.8 }, "looping repeats the trimmed part: \(looped)")
+        precondition(MV.WaveformMath.clipColumns(wave, sourceStart: 0, sourceDuration: 10, clipDuration: 0, loops: false, count: 4).isEmpty)
+
+        // Vinyl angle is a function of time.
+        let v = MV.VinylMath.self
+        near(v.angle(rpm: 60, localSeconds: 0.5), 180)
+        near(v.angle(rpm: 60, localSeconds: 1), 0)
+        near(v.angle(rpm: 60, localSeconds: -0.25), 270)
+        near(v.angle(rpm: 60, localSeconds: 0.25, phase: 0.25), 180)
+        near(v.angle(rpm: 33.33, localSeconds: 1.8), 359.964, 0.01)
+        near(v.angle(rpm: 0, localSeconds: 99), 0)
+        near(v.angle(rpm: .nan, localSeconds: 1), 0)
+        precondition((0...40).allSatisfy { let a = v.angle(rpm: 45, localSeconds: Double($0) * 0.37); return a >= 0 && a < 360 })
+        // Same time -> same angle, whatever happened in between (seek / pause).
+        precondition(v.angle(rpm: 33.33, localSeconds: 7.25) == v.angle(rpm: 33.33, localSeconds: 7.25))
+        near(v.localSeconds(layerStart: sec(3), at: sec(2)), 0); near(v.localSeconds(layerStart: sec(3), at: sec(4.5)), 1.5)
+        near(Double(v.diameter(canvas: CGSize(width: 400, height: 800), size: 0.5)), 200)
+        near(Double(v.diameter(canvas: CGSize(width: 400, height: 800), size: 9)), 400 * 1.4)
+
+        // A split keeps the record spinning seamlessly.
+        var p = MV.VideoProject()
+        let id = MV.TimelineEngine.addVinyl(at: .zero, duration: sec(10), coverFile: nil, to: &p)!
+        let created = MV.TimelineEditing.split([id], at: sec(4), in: &p)
+        precondition(created.count == 1)
+        let left = p.vinyls[0], right = p.vinyls[1]
+        near(right.phase, 4)
+        near(v.angle(rpm: left.rpm, localSeconds: 4), v.angle(rpm: right.rpm, localSeconds: 0, phase: right.phase), 1e-9)
+    }
+
+    static func audioCoding() throws {
+        var p = MV.VideoProject()
+        MV.TimelineEngine.addAudio(.init(mediaFile: "a.m4a", originalName: "Bài hát", duration: 12), at: sec(1), to: &p)
+        p.audios[0].volume = 0.7; p.audios[0].fadeIn = 1.5; p.audios[0].loops = true; p.audios[0].sourceStart = 2
+        MV.TimelineEngine.addVinyl(at: .zero, coverFile: "cover.png", to: &p)
+        p.vinyls[0].rpm = 45; p.vinyls[0].glowColorHex = "#FF00FF"; p.vinyls[0].phase = 3
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(p))
+        precondition(back.audios == p.audios && back.vinyls == p.vinyls)
+
+        // Older files: no audios / vinyls keys, and minimal layer JSON.
+        let empty = try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8))
+        precondition(empty.audios.isEmpty && empty.vinyls.isEmpty)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(p)) as! [String: Any]
+        var audios = json["audios"] as! [[String: Any]]
+        for key in ["originalName", "sourceStart", "volume", "fadeIn", "fadeOut", "loops"] { audios[0].removeValue(forKey: key) }
+        json["audios"] = audios
+        var vinyls = json["vinyls"] as! [[String: Any]]
+        for key in ["rpm", "size", "phase", "glowColorHex"] { vinyls[0].removeValue(forKey: key) }
+        json["vinyls"] = vinyls
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.audios[0].volume == 1 && old.audios[0].sourceStart == 0 && !old.audios[0].loops)
+        precondition(old.vinyls[0].rpm == 33.33 && old.vinyls[0].size == 0.55 && old.vinyls[0].phase == 0 && old.vinyls[0].glowColorHex == "#4DD0E1")
     }
 }

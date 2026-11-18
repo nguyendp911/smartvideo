@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UniformTypeIdentifiers
 
 extension MusicVideoStudio {
     /// Bottom toolbar. Every button acts on the project right now; tracks that
@@ -9,6 +10,7 @@ extension MusicVideoStudio {
         @ObservedObject var model: MusicVideoEditorModel
         @Binding var showInspector: Bool
         @State private var pickerItems: [PhotosPickerItem] = []
+        @State private var showAudioImporter = false
 
         var body: some View {
             let hasSelection = !model.selection.isEmpty
@@ -25,6 +27,9 @@ extension MusicVideoStudio {
                             pickerItems = []
                         }
                     }
+                    Button { showAudioImporter = true } label: { item("Nhạc", "music.note") }
+                        .disabled(model.isImporting)
+                    Button { model.addVinyl() } label: { item("Đĩa than", "opticaldisc") }
                     Button { model.addText() } label: { item("Chữ", "textformat") }
                     Divider().frame(height: 28)
                     Button { model.splitAtPlayhead() } label: { item("Cắt", "scissors") }
@@ -53,6 +58,10 @@ extension MusicVideoStudio {
             }
             .buttonStyle(.plain)
             .background(Color.white.opacity(0.05))
+            .fileImporter(isPresented: $showAudioImporter, allowedContentTypes: [.audio]) { result in
+                guard let url = try? result.get() else { return }
+                Task { await model.importAudio(from: url) }
+            }
         }
 
         private func item(_ title: String, _ symbol: String, highlight: Bool = false) -> some View {

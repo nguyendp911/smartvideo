@@ -18,19 +18,21 @@ extension MusicVideoStudio {
 
         private let laneHeight: CGFloat = 48
         private let headerWidth: CGFloat = 52
-        private var tracks: [TrackKind] { TrackKind.allCases.filter(\.isAvailable) }
+        private var tracks: [TrackKind] { model.visibleTracks }
 
         var body: some View {
             VStack(spacing: 0) {
                 zoomBar
-                HStack(alignment: .top, spacing: 0) {
-                    VStack(spacing: 0) {
-                        Color.clear.frame(height: TimelineRulerView.height)
-                        ForEach(tracks) { header($0) }
+                ScrollView(.vertical, showsIndicators: false) {
+                    HStack(alignment: .top, spacing: 0) {
+                        VStack(spacing: 0) {
+                            Color.clear.frame(height: TimelineRulerView.height)
+                            ForEach(tracks) { header($0) }
+                        }
+                        .frame(width: headerWidth)
+                        .background(Color.white.opacity(0.04))
+                        scrollArea
                     }
-                    .frame(width: headerWidth)
-                    .background(Color.white.opacity(0.04))
-                    scrollArea
                 }
             }
         }

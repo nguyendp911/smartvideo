@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import AVFoundation
 import ImageIO
 import UniformTypeIdentifiers
 @testable import SmartVideo
@@ -444,5 +445,259 @@ final class MusicVideoStudioTests: XCTestCase {
         let start = try whiteCount(try render(model, at: 0.0))
         let end = try whiteCount(try render(model, at: 2.9))
         XCTAssertGreaterThan(end, start + 20, "the white square grows as the zoom-in plays")
+    }
+
+    // MARK: Phase 3 - real audio files
+
+    /// A mono 44.1 kHz 16-bit sine written with AVAudioFile.
+    private func writeSine(_ name: String, seconds: Double, frequency: Double = 440, amplitude: Float = 0.5) throws -> URL {
+        let url = root.appendingPathComponent(name)
+        let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 44_100, channels: 1, interleaved: false))
+        let file = try AVAudioFile(forWriting: url, settings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 44_100, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
+        let frames = AVAudioFrameCount(seconds * 44_100)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+        buffer.frameLength = frames
+        let data = try XCTUnwrap(buffer.floatChannelData)[0]
+        for i in 0..<Int(frames) { data[i] = amplitude * sinf(Float(2 * Double.pi * frequency * Double(i) / 44_100)) }
+        try file.write(from: buffer)
+        return url
+    }
+
+    /// RMS of the left channel between two times of a rendered file.
+    private func rms(_ url: URL, from: Double, to: Double) throws -> Double {
+        let file = try AVAudioFile(forReading: url)
+        let rate = file.processingFormat.sampleRate
+        let start = AVAudioFramePosition(from * rate)
+        let count = AVAudioFrameCount(max(1, (to - from) * rate))
+        file.framePosition = min(start, file.length - 1)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: count))
+        try file.read(into: buffer, frameCount: count)
+        let samples = try XCTUnwrap(buffer.floatChannelData)[0]
+        var sum = 0.0
+        for i in 0..<Int(buffer.frameLength) { sum += Double(samples[i] * samples[i]) }
+        return (sum / Double(max(1, buffer.frameLength))).squareRoot()
+    }
+
+    func testWaveformFromRealSamples() async throws {
+        let tone = try writeSine("tone.wav", seconds: 2)
+        let wave = try await MV.WaveformGenerator.generate(url: tone, bucketsPerSecond: 100)
+        XCTAssertEqual(wave.duration, 2, accuracy: 0.1)
+        let mid = wave.peaks[20..<180]
+        XCTAssertGreaterThan(mid.min() ?? 0, 0.3)
+        XCTAssertLessThanOrEqual(mid.max() ?? 2, 0.56, "a 0.5-amplitude sine peaks at about 0.5")
+
+        let silence = try writeSine("silence.wav", seconds: 1, amplitude: 0)
+        let flat = try await MV.WaveformGenerator.generate(url: silence)
+        XCTAssertLessThan(flat.peaks.max() ?? 1, 0.01)
+
+        // The cache returns the same data from memory and from disk.
+        let cache = MV.WaveformCache(directory: root.appendingPathComponent("wf"))
+        let first = await cache.waveform(for: tone)
+        XCTAssertEqual(first, wave)
+        XCTAssertNotNil(cache.cached(for: tone))
+        let fresh = MV.WaveformCache(directory: root.appendingPathComponent("wf"))
+        XCTAssertEqual(fresh.cached(for: tone), wave, "persisted on disk")
+
+        let notAudio = root.appendingPathComponent("x.txt")
+        try Data("hello".utf8).write(to: notAudio)
+        do { _ = try await MV.WaveformGenerator.generate(url: notAudio); XCTFail("must throw") } catch {}
+    }
+
+    func testStoreAudioValidatesAndCopies() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("projects"))
+        let id = UUID()
+        let tone = try writeSine("song.wav", seconds: 1.5)
+        let imported = try await manager.storeAudio(from: tone, projectID: id)
+        XCTAssertEqual(imported.duration, 1.5, accuracy: 0.05)
+        XCTAssertEqual(imported.originalName, "song")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: manager.mediaDirectory(for: id).appendingPathComponent(imported.mediaFile).path))
+
+        let bad = root.appendingPathComponent("bad.mp3")
+        try Data("this is not audio".utf8).write(to: bad)
+        do {
+            _ = try await manager.storeAudio(from: bad, projectID: id)
+            XCTFail("must reject non-audio")
+        } catch {
+            XCTAssertEqual((try FileManager.default.contentsOfDirectory(atPath: manager.mediaDirectory(for: id).path)).count, 1,
+                           "a rejected file is not left behind")
+        }
+    }
+
+    // MARK: Phase 3 - offline mixdown (the export path)
+
+    @MainActor
+    private func mixProject(_ tone: URL, start: Double, duration: Double, fileSeconds: Double,
+                            volume: Double = 1, fadeIn: Double = 0, loops: Bool = false,
+                            projectSeconds: Double = 5) throws -> (MV.VideoProject, MV.ProjectManager) {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("mix-\(UUID().uuidString)"))
+        var project = MV.VideoProject()
+        let name = "tone.wav"
+        try FileManager.default.createDirectory(at: manager.mediaDirectory(for: project.id), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: tone, to: manager.mediaURL(projectID: project.id, file: name))
+        MV.TimelineEngine.addAudio(.init(mediaFile: name, originalName: "tone", duration: fileSeconds),
+                                   at: MV.ProjectTime(seconds: start), to: &project)
+        project.audios[0].core.duration = MV.ProjectTime(seconds: duration)
+        project.audios[0].volume = volume; project.audios[0].fadeIn = fadeIn; project.audios[0].loops = loops
+        project.photos = []
+        project.texts = []
+        // Make the project exactly `projectSeconds` long with a silent text marker.
+        MV.TimelineEngine.addText(".", at: MV.ProjectTime(seconds: projectSeconds - 3), to: &project)
+        project.texts[0].core.duration = MV.ProjectTime(seconds: 3)
+        return (project, manager)
+    }
+
+    @MainActor
+    func testMixdownPlacesFadesAndLoopsAudioSampleAccurately() throws {
+        let tone = try writeSine("mix.wav", seconds: 3)
+        let (project, manager) = try mixProject(tone, start: 1, duration: 2, fileSeconds: 3, fadeIn: 1)
+        let out = root.appendingPathComponent("mix.caf")
+        XCTAssertTrue(try MV.AudioMixdown.render(project: project,
+                      mediaURL: { manager.mediaURL(projectID: project.id, file: $0.mediaFile) }, to: out))
+        XCTAssertEqual(Double(try AVAudioFile(forReading: out).length) / 44_100, 5, accuracy: 0.05, "as long as the project")
+
+        XCTAssertLessThan(try rms(out, from: 0.1, to: 0.9), 0.005, "silence before the clip starts")
+        let early = try rms(out, from: 1.05, to: 1.35)          // inside the fade-in
+        let full = try rms(out, from: 1.8, to: 2.4)             // fully faded in
+        XCTAssertGreaterThan(full, 0.1, "the tone is audible")
+        XCTAssertLessThan(early, full * 0.75, "fade-in ramps the level up")
+        XCTAssertLessThan(try rms(out, from: 3.2, to: 4.8), 0.005, "silence after the clip ends")
+    }
+
+    @MainActor
+    func testMixdownVolumeAndLoopAndMute() throws {
+        let tone = try writeSine("mix2.wav", seconds: 1)
+        func render(_ project: MV.VideoProject, _ manager: MV.ProjectManager, _ name: String) throws -> URL? {
+            let out = root.appendingPathComponent(name)
+            return try MV.AudioMixdown.render(project: project,
+                mediaURL: { manager.mediaURL(projectID: project.id, file: $0.mediaFile) }, to: out) ? out : nil
+        }
+        let (loud, m1) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, volume: 1)
+        let (quiet, m2) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, volume: 0.5)
+        let loudOut = try XCTUnwrap(try render(loud, m1, "loud.caf")), quietOut = try XCTUnwrap(try render(quiet, m2, "quiet.caf"))
+        XCTAssertEqual(try rms(quietOut, from: 0.2, to: 0.8) / try rms(loudOut, from: 0.2, to: 0.8), 0.5, accuracy: 0.05, "volume scales the signal")
+        XCTAssertLessThan(try rms(loudOut, from: 2.0, to: 3.0), 0.005, "a 1 s file does not loop unless asked to")
+
+        let (loops, m3) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, loops: true)
+        let loopOut = try XCTUnwrap(try render(loops, m3, "loop.caf"))
+        XCTAssertGreaterThan(try rms(loopOut, from: 2.1, to: 2.9), 0.1, "looping keeps the music going")
+        XCTAssertGreaterThan(try rms(loopOut, from: 3.1, to: 3.8), 0.1)
+
+        var muted = loud
+        muted.audios[0].core.isVisible = false
+        XCTAssertNil(try render(muted, m1, "muted.caf"), "a muted project writes nothing")
+        var none = loud
+        none.audios = []
+        XCTAssertNil(try render(none, m1, "none.caf"))
+    }
+
+    // MARK: Transport observer (the audio engine's contract with the master clock)
+
+    private final class RecordingObserver: MV.TransportObserver {
+        var events: [String] = []
+        var master: MV.ProjectTime?
+        func transportDidStart(at time: MV.ProjectTime) { events.append("start") }
+        func transportDidStop() { events.append("stop") }
+        func transportDidSeek(to time: MV.ProjectTime, isPlaying: Bool) { events.append("seek:\(isPlaying)") }
+        func transportTick(at time: MV.ProjectTime) { if events.last != "tick" { events.append("tick") } }
+        func masterTime() -> MV.ProjectTime? { master }
+    }
+
+    func testMasterClockNotifiesObserversAndFollowsTheAudioClock() {
+        let engine = MV.PlaybackEngine()
+        let observer = RecordingObserver()
+        engine.observer = observer
+        engine.configure(duration: MV.ProjectTime(seconds: 10), fps: 30)
+        engine.seek(to: MV.ProjectTime(seconds: 2))
+        engine.play()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+        engine.seek(to: MV.ProjectTime(seconds: 5))
+        engine.pause()
+        XCTAssertEqual(Array(observer.events.prefix(3)), ["seek:false", "start", "tick"])
+        XCTAssertTrue(observer.events.contains("seek:true"), "seeking while playing reschedules the audio")
+        XCTAssertEqual(observer.events.last, "stop")
+
+        // When the audio hardware reports a time, the picture follows it.
+        engine.seek(to: .zero)
+        observer.master = MV.ProjectTime(seconds: 7)
+        engine.play()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        XCTAssertEqual(engine.time.seconds, 7, accuracy: 1e-6)
+        engine.pause()
+
+        // The end of the project stops observers too.
+        observer.master = nil
+        observer.events.removeAll()
+        engine.seek(to: MV.ProjectTime(seconds: 9.95))
+        engine.play()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        XCTAssertFalse(engine.isPlaying)
+        XCTAssertTrue(observer.events.contains("stop"))
+    }
+
+    // MARK: Phase 4 - vinyl in the real preview
+
+    @MainActor
+    func testVinylSpinsWithTimeAndStandsStillWhenTimeStands() async throws {
+        let manager = MV.ProjectManager(root: root)
+        var project = MV.VideoProject()
+        project.aspect = .square
+        // Cover: left half blue, right half red.
+        let size = CGSize(width: 200, height: 200)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let png = try XCTUnwrap(UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            UIColor.blue.setFill(); ctx.fill(CGRect(x: 0, y: 0, width: 100, height: 200))
+            UIColor.red.setFill(); ctx.fill(CGRect(x: 100, y: 0, width: 100, height: 200))
+        }.pngData())
+        let cover = try manager.storeImage(data: png, projectID: project.id)
+        MV.TimelineEngine.addVinyl(at: .zero, duration: MV.ProjectTime(seconds: 4), coverFile: cover.mediaFile, to: &project)
+        project.vinyls[0].rpm = 60
+        project.vinyls[0].reflection = 0
+        project.vinyls[0].shadow = 0
+        project.vinyls[0].glow = 0
+        project.vinyls[0].labelScale = 0.5
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        _ = await MV.PhotoImageCache.shared.load(model.manager.mediaURL(projectID: project.id, file: cover.mediaFile), maxPixel: 512)
+
+        // Label spans the middle half of the record; probe a point right of the centre.
+        func right(_ seconds: Double) throws -> (r: Int, g: Int, b: Int) {
+            try pixel(try render(model, at: seconds), 0.5 + 0.06, 0.5)
+        }
+        let a = try right(0.0)
+        XCTAssertGreaterThan(a.r, 150); XCTAssertLessThan(a.b, 100, "right half of the cover is red at angle 0")
+        let half = try right(0.5)                                  // 180 degrees at 60 rpm
+        XCTAssertGreaterThan(half.b, 150); XCTAssertLessThan(half.r, 100, "after half a turn the blue half is on the right")
+        let full = try right(1.0)                                  // 360 degrees
+        XCTAssertGreaterThan(full.r, 150); XCTAssertLessThan(full.b, 100, "a full turn is back to the start")
+        // Same time, same picture: the angle is a function of the clock.
+        let again = try right(0.5)
+        XCTAssertEqual(again.r, half.r); XCTAssertEqual(again.b, half.b)
+    }
+
+    @MainActor
+    func testToolbarActionsAddAudioAndVinylToTheProject() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        let model = MV.MusicVideoEditorModel(manager: manager, project: MV.VideoProject())
+        await model.importAudio(from: try writeSine("a.wav", seconds: 2))
+        XCTAssertEqual(model.project.audios.count, 1)
+        XCTAssertEqual(model.project.duration.seconds, 3, accuracy: 0.01, "the 2 s song fits inside the minimum")
+        XCTAssertEqual(model.selection, [model.project.audios[0].core.id])
+        XCTAssertTrue(model.visibleTracks.contains(.audio))
+
+        model.addVinyl()
+        XCTAssertEqual(model.project.vinyls.count, 1)
+        XCTAssertTrue(model.visibleTracks.contains(.vinyl))
+        XCTAssertGreaterThan(model.timelineHeight, MV.TimelineRulerView.height + 48 * 3)
+
+        // Undo removes the vinyl; the audio engine follows the project.
+        model.undo()
+        XCTAssertTrue(model.project.vinyls.isEmpty)
+        model.undo()
+        XCTAssertTrue(model.project.audios.isEmpty)
+
+        await model.importAudio(from: root.appendingPathComponent("missing.wav"))
+        XCTAssertNotNil(model.statusMessage, "a bad file is reported, not ignored")
     }
 }

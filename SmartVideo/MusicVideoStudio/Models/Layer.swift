@@ -32,8 +32,11 @@ extension MusicVideoStudio {
             }
         }
 
-        /// Phase 1 ships photo + text; the others arrive phase by phase.
-        var isAvailable: Bool { self == .photo || self == .text }
+        /// Tracks that exist in the editor today.
+        var isAvailable: Bool { true }
+
+        /// Always shown, even when empty (so there is somewhere to drop things).
+        var alwaysVisible: Bool { self == .photo || self == .audio || self == .text }
 
         /// Layers of higher tracks draw over lower ones by default.
         var baseZIndex: Int {

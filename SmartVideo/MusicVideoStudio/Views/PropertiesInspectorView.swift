@@ -159,12 +159,36 @@ extension MusicVideoStudio {
                     if single?.track == .text, model.selectedTextLayer() != nil {
                         textSection
                     }
+                    if single?.track == .audio, let audio = model.selectedAudioLayer() {
+                        audioSection(audio)
+                    }
+                    if single?.track == .vinyl, let vinyl = model.selectedVinylLayer() {
+                        group("Đĩa than") { VinylCustomizationView(model: model, layer: vinyl) }
+                    }
                 }
                 .disabled(locked)
                 Button { model.resetTransformOfSelection() } label: {
                     Label("Đặt lại biến đổi", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).disabled(locked)
+            }
+        }
+
+        private func audioSection(_ audio: AudioLayer) -> some View {
+            group("Nhạc") {
+                infoLine("Tệp", audio.originalName)
+                infoLine("Độ dài tệp", ProjectTime(seconds: audio.sourceDuration).timecode(fps: model.project.fps))
+                infoLine("Đang phát", "\(String(format: "%.2f", audio.sourceStart))s → \(String(format: "%.2f", audio.sourceStart + min(audio.availableSource, audio.core.duration.seconds)))s")
+                AudioTrimmerView(model: model, layer: audio)
+                slider("Âm lượng", model.audioBinding(\.volume, fallback: 1), AudioLayer.volumeRange) { "\(Int($0 * 100))%" }
+                slider("Mờ dần vào", model.audioBinding(\.fadeIn, fallback: 0), 0...min(30, max(0.5, audio.core.duration.seconds / 2))) { String(format: "%.1f s", $0) }
+                slider("Mờ dần ra", model.audioBinding(\.fadeOut, fallback: 0), 0...min(30, max(0.5, audio.core.duration.seconds / 2))) { String(format: "%.1f s", $0) }
+                Toggle("Lặp lại đến hết clip", isOn: model.audioBinding(\.loops, fallback: false)).font(.caption)
+                Button { model.fitPhotosToAudio() } label: {
+                    Label("Chia đều ảnh theo độ dài nhạc", systemImage: "rectangle.split.3x1").frame(maxWidth: .infinity)
+                }.buttonStyle(.bordered).font(.caption).disabled(model.project.photos.isEmpty)
+                Text("Nút \"Hiển thị\" của lớp nhạc bật/tắt tiếng. Kéo clip để dời nhạc, kéo mép để cắt.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
         }
 

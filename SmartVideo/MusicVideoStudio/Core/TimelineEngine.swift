@@ -5,6 +5,7 @@ extension MusicVideoStudio {
     enum RenderItem: Identifiable, Hashable {
         case photo(PhotoLayer)
         case text(TextLayer)
+        case vinyl(VinylLayer)
 
         var id: UUID { core.id }
 
@@ -12,6 +13,7 @@ extension MusicVideoStudio {
             switch self {
             case .photo(let layer): return layer.core
             case .text(let layer): return layer.core
+            case .vinyl(let layer): return layer.core
             }
         }
     }
@@ -30,6 +32,9 @@ extension MusicVideoStudio {
             }
             for (i, layer) in project.texts.enumerated() where layer.core.isActive(at: time) {
                 items.append((project.photos.count + i, .text(layer)))
+            }
+            for (i, layer) in project.vinyls.enumerated() where layer.core.isActive(at: time) {
+                items.append((project.photos.count + project.texts.count + i, .vinyl(layer)))
             }
             return items.sorted {
                 $0.item.core.zIndex != $1.item.core.zIndex
@@ -101,6 +106,41 @@ extension MusicVideoStudio {
             return core.id
         }
 
+        static let maxAudioSeconds = 3_600.0
+
+        /// Adds an audio clip at `time` covering the whole file (capped at an hour).
+        @discardableResult
+        static func addAudio(_ audio: ProjectManager.ImportedAudio, at time: ProjectTime, to project: inout VideoProject) -> UUID? {
+            guard project.layerCount < VideoProject.maxLayers else { return nil }
+            let length = min(audio.duration, maxAudioSeconds)
+            let core = LayerCore(name: audio.originalName, track: .audio,
+                                 start: max(.zero, time).quantized(fps: project.fps),
+                                 duration: ProjectTime(seconds: length), zIndex: 0)
+            project.audios.append(AudioLayer(core: core, mediaFile: audio.mediaFile,
+                                             originalName: audio.originalName, sourceDuration: audio.duration))
+            return core.id
+        }
+
+        /// A record in the middle of the canvas for `duration` (the project length when nil).
+        @discardableResult
+        static func addVinyl(at time: ProjectTime, duration: ProjectTime? = nil, coverFile: String?,
+                             to project: inout VideoProject) -> UUID? {
+            guard project.layerCount < VideoProject.maxLayers else { return nil }
+            let start = max(.zero, time).quantized(fps: project.fps)
+            let length = duration ?? max(defaultTextDuration, project.duration - start)
+            let core = LayerCore(name: "Đĩa than \(project.vinyls.count + 1)", track: .vinyl,
+                                 start: start, duration: length, zIndex: project.nextZIndex(for: .vinyl))
+            project.vinyls.append(VinylLayer(core: core, coverFile: coverFile))
+            return core.id
+        }
+
+        /// Spreads the photos evenly across the music (`seconds`) and packs them.
+        static func fitPhotos(toDuration seconds: Double, in project: inout VideoProject) {
+            let count = max(1, project.photos.filter { !$0.core.isLocked }.count)
+            let each = max(LayerCore.minimumDuration.seconds, seconds / Double(count))
+            TimelineEditing.setAllPhotoDurations(ProjectTime(seconds: each), in: &project)
+        }
+
         /// Copies are placed right after the original on the same track.
         @discardableResult
         static func duplicate(_ ids: Set<UUID>, in project: inout VideoProject) -> [UUID] {
@@ -125,6 +165,27 @@ extension MusicVideoStudio {
                 copy.core.isLocked = false
                 copy.core.zIndex = project.nextZIndex(for: .text)
                 project.texts.append(copy)
+                created.append(copy.core.id)
+            }
+            for layer in project.audios where ids.contains(layer.core.id) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var copy = layer
+                copy.core.id = UUID()
+                copy.core.name = layer.core.name + " (bản sao)"
+                copy.core.start = layer.core.end
+                copy.core.isLocked = false
+                project.audios.append(copy)
+                created.append(copy.core.id)
+            }
+            for layer in project.vinyls where ids.contains(layer.core.id) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var copy = layer
+                copy.core.id = UUID()
+                copy.core.name = layer.core.name + " (bản sao)"
+                copy.core.start = layer.core.end
+                copy.core.isLocked = false
+                copy.core.zIndex = project.nextZIndex(for: .vinyl)
+                project.vinyls.append(copy)
                 created.append(copy.core.id)
             }
             return created

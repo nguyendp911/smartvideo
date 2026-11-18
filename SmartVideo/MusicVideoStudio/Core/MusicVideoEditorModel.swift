@@ -19,6 +19,7 @@ extension MusicVideoStudio {
         @Published private(set) var snapGuide: ProjectTime?
 
         let playback = PlaybackEngine()
+        let audio = AudioPlaybackEngine()
         let manager: ProjectManager
 
         private var history = UndoHistory<VideoProject>()
@@ -34,6 +35,17 @@ extension MusicVideoStudio {
                 self.project = VideoProject()
             }
             playback.configure(duration: self.project.duration, fps: self.project.fps)
+            playback.observer = audio
+            audio.onInterruption = { [weak self] in self?.playback.pause() }
+            syncAudio()
+        }
+
+        /// Keeps the live audio engine in step with the project's audio clips.
+        func syncAudio() {
+            let manager = self.manager, projectID = project.id
+            audio.update(audios: project.audios,
+                         mediaURL: { manager.mediaURL(projectID: projectID, file: $0.mediaFile) },
+                         time: playback.state.time)
         }
 
         // MARK: Derived
@@ -61,8 +73,10 @@ extension MusicVideoStudio {
             guard candidate != project else { return }
             var next = candidate
             next.modifiedAt = Date()
+            let audioChanged = next.audios != project.audios
             project = next
             playback.configure(duration: project.duration, fps: project.fps)
+            if audioChanged { syncAudio() }
             scheduleSave()
         }
 
@@ -92,6 +106,7 @@ extension MusicVideoStudio {
             project = snapshot
             selection = selection.filter { project.core(for: $0) != nil }
             playback.configure(duration: project.duration, fps: project.fps)
+            syncAudio()
             scheduleSave()
         }
 
@@ -365,6 +380,90 @@ extension MusicVideoStudio {
             PhotoImageCache.shared.prefetch(urls, maxPixel: maxPixel)
         }
 
+        // MARK: Audio and vinyl
+
+        func importAudio(from url: URL) async {
+            guard !isImporting else { return }
+            isImporting = true
+            importProgress = "Đang nhập nhạc…"
+            let projectID = project.id
+            do {
+                let imported = try await manager.storeAudio(from: url, projectID: projectID)
+                guard project.id == projectID else { isImporting = false; return }
+                var created: UUID?
+                let time = project.audios.isEmpty ? ProjectTime.zero : playback.state.frameTime
+                edit { created = TimelineEngine.addAudio(imported, at: time, to: &$0) }
+                if let created { selection = [created] }
+                statusMessage = nil
+            } catch {
+                statusMessage = error.localizedDescription
+            }
+            importProgress = ""
+            isImporting = false
+        }
+
+        func addVinyl() {
+            let cover = selectedPhotoLayer()?.mediaFile ?? project.photos.first?.mediaFile
+            let time = playback.state.frameTime
+            var created: UUID?
+            edit { created = TimelineEngine.addVinyl(at: time, coverFile: cover, to: &$0) }
+            if let created { selection = [created] }
+        }
+
+        func fitPhotosToAudio() {
+            guard let audio = selectedAudioLayer() ?? project.audios.first else { return }
+            let seconds = audio.core.duration.seconds
+            edit { TimelineEngine.fitPhotos(toDuration: seconds, in: &$0) }
+        }
+
+        func selectedAudioLayer() -> AudioLayer? { project.audios.first { selection.contains($0.core.id) } }
+        func selectedVinylLayer() -> VinylLayer? { project.vinyls.first { selection.contains($0.core.id) } }
+
+        func audioBinding<T>(_ keyPath: WritableKeyPath<AudioLayer, T>, fallback: T) -> Binding<T> {
+            Binding(
+                get: { [weak self] in self?.selectedAudioLayer()?[keyPath: keyPath] ?? fallback },
+                set: { [weak self] value in
+                    guard let self else { return }
+                    let ids = self.editableSelection
+                    self.mutate { project in
+                        for i in project.audios.indices where ids.contains(project.audios[i].core.id) {
+                            project.audios[i][keyPath: keyPath] = value
+                        }
+                    }
+                }
+            )
+        }
+
+        func vinylBinding<T>(_ keyPath: WritableKeyPath<VinylLayer, T>, fallback: T) -> Binding<T> {
+            Binding(
+                get: { [weak self] in self?.selectedVinylLayer()?[keyPath: keyPath] ?? fallback },
+                set: { [weak self] value in
+                    guard let self else { return }
+                    let ids = self.editableSelection
+                    self.mutate { project in
+                        for i in project.vinyls.indices where ids.contains(project.vinyls[i].core.id) {
+                            project.vinyls[i][keyPath: keyPath] = value
+                        }
+                    }
+                }
+            )
+        }
+
+        /// Trim handle drag on the audio trimmer (continuous: call `beginEdit()` first).
+        func setAudioTrim(_ id: UUID, sourceStart: Double, sourceEnd: Double) {
+            mutate { _ = TimelineEditing.setAudioTrim(id, sourceStart: sourceStart, sourceEnd: sourceEnd, in: &$0) }
+        }
+
+        /// Timeline lanes that exist right now: the always-visible ones plus any with layers.
+        var visibleTracks: [TrackKind] {
+            let used = Set(project.allCores.map(\.track))
+            return TrackKind.allCases.filter { $0.alwaysVisible || used.contains($0) }
+        }
+
+        var timelineHeight: CGFloat {
+            min(300, TimelineRulerView.height + 48 * CGFloat(visibleTracks.count) + 44)
+        }
+
         // MARK: Persistence
 
         private func scheduleSave() {
@@ -396,6 +495,7 @@ extension MusicVideoStudio {
             project = VideoProject()
             playback.configure(duration: project.duration, fps: project.fps)
             playback.seek(to: .zero)
+            syncAudio()
             try? manager.save(project)
         }
 
@@ -408,6 +508,7 @@ extension MusicVideoStudio {
             project = loaded
             playback.configure(duration: project.duration, fps: project.fps)
             playback.seek(to: .zero)
+            syncAudio()
             statusMessage = nil
         }
 

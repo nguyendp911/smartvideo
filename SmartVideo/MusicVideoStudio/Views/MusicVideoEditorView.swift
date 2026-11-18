@@ -32,7 +32,7 @@ extension MusicVideoStudio {
                     }
                     Divider().overlay(Color.white.opacity(0.08))
                     TimelineTracksView(model: model, playback: model.playback)
-                        .frame(height: 26 + 48 * 2 + 40)
+                        .frame(height: model.timelineHeight)
                     LayerToolbarView(model: model, showInspector: sideBySide ? Binding<Bool>.constant(true) : $showInspector)
                 }
                 .sheet(isPresented: Binding(

@@ -89,6 +89,14 @@ extension MusicVideoStudio {
                 var start = origin.start + delta
                 if let point = nearest(to: start, in: points, threshold: threshold) { start = point; snappedTo = point }
                 start = start.clamped(.zero, origin.end - minimumDuration).quantized(fps: fps)
+                // Trimming the HEAD of audio keeps the music aligned: the trim
+                // point inside the file moves by the same amount (never below 0).
+                if let a = project.audios.firstIndex(where: { $0.core.id == id }) {
+                    let shift = (start - core.start).seconds
+                    let newSource = project.audios[a].sourceStart + shift
+                    if newSource < 0 { start = start - ProjectTime(seconds: newSource); project.audios[a].sourceStart = 0 }
+                    else { project.audios[a].sourceStart = newSource }
+                }
                 let duration = origin.end - start
                 project.updateCore(id) { $0.start = start; $0.duration = duration }
             case .end:
@@ -99,6 +107,23 @@ extension MusicVideoStudio {
                 project.updateCore(id) { $0.duration = duration }
             }
             return snappedTo
+        }
+
+        // MARK: Audio trim (source range)
+
+        /// Sets which part of the FILE plays (`sourceStart`...`sourceEnd`, seconds).
+        /// A non-looping clip's length follows; a looping clip keeps its length.
+        @discardableResult
+        static func setAudioTrim(_ id: UUID, sourceStart: Double, sourceEnd: Double, in project: inout VideoProject) -> Bool {
+            guard let i = project.audios.firstIndex(where: { $0.core.id == id }), !project.audios[i].core.isLocked else { return false }
+            let total = project.audios[i].sourceDuration
+            let start = min(max(0, sourceStart.isFinite ? sourceStart : 0), max(0, total - minimumDuration.seconds))
+            let end = min(total, max(start + minimumDuration.seconds, sourceEnd.isFinite ? sourceEnd : total))
+            project.audios[i].sourceStart = start
+            if !project.audios[i].loops {
+                project.audios[i].core.duration = ProjectTime(seconds: end - start).quantized(fps: project.fps)
+            }
+            return true
         }
 
         // MARK: Split
@@ -125,6 +150,35 @@ extension MusicVideoStudio {
                 right.core.duration = end - cut
                 right.transitionIn = PhotoTransition()           // a cut is a hard cut
                 project.photos.append(right)
+                created.append(right.core.id)
+            }
+            for i in project.audios.indices where canSplit(project.audios[i].core) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var right = project.audios[i]
+                let end = right.core.end
+                let leftLength = cut - project.audios[i].core.start
+                project.audios[i].core.duration = leftLength
+                right.core.id = UUID()
+                right.core.name = project.audios[i].core.name + " (2)"
+                right.core.start = cut
+                right.core.duration = end - cut
+                right.sourceStart = project.audios[i].sourceStart + leftLength.seconds     // continues where the left half stops
+                right.fadeIn = 0
+                project.audios[i].fadeOut = 0
+                project.audios.append(right)
+                created.append(right.core.id)
+            }
+            for i in project.vinyls.indices where canSplit(project.vinyls[i].core) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var right = project.vinyls[i]
+                let end = right.core.end
+                right.phase = project.vinyls[i].phase + (cut - project.vinyls[i].core.start).seconds
+                project.vinyls[i].core.duration = cut - project.vinyls[i].core.start
+                right.core.id = UUID()
+                right.core.name = project.vinyls[i].core.name + " (2)"
+                right.core.start = cut
+                right.core.duration = end - cut
+                project.vinyls.append(right)
                 created.append(right.core.id)
             }
             for i in project.texts.indices where canSplit(project.texts[i].core) {

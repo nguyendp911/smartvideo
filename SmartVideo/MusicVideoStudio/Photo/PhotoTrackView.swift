@@ -19,6 +19,11 @@ extension MusicVideoStudio {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .opacity(clip.isVisible ? 0.9 : 0.3)
                 }
+                if track == .audio, let layer = model.project.audios.first(where: { $0.core.id == clip.id }) {
+                    AudioWaveformView(layer: layer, url: model.manager.mediaURL(projectID: model.project.id, file: layer.mediaFile))
+                        .padding(.vertical, 2)
+                        .opacity(clip.isVisible ? 1 : 0.3)
+                }
                 HStack(spacing: 3) {
                     Text(clip.title).font(.system(size: 10, weight: .semibold)).lineLimit(1)
                     if clip.isLocked { Image(systemName: "lock.fill").font(.system(size: 8)) }
@@ -97,7 +102,17 @@ extension MusicVideoStudio {
             if !model.selection.contains(clip.id) { model.selection = [clip.id] }
         }
 
-        private var color: Color { track == .photo ? .blue : .orange }
+        private var color: Color {
+            switch track {
+            case .photo: return .blue
+            case .audio: return .green
+            case .text: return .orange
+            case .vinyl: return .pink
+            case .lyrics: return .yellow
+            case .visualizer: return .purple
+            case .effects: return .mint
+            }
+        }
     }
 
     /// Small decoded thumbnail, loaded off the main thread and cached.
