@@ -613,9 +613,20 @@ extension MusicVideoStudio {
         }
 
         /// Starts the (one-off, cached) analysis of every audio file a visualizer uses.
+        /// Audio files whose analysis something on the timeline needs (visualizers, beat effects).
+        private func spectrumAudioFiles() -> [String] {
+            var ids: [UUID] = project.visualizers.compactMap(\.audioLayerID)
+            ids += project.effects.filter { $0.kind.needsAudio }.compactMap(\.audioLayerID)
+            var files: [String] = []
+            for id in ids {
+                if let file = project.audios.first(where: { $0.core.id == id })?.mediaFile, !files.contains(file) { files.append(file) }
+            }
+            return files
+        }
+
         func prepareSpectra() {
-            for layer in project.visualizers {
-                guard let file = audioFile(for: layer), spectra[file] == nil, spectrumRequests.insert(file).inserted else { continue }
+            for file in spectrumAudioFiles() {
+                guard spectra[file] == nil, spectrumRequests.insert(file).inserted else { continue }
                 let url = manager.mediaURL(projectID: project.id, file: file)
                 Task { [weak self] in
                     let value = await SpectrumCache.shared.spectrum(for: url)
@@ -630,8 +641,7 @@ extension MusicVideoStudio {
         /// Spectra of every visualizer's audio, awaiting analysis if needed (used by export).
         func loadSpectra() async -> [String: SpectrumData] {
             var result: [String: SpectrumData] = [:]
-            for layer in project.visualizers {
-                guard let file = audioFile(for: layer) else { continue }
+            for file in spectrumAudioFiles() {
                 if let known = spectra[file] { result[file] = known; continue }
                 if let value = await SpectrumCache.shared.spectrum(for: manager.mediaURL(projectID: project.id, file: file)) {
                     spectra[file] = value
@@ -685,6 +695,55 @@ extension MusicVideoStudio {
             guard cuts.count >= 2 else { statusMessage = nil; return }
             edit { TimelineEngine.fitPhotos(toCuts: cuts, in: &$0) }
             statusMessage = "Đã cắt ảnh theo \(cuts.count - 1) đoạn nhịp."
+        }
+
+        // MARK: Effects
+
+        func selectedEffectLayer() -> EffectLayer? { project.effects.first { selection.contains($0.core.id) } }
+
+        func addEffect(_ kind: EffectKind) {
+            let audio = selectedAudioLayer() ?? project.audios.first
+            if kind.needsAudio && audio == nil {
+                statusMessage = "Hiệu ứng theo nhịp cần nhạc: thêm nhạc trước."
+                return
+            }
+            var created: UUID?
+            edit { created = TimelineEngine.addEffect(kind, audioID: audio?.core.id, to: &$0) }
+            if let created { selection = [created] }
+        }
+
+        func effectBinding<T>(_ keyPath: WritableKeyPath<EffectLayer, T>, fallback: T) -> Binding<T> {
+            Binding(
+                get: { [weak self] in self?.selectedEffectLayer()?[keyPath: keyPath] ?? fallback },
+                set: { [weak self] value in
+                    guard let self else { return }
+                    let ids = self.editableSelection
+                    self.mutate { project in
+                        for i in project.effects.indices where ids.contains(project.effects[i].core.id) {
+                            project.effects[i][keyPath: keyPath] = value
+                        }
+                    }
+                }
+            )
+        }
+
+        /// Beats (project seconds) that drive a beat effect: the linked clip's beats, every n-th.
+        func effectBeats(for layer: EffectLayer) -> [Double] {
+            guard layer.kind.needsAudio, let id = layer.audioLayerID,
+                  let audio = project.audios.first(where: { $0.core.id == id }),
+                  let data = spectra[audio.mediaFile] else { return [] }
+            return EffectMath.projectBeats(fileBeats: data.beats, offset: audio.core.start.seconds - audio.sourceStart,
+                                           from: audio.core.start.seconds, to: audio.core.end.seconds, every: layer.everyBeats)
+        }
+
+        /// Shake / Beat Pulse motion for the pictures at `time` (shared by preview and export).
+        func sceneMotion(items: [RenderItem], at time: ProjectTime) -> SceneMotion {
+            let effects = items.compactMap { item -> EffectLayer? in
+                if case .effect(let layer) = item { return layer }
+                return nil
+            }
+            guard !effects.isEmpty else { return .identity }
+            return EffectMath.sceneMotion(effects: effects, at: time, beats: { effectBeats(for: $0) })
         }
 
         // MARK: Persistence

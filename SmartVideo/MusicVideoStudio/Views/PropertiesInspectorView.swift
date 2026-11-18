@@ -162,6 +162,9 @@ extension MusicVideoStudio {
                     if single?.track == .audio, let audio = model.selectedAudioLayer() {
                         audioSection(audio)
                     }
+                    if single?.track == .effects, let effect = model.selectedEffectLayer() {
+                        effectSection(effect)
+                    }
                     if single?.track == .visualizer, let visualizer = model.selectedVisualizerLayer() {
                         visualizerSection(visualizer)
                     }
@@ -177,6 +180,38 @@ extension MusicVideoStudio {
                     Label("Đặt lại biến đổi", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).disabled(locked)
+            }
+        }
+
+        private func effectSection(_ layer: EffectLayer) -> some View {
+            group("Hiệu ứng: \(layer.kind.rawValue)") {
+                Picker("Loại", selection: model.effectBinding(\.kind, fallback: .vignette)) {
+                    ForEach(EffectKind.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                slider("Cường độ", model.effectBinding(\.intensity, fallback: 0.6), EffectLayer.intensityRange) { "\(Int($0 * 100))%" }
+                if layer.kind == .shake || layer.kind == .lightLeak {
+                    slider("Tốc độ", model.effectBinding(\.speed, fallback: 1), EffectLayer.speedRange) { String(format: "%.1fx", $0) }
+                }
+                if layer.kind == .lightLeak || layer.kind == .flash {
+                    ColorPicker("Màu", selection: MusicVideoStudio.colorBinding(model.effectBinding(\.colorHex, fallback: "#FFB74D"), beginEdit: model.beginEdit)).font(.caption)
+                }
+                if layer.kind == .fadeBlack {
+                    slider("Mờ vào", model.effectBinding(\.fadeIn, fallback: 1), EffectLayer.fadeRange) { String(format: "%.1f s", $0) }
+                    slider("Mờ ra", model.effectBinding(\.fadeOut, fallback: 1), EffectLayer.fadeRange) { String(format: "%.1f s", $0) }
+                }
+                if layer.kind.needsAudio {
+                    Stepper("Dùng mỗi \(layer.everyBeats) nhịp", value: model.effectBinding(\.everyBeats, fallback: 1), in: EffectLayer.beatsRange).font(.caption)
+                    row("Nhạc") {
+                        Picker("Nhạc", selection: model.effectBinding(\.audioLayerID, fallback: nil)) {
+                            Text("Không gắn").tag(UUID?.none)
+                            ForEach(model.project.audios) { Text($0.originalName).tag(Optional($0.core.id)) }
+                        }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    if model.effectBeats(for: layer).isEmpty {
+                        HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Đang tìm nhịp (hoặc bài không có nhịp rõ)…").font(.caption2) }
+                    }
+                }
+                Text("Kéo mép lớp trên dòng thời gian để chọn đoạn áp dụng.").font(.caption2).foregroundStyle(.secondary)
             }
         }
 

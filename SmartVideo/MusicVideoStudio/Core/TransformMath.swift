@@ -122,6 +122,8 @@ extension MusicVideoStudio {
                 return CGSize(width: side, height: side)
             case .visualizer(let layer):
                 return CGSize(width: canvas.width * CGFloat(layer.width), height: canvas.height * CGFloat(layer.height))
+            case .effect:
+                return .zero                                   // full-frame overlays are not picked on the canvas
             }
         }
 
@@ -129,6 +131,7 @@ extension MusicVideoStudio {
             let t = item.core.transform
             guard point.x.isFinite, point.y.isFinite, t.scale > 0 else { return false }
             let size = boxSize(of: item, canvas: canvas)
+            guard size.width > 0, size.height > 0 else { return false }
             let center = CGPoint(x: canvas.width * CGFloat(t.x), y: canvas.height * CGFloat(t.y))
             // Into the layer's own axes: undo rotation, then scale.
             let angle = -t.rotation * Double.pi / 180

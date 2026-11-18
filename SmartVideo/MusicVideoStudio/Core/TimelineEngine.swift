@@ -8,6 +8,7 @@ extension MusicVideoStudio {
         case vinyl(VinylLayer)
         case lyrics(LyricsLayer)
         case visualizer(VisualizerLayer)
+        case effect(EffectLayer)
 
         var id: UUID { core.id }
 
@@ -18,6 +19,7 @@ extension MusicVideoStudio {
             case .vinyl(let layer): return layer.core
             case .lyrics(let layer): return layer.core
             case .visualizer(let layer): return layer.core
+            case .effect(let layer): return layer.core
             }
         }
     }
@@ -45,6 +47,10 @@ extension MusicVideoStudio {
             }
             for (i, layer) in project.visualizers.enumerated() where layer.core.isActive(at: time) {
                 items.append((project.photos.count + project.texts.count + project.vinyls.count + project.lyrics.count + i, .visualizer(layer)))
+            }
+            for (i, layer) in project.effects.enumerated() where layer.core.isActive(at: time) {
+                items.append((project.photos.count + project.texts.count + project.vinyls.count + project.lyrics.count
+                              + project.visualizers.count + i, .effect(layer)))
             }
             return items.sorted {
                 $0.item.core.zIndex != $1.item.core.zIndex
@@ -172,6 +178,28 @@ extension MusicVideoStudio {
             return core.id
         }
 
+        /// An effect over the whole project. Beat effects link to `audioID` (nil when there is no music).
+        @discardableResult
+        static func addEffect(_ kind: EffectKind, audioID: UUID?, to project: inout VideoProject) -> UUID? {
+            guard project.layerCount < VideoProject.maxLayers else { return nil }
+            let audio = audioID.flatMap { id in project.audios.first { $0.core.id == id } }
+            if kind.needsAudio && audio == nil { return nil }
+            let core = LayerCore(name: kind.rawValue, track: .effects,
+                                 start: audio?.core.start ?? .zero,
+                                 duration: audio?.core.duration ?? max(defaultTextDuration, project.duration),
+                                 zIndex: project.nextZIndex(for: .effects))
+            var layer = EffectLayer(core: core, kind: kind, audioLayerID: kind.needsAudio ? audio?.core.id : nil)
+            switch kind {
+            case .flash: layer.colorHex = "#FFFFFF"; layer.intensity = 0.5
+            case .fadeBlack: layer.intensity = 1
+            case .shake: layer.intensity = 0.5
+            case .scanlines: layer.intensity = 0.5
+            default: break
+            }
+            project.effects.append(layer)
+            return core.id
+        }
+
         /// Puts the unlocked photos, in timeline order, between consecutive cut times (project
         /// seconds). Extra photos continue after the last cut; a last photo stretches to the final cut.
         static func fitPhotos(toCuts cuts: [Double], in project: inout VideoProject) {
@@ -237,6 +265,16 @@ extension MusicVideoStudio {
                 copy.core.start = layer.core.end
                 copy.core.isLocked = false
                 project.audios.append(copy)
+                created.append(copy.core.id)
+            }
+            for layer in project.effects where ids.contains(layer.core.id) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var copy = layer
+                copy.core.id = UUID()
+                copy.core.name = layer.core.name + " (bản sao)"
+                copy.core.isLocked = false
+                copy.core.zIndex = project.nextZIndex(for: .effects)
+                project.effects.append(copy)
                 created.append(copy.core.id)
             }
             for layer in project.visualizers where ids.contains(layer.core.id) {

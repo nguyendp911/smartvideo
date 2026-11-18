@@ -8,6 +8,12 @@ extension MusicVideoStudio {
         case slideRight = "Trượt từ trái"
         case slideUp = "Trượt từ dưới"
         case zoom = "Phóng vào"
+        case slideDown = "Trượt từ trên"
+        case spin = "Xoay vào"
+        case blur = "Nhòe vào"
+        case bounce = "Nảy lên"
+        case flip = "Lật"
+        case wipe = "Quét ngang"
         var id: String { rawValue }
     }
 
@@ -30,12 +36,27 @@ extension MusicVideoStudio {
             /// Fractions of the canvas width / height.
             var offsetX = 0.0
             var offsetY = 0.0
+            /// Extra rotation in degrees (Spin).
+            var rotation = 0.0
+            /// Blur radius as a fraction of the canvas' short side.
+            var blur = 0.0
+            /// Rotation around the vertical axis in degrees (Flip).
+            var flip = 0.0
+            /// Fraction of the width revealed from the left; nil = everything (Wipe).
+            var reveal: Double?
             static let identity = Effect()
         }
 
         static func smooth(_ p: Double) -> Double {
             let x = min(1, max(0, p.isFinite ? p : 0))
             return x * x * (3 - 2 * x)
+        }
+
+        /// Overshoots 1 a little, then settles (0 -> 1).
+        static func easeOutBack(_ p: Double) -> Double {
+            let c1 = 1.70158, c3 = c1 + 1
+            let x = p - 1
+            return 1 + c3 * x * x * x + c1 * x * x
         }
 
         /// The duration actually used: never longer than 90% of the photo.
@@ -63,6 +84,14 @@ extension MusicVideoStudio {
             case .slideRight: return Effect(offsetX: -(1 - p))
             case .slideUp: return Effect(offsetY: 1 - p)
             case .zoom: return Effect(opacity: p, scale: 1.35 - 0.35 * p)
+            case .slideDown: return Effect(offsetY: -(1 - p))
+            case .spin: return Effect(opacity: p, scale: 1.4 - 0.4 * p, rotation: -35 * (1 - p))
+            case .blur: return Effect(opacity: p, blur: 0.05 * (1 - p))
+            case .bounce:
+                let raw = min(1, max(0, rawProgress.isFinite ? rawProgress : 0))
+                return Effect(opacity: min(1, raw * 4), scale: easeOutBack(raw))
+            case .flip: return Effect(flip: -90 * (1 - p))
+            case .wipe: return Effect(reveal: p)
             }
         }
 

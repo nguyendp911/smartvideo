@@ -31,6 +31,11 @@ extension MusicVideoStudio {
                         .disabled(model.isImporting)
                     Button { model.addLyrics() } label: { item("Lời", "music.mic") }
                     Button { model.addVisualizer() } label: { item("Visualizer", "chart.bar.fill") }
+                    Menu {
+                        ForEach(EffectKind.allCases) { kind in
+                            Button(kind.rawValue) { model.addEffect(kind) }
+                        }
+                    } label: { item("Hiệu ứng", "sparkles") }
                     Button { model.addVinyl() } label: { item("Đĩa than", "opticaldisc") }
                     Button { model.addText() } label: { item("Chữ", "textformat") }
                     Divider().frame(height: 28)

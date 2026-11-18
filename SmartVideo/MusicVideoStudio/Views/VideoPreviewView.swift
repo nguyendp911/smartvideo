@@ -12,6 +12,7 @@ extension MusicVideoStudio {
             GeometryReader { geo in
                 let canvas = Self.fitted(ratio: model.project.aspect.ratio, in: geo.size)
                 let items = TimelineEngine.renderItems(in: model.project, at: playback.state.frameTime)
+                let motion = model.sceneMotion(items: items, at: playback.state.frameTime)
                 ZStack {
                     Color(white: 0.03)
                     ZStack {
@@ -19,7 +20,7 @@ extension MusicVideoStudio {
                         ForEach(items) { item in
                             LayerRenderView(item: item, canvas: canvas, time: playback.state.frameTime,
                                             selected: model.selection.contains(item.id),
-                                            model: model)
+                                            model: model, motion: motion)
                         }
                         TransformGuidesView(guides: model.transformGuides, showSafeArea: model.showSafeArea, canvas: canvas)
                         TransformOverlay(model: model, canvas: canvas, items: items)
@@ -59,9 +60,24 @@ extension MusicVideoStudio {
         let time: ProjectTime
         let selected: Bool
         let model: MusicVideoEditorModel
+        var motion = SceneMotion.identity
+
+        /// Pictures shake and pulse; text, lyrics and overlay effects stay still.
+        private var isScene: Bool {
+            switch item {
+            case .photo, .vinyl, .visualizer: return true
+            case .text, .lyrics, .effect: return false
+            }
+        }
 
         var body: some View {
+            content.modifier(SceneMotionModifier(motion: isScene ? motion : .identity, canvas: canvas))
+        }
+
+        @ViewBuilder private var content: some View {
             switch item {
+            case .effect(let layer):
+                EffectLayerView(layer: layer, canvas: canvas, time: time, beats: model.effectBeats(for: layer), selected: selected)
             case .photo(let layer):
                 PhotoLayerView(layer: layer, url: model.mediaURL(for: layer), canvas: canvas, time: time, selected: selected)
             case .text(let layer):
@@ -124,8 +140,11 @@ extension MusicVideoStudio {
                 if selected { Rectangle().strokeBorder(Color.cyan, lineWidth: 2) }
             }
             .frame(width: canvas.width, height: canvas.height)
+            .modifier(RevealMaskModifier(reveal: tr.reveal, canvas: canvas))
+            .blur(radius: CGFloat(tr.blur) * min(canvas.width, canvas.height))
+            .rotation3DEffect(.degrees(tr.flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
             .scaleEffect(t.scale * tr.scale)
-            .rotationEffect(.degrees(t.rotation))
+            .rotationEffect(.degrees(t.rotation + tr.rotation))
             .offset(x: CGFloat(t.x - 0.5 + tr.offsetX) * canvas.width, y: CGFloat(t.y - 0.5 + tr.offsetY) * canvas.height)
             .opacity(t.opacity * tr.opacity)
             .task(id: url) {

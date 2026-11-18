@@ -130,7 +130,7 @@ final class MockupStudioSession: ObservableObject {
 
     // MARK: Layer operations (each is one undo step)
 
-    static func makeLayer(_ asset: MockupStudioAsset, start: Double, duration: Double,
+    nonisolated static func makeLayer(_ asset: MockupStudioAsset, start: Double, duration: Double,
                           at point: CGPoint? = nil) -> MockupOverlayClip {
         var clip = MockupOverlayClip()
         clip.assetID = asset.id

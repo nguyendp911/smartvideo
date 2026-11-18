@@ -577,7 +577,8 @@ final class MusicVideoStudioTests: XCTestCase {
         let (loud, m1) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, volume: 1)
         let (quiet, m2) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, volume: 0.5)
         let loudOut = try XCTUnwrap(try render(loud, m1, "loud.caf")), quietOut = try XCTUnwrap(try render(quiet, m2, "quiet.caf"))
-        XCTAssertEqual(try rms(quietOut, from: 0.2, to: 0.8) / try rms(loudOut, from: 0.2, to: 0.8), 0.5, accuracy: 0.05, "volume scales the signal")
+        let quietLevel = try rms(quietOut, from: 0.2, to: 0.8), loudLevel = try rms(loudOut, from: 0.2, to: 0.8)
+        XCTAssertEqual(quietLevel / loudLevel, 0.5, accuracy: 0.05, "volume scales the signal")
         XCTAssertLessThan(try rms(loudOut, from: 2.0, to: 3.0), 0.005, "a 1 s file does not loop unless asked to")
 
         let (loops, m3) = try mixProject(tone, start: 0, duration: 4, fileSeconds: 1, loops: true)
@@ -934,7 +935,12 @@ final class MusicVideoStudioTests: XCTestCase {
         var layer = MV.VisualizerLayer(core: core, audioLayerID: nil)
         layer.width = 1; layer.height = 0.8; layer.glow = 0
         let silent = MV.VisualizerFrame(bands: [Float](repeating: 0, count: layer.barCount), bass: 0, pulse: 0)
-        let loud = MV.VisualizerFrame(bands: (0..<layer.barCount).map { Float(0.4 + 0.5 * sin(Double($0) / 4) * sin(Double($0) / 4)) }, bass: 0.9, pulse: 1)
+        var loudBands: [Float] = []
+        for i in 0..<layer.barCount {
+            let wave: Double = sin(Double(i) / 4)
+            loudBands.append(Float(0.4 + 0.5 * wave * wave))
+        }
+        let loud = MV.VisualizerFrame(bands: loudBands, bass: 0.9, pulse: 1)
         let growing: Set<MV.VisualizerStyle> = [.bars, .mirror, .area, .dots, .circle]
         for style in MV.VisualizerStyle.allCases {
             layer.style = style
@@ -1044,5 +1050,130 @@ final class MusicVideoStudioTests: XCTestCase {
         model.transformGuides = MV.TransformGuides()
         let plain = try pixel(try render(model, at: 0.5), 0.5, 0.6)
         XCTAssertLessThan(plain.r, 60, "no guide, no line")
+    }
+
+    // MARK: Phase 8 - effects and transitions
+
+    @MainActor
+    private func landscapeModel(photoColor: UIColor = .white, photos count: Int = 1) async throws -> MV.MusicVideoEditorModel {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        let photo = try manager.storeImage(data: try solidPNG(photoColor), projectID: model.project.id)
+        model.edit { _ = MV.TimelineEngine.appendPhotos(Array(repeating: photo, count: count), to: &$0) }
+        model.selection = []
+        // The preview reads decoded photos from the cache; warm it like playback prefetch does.
+        let canvas = MV.VideoPreviewView.fitted(ratio: project.aspect.ratio, in: CGSize(width: 400, height: 300))
+        let maxPixel = MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)
+        for layer in model.project.photos {
+            _ = await MV.PhotoImageCache.shared.load(model.mediaURL(for: layer), maxPixel: maxPixel)
+        }
+        return model
+    }
+
+    @MainActor
+    private func removeEffects(_ model: MV.MusicVideoEditorModel) {
+        model.selection = Set(model.project.effects.map(\.core.id))
+        model.deleteSelection()
+        model.selection = []
+    }
+
+    @MainActor
+    func testVignetteFadeScanlinesAndGrainRenderInThePreview() async throws {
+        let model = try await landscapeModel()
+        let corner = (0.03, 0.16), middle = (0.5, 0.5)
+        let plain = try render(model, at: 1.0)
+        XCTAssertGreaterThan(try pixel(plain, corner.0, corner.1).r, 235, "a white photo is white everywhere")
+
+        model.addEffect(.vignette)
+        model.selection = []
+        let vignette = try render(model, at: 1.0)
+        XCTAssertLessThan(try pixel(vignette, corner.0, corner.1).r, 200, "the corners darken")
+        XCTAssertGreaterThan(try pixel(vignette, middle.0, middle.1).r, 235, "the centre stays clear")
+        XCTAssertNotEqual(vignette.pngData(), plain.pngData())
+        XCTAssertEqual(try render(model, at: 1.0).pngData(), vignette.pngData(), "same time, same picture")
+        removeEffects(model)
+
+        model.addEffect(.fadeBlack)
+        XCTAssertEqual(model.project.effects[0].intensity, 1)
+        XCTAssertLessThan(try pixel(try render(model, at: 0.0), middle.0, middle.1).r, 20, "starts black")
+        XCTAssertGreaterThan(try pixel(try render(model, at: 1.5), middle.0, middle.1).r, 235, "fully clear in the middle")
+        XCTAssertLessThan(try pixel(try render(model, at: 2.95), middle.0, middle.1).r, 60, "ends black")
+        removeEffects(model)
+
+        model.addEffect(.scanlines)
+        model.mutate { $0.effects[0].intensity = 1 }
+        let lines = try render(model, at: 1.0)
+        var dark = 0, bright = 0
+        for row in 100..<140 {
+            let r = try pixel(lines, 0.5, Double(row) / 300).r
+            if r < 200 { dark += 1 } else if r > 240 { bright += 1 }
+        }
+        XCTAssertGreaterThan(dark, 5); XCTAssertGreaterThan(bright, 5, "scan lines alternate with clear rows")
+        removeEffects(model)
+
+        model.addEffect(.grain)
+        let g0 = try render(model, at: 0.0), g1 = try render(model, at: 0.1)
+        XCTAssertNotEqual(g0.pngData(), g1.pngData(), "the grain moves from frame to frame")
+        XCTAssertEqual(try render(model, at: 0.0).pngData(), g0.pngData(), "but the same frame always has the same grain")
+        XCTAssertNotEqual(g0.pngData(), plain.pngData())
+    }
+
+    @MainActor
+    func testEveryTransitionStartsHiddenAndEndsOnThePhoto() async throws {
+        let model = try await landscapeModel(photoColor: .red)
+        for kind in MV.PhotoTransitionKind.allCases where kind != .none {
+            model.mutate { $0.photos[0].transitionIn = MV.PhotoTransition(kind: kind, duration: 0.8) }
+            let first = try pixel(try render(model, at: 0.0), 0.5, 0.5)
+            XCTAssertLessThan(first.r, 100, "\(kind.rawValue): nothing of the photo at the centre on the first frame")
+            let done = try pixel(try render(model, at: 1.2), 0.5, 0.5)
+            XCTAssertGreaterThan(done.r, 200, "\(kind.rawValue): fully the photo afterwards")
+        }
+        // The wipe reveals from the left.
+        model.mutate { $0.photos[0].transitionIn = MV.PhotoTransition(kind: .wipe, duration: 0.8) }
+        let half = try render(model, at: 0.4)
+        XCTAssertGreaterThan(try pixel(half, 0.3, 0.5).r, 200, "left of the wipe edge")
+        XCTAssertLessThan(try pixel(half, 0.7, 0.5).r, 60, "right of the wipe edge")
+    }
+
+    @MainActor
+    func testShakeAndBeatEffectsFollowTheClockAndTheMusic() async throws {
+        let model = try await landscapeModel(photoColor: .red)
+        let still = try render(model, at: 0.5)
+        model.addEffect(.shake)
+        model.mutate { $0.effects[0].intensity = 1 }
+        let shaken = try render(model, at: 0.5)
+        XCTAssertNotEqual(shaken.pngData(), still.pngData(), "the picture moves")
+        XCTAssertEqual(try render(model, at: 0.5).pngData(), shaken.pngData(), "deterministically")
+        removeEffects(model)
+        XCTAssertEqual(try render(model, at: 0.5).pngData(), still.pngData(), "removing the effect restores the picture")
+
+        model.addEffect(.flash)
+        XCTAssertTrue(model.project.effects.isEmpty, "a beat effect needs music")
+        XCTAssertNotNil(model.statusMessage)
+
+        await model.importAudio(from: try writeKicks("kicks.wav", seconds: 6))
+        model.addEffect(.beatPulse)
+        XCTAssertEqual(model.project.effects.count, 1)
+        for _ in 0..<100 where model.effectBeats(for: model.project.effects[0]).isEmpty { try await Task.sleep(nanoseconds: 50_000_000) }
+        let beats = model.effectBeats(for: model.project.effects[0])
+        XCTAssertGreaterThan(beats.count, 8, "the kicks are found")
+        let beat = beats[1]
+        model.mutate { $0.effects[0].intensity = 1 }
+        func scale(_ t: Double) -> Double {
+            model.sceneMotion(items: MV.TimelineEngine.renderItems(in: model.project, at: MV.ProjectTime(seconds: t)),
+                              at: MV.ProjectTime(seconds: t)).scale
+        }
+        XCTAssertEqual(scale(beat + 0.001), 1.12, accuracy: 0.01, "swells on the beat")
+        XCTAssertLessThan(scale(beat + 0.3), 1.03, "and settles before the next one")
+        removeEffects(model)
+
+        model.addEffect(.flash)
+        XCTAssertEqual(model.project.effects.count, 1)
+        let flashBeat = try XCTUnwrap(model.effectBeats(for: model.project.effects[0]).first { $0 > 0.3 && $0 < 2.5 })
+        let onBeat = try pixel(try render(model, at: flashBeat + 0.05), 0.5, 0.5)
+        let between = try pixel(try render(model, at: flashBeat + 0.35), 0.5, 0.5)
+        XCTAssertGreaterThan(onBeat.g, between.g + 40, "the red photo flashes white on the beat")
     }
 }

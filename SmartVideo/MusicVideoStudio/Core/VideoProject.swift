@@ -51,6 +51,7 @@ extension MusicVideoStudio {
         var vinyls: [VinylLayer] = []
         var lyrics: [LyricsLayer] = []
         var visualizers: [VisualizerLayer] = []
+        var effects: [EffectLayer] = []
 
         init() {}
 
@@ -70,6 +71,7 @@ extension MusicVideoStudio {
             vinyls = try c.decodeIfPresent([VinylLayer].self, forKey: .vinyls) ?? []
             lyrics = try c.decodeIfPresent([LyricsLayer].self, forKey: .lyrics) ?? []
             visualizers = try c.decodeIfPresent([VisualizerLayer].self, forKey: .visualizers) ?? []
+            effects = try c.decodeIfPresent([EffectLayer].self, forKey: .effects) ?? []
         }
 
         /// End of the last layer, never shorter than the minimum.
@@ -78,10 +80,10 @@ extension MusicVideoStudio {
             return max(Self.minimumDuration, end)
         }
 
-        var layerCount: Int { photos.count + texts.count + audios.count + vinyls.count + lyrics.count + visualizers.count }
+        var layerCount: Int { photos.count + texts.count + audios.count + vinyls.count + lyrics.count + visualizers.count + effects.count }
 
         var allCores: [LayerCore] {
-            photos.map(\.core) + texts.map(\.core) + audios.map(\.core) + vinyls.map(\.core) + lyrics.map(\.core) + visualizers.map(\.core)
+            photos.map(\.core) + texts.map(\.core) + audios.map(\.core) + vinyls.map(\.core) + lyrics.map(\.core) + visualizers.map(\.core) + effects.map(\.core)
         }
 
         func core(for id: UUID) -> LayerCore? { allCores.first { $0.id == id } }
@@ -90,7 +92,7 @@ extension MusicVideoStudio {
         @discardableResult
         mutating func updateCore(_ id: UUID, _ change: (inout LayerCore) -> Void) -> Bool {
             Self.update(&photos, id, change) || Self.update(&texts, id, change) ||
-                Self.update(&audios, id, change) || Self.update(&vinyls, id, change) || Self.update(&lyrics, id, change) || Self.update(&visualizers, id, change)
+                Self.update(&audios, id, change) || Self.update(&vinyls, id, change) || Self.update(&lyrics, id, change) || Self.update(&visualizers, id, change) || Self.update(&effects, id, change)
         }
 
         private static func update<L: StudioLayer>(_ layers: inout [L], _ id: UUID,
@@ -108,6 +110,7 @@ extension MusicVideoStudio {
             vinyls.removeAll { ids.contains($0.core.id) }
             lyrics.removeAll { ids.contains($0.core.id) }
             visualizers.removeAll { ids.contains($0.core.id) }
+            effects.removeAll { ids.contains($0.core.id) }
         }
 
         /// Highest z-index in use + 1 (new layers go on top of their track's base).

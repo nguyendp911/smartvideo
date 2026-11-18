@@ -34,6 +34,9 @@ struct MusicVideoCoreTests {
         try visualizerProject()
         transformMath()
         layerHitTest()
+        transitionKinds()
+        effectMath()
+        try effectProject()
         print("music video core tests passed")
     }
 
@@ -1260,5 +1263,160 @@ struct MusicVideoCoreTests {
         items2 = MV.TimelineEngine.renderItems(in: q, at: sec(1))
         precondition(MV.LayerHitTest.contains(CGPoint(x: 200, y: 290), item: items2[0], canvas: canvas), "rotated: now tall")
         precondition(!MV.LayerHitTest.contains(CGPoint(x: 330, y: 150), item: items2[0], canvas: canvas))
+    }
+
+    // MARK: Effects and transitions (phase 8)
+
+    static func isIdentity(_ e: MV.PhotoTransitionEngine.Effect) -> Bool {
+        abs(e.opacity - 1) < 1e-9 && abs(e.scale - 1) < 1e-9 && abs(e.offsetX) < 1e-9 && abs(e.offsetY) < 1e-9
+            && abs(e.rotation) < 1e-9 && abs(e.blur) < 1e-9 && abs(e.flip) < 1e-9 && abs((e.reveal ?? 1) - 1) < 1e-9
+    }
+
+    static func transitionKinds() {
+        precondition(MV.PhotoTransitionKind.allCases.count == 12)
+        for kind in MV.PhotoTransitionKind.allCases {
+            let start = MV.PhotoTransitionEngine.effect(kind, progress: 0)
+            let end = MV.PhotoTransitionEngine.effect(kind, progress: 1)
+            precondition(isIdentity(end), "\(kind.rawValue) must end on the plain photo")
+            precondition(MV.PhotoTransitionEngine.effect(kind, progress: 7) == end, "progress is clamped above")
+            precondition(MV.PhotoTransitionEngine.effect(kind, progress: -3) == start, "progress is clamped below")
+            precondition(MV.PhotoTransitionEngine.effect(kind, progress: .nan) == start, "NaN counts as the start")
+            if kind == .none { precondition(isIdentity(start)) } else { precondition(!isIdentity(start), "\(kind.rawValue) must start displaced or hidden") }
+            let middle = MV.PhotoTransitionEngine.effect(kind, progress: 0.5)
+            precondition(middle.opacity.isFinite && middle.scale.isFinite && middle.rotation.isFinite && middle.blur >= 0)
+        }
+        near(MV.PhotoTransitionEngine.effect(.slideDown, progress: 0).offsetY, -1)
+        near(MV.PhotoTransitionEngine.effect(.spin, progress: 0).rotation, -35)
+        near(MV.PhotoTransitionEngine.effect(.blur, progress: 0).blur, 0.05)
+        near(MV.PhotoTransitionEngine.effect(.flip, progress: 0).flip, -90)
+        near(MV.PhotoTransitionEngine.effect(.wipe, progress: 0.5).reveal!, 0.5)
+        near(MV.PhotoTransitionEngine.easeOutBack(0), 0); near(MV.PhotoTransitionEngine.easeOutBack(1), 1)
+        precondition(MV.PhotoTransitionEngine.easeOutBack(0.5) > 1.05, "bounce overshoots, then settles")
+        // Old project files keep their transitions.
+        precondition(MV.PhotoTransitionKind(rawValue: "Hòa tan") == .crossfade && MV.PhotoTransitionKind(rawValue: "Trượt từ phải") == .slideLeft)
+    }
+
+    static func effectMath() {
+        // Deterministic noise.
+        for i in 0..<50 { let v = MV.EffectMath.unit(i, 3); precondition(v >= 0 && v < 1 && v == MV.EffectMath.unit(i, 3)) }
+        precondition(MV.EffectMath.unit(1, 1) != MV.EffectMath.unit(2, 1) || MV.EffectMath.unit(1, 2) != MV.EffectMath.unit(2, 2))
+        precondition(MV.EffectMath.grainFrame(0) == 0 && MV.EffectMath.grainFrame(0.04) == 0 && MV.EffectMath.grainFrame(0.05) == 1)
+        precondition(MV.EffectMath.grainFrame(1) == 24 && MV.EffectMath.grainFrame(.nan) == 0 && MV.EffectMath.grainFrame(-2) == 0)
+
+        // Beats of the file -> project seconds.
+        precondition(MV.EffectMath.projectBeats(fileBeats: [1, 2, 3, 4, 5, 6], offset: 10, from: 12, to: 15.5, every: 2) == [12, 14])
+        precondition(MV.EffectMath.projectBeats(fileBeats: [1, 2, 3], offset: 0, from: 0, to: 10, every: 1) == [1, 2, 3])
+        precondition(MV.EffectMath.projectBeats(fileBeats: [1, 2, 3], offset: 0, from: 0, to: 10, every: 0) == [1, 2, 3], "every < 1 counts as 1")
+        precondition(MV.EffectMath.projectBeats(fileBeats: [], offset: 5, from: 0, to: 10, every: 1).isEmpty)
+        let beats = [1.0, 2.0, 3.0]
+        precondition(MV.EffectMath.sinceLastBeat(0.5, in: beats) == nil && MV.EffectMath.sinceLastBeat(.nan, in: beats) == nil && MV.EffectMath.sinceLastBeat(1, in: []) == nil)
+        near(MV.EffectMath.sinceLastBeat(1, in: beats)!, 0); near(MV.EffectMath.sinceLastBeat(2.5, in: beats)!, 0.5); near(MV.EffectMath.sinceLastBeat(10, in: beats)!, 7)
+
+        func layer(_ kind: MV.EffectKind, start: Double = 2, duration: Double = 10) -> MV.EffectLayer {
+            MV.EffectLayer(core: MV.LayerCore(name: "e", track: .effects, start: sec(start), duration: sec(duration), zIndex: 3000), kind: kind)
+        }
+
+        var flash = layer(.flash); flash.intensity = 0.8
+        near(MV.EffectMath.flash(flash, beats: beats, at: 0.5), 0); near(MV.EffectMath.flash(flash, beats: beats, at: 1), 0.8)
+        near(MV.EffectMath.flash(flash, beats: beats, at: 1.1), 0.8 * exp(-1), 1e-9)
+        precondition(MV.EffectMath.flash(flash, beats: beats, at: 1.9) < 0.001)
+        flash.intensity = 9
+        precondition(MV.EffectMath.flash(flash, beats: beats, at: 1) <= 1, "intensity is clamped")
+
+        var fade = layer(.fadeBlack); fade.intensity = 1; fade.fadeIn = 2; fade.fadeOut = 1
+        near(MV.EffectMath.fadeBlack(fade, at: sec(2)), 1); near(MV.EffectMath.fadeBlack(fade, at: sec(3)), 0.5, 1e-9)
+        near(MV.EffectMath.fadeBlack(fade, at: sec(4)), 0); near(MV.EffectMath.fadeBlack(fade, at: sec(8)), 0)
+        near(MV.EffectMath.fadeBlack(fade, at: sec(11.5)), 0.5, 1e-9, "fades out over the last second")
+        near(MV.EffectMath.fadeBlack(fade, at: sec(1)), 0, 1e-9, "outside the layer: nothing")
+        fade.fadeIn = 0
+        near(MV.EffectMath.fadeBlack(fade, at: sec(2)), 0, 1e-9, "no fade-in: it starts clear")
+        fade.fadeIn = 2; fade.intensity = 0.5
+        near(MV.EffectMath.fadeBlack(fade, at: sec(2)), 0.5)
+
+        var shake = layer(.shake); shake.intensity = 0
+        let still = MV.EffectMath.shake(shake, at: sec(3))
+        precondition(still.dx == 0 && still.dy == 0 && still.rotation == 0 && still.scale == 1, "zero intensity does not move")
+        shake.intensity = 1
+        var seen = Set<Double>()
+        for k in 0..<40 {
+            let m = MV.EffectMath.shake(shake, at: sec(2 + Double(k) * 0.037))
+            precondition(abs(m.dx) <= 0.02 + 1e-9 && abs(m.dy) <= 0.02 + 1e-9 && abs(m.rotation) <= 1.2 + 1e-9)
+            near(m.scale, 1.05); seen.insert((m.dx * 1e6).rounded())
+        }
+        precondition(seen.count > 20, "the shake is irregular, not a constant")
+        precondition(MV.EffectMath.shake(shake, at: sec(3.3)) == MV.EffectMath.shake(shake, at: sec(3.3)), "pure function of time")
+
+        var pulse = layer(.beatPulse); pulse.intensity = 1
+        near(MV.EffectMath.beatPulseScale(pulse, beats: [1], at: 1), 1.12); near(MV.EffectMath.beatPulseScale(pulse, beats: [1], at: 1.16), 1 + 0.12 * exp(-1), 1e-9)
+        near(MV.EffectMath.beatPulseScale(pulse, beats: [], at: 5), 1); near(MV.EffectMath.beatPulseScale(pulse, beats: [1], at: 0.5), 1)
+
+        var leak = layer(.lightLeak); leak.intensity = 1
+        for k in 0..<60 {
+            let l = MV.EffectMath.lightLeak(leak, at: sec(2 + Double(k) * 0.9))
+            precondition(l.opacity >= 0 && l.opacity <= 1 && l.x > -0.1 && l.x < 1.1 && l.y > 0 && l.y < 0.7)
+        }
+
+        // Scene motion: shake + pulse combine; others and inactive effects add nothing.
+        let vignette = layer(.vignette)
+        var hiddenShake = shake; hiddenShake.core.isVisible = false
+        let all = [shake, pulse, vignette, hiddenShake]
+        let combined = MV.EffectMath.sceneMotion(effects: all, at: sec(3), beats: { _ in [3.0] })
+        let alone = MV.EffectMath.shake(shake, at: sec(3))
+        near(combined.dx, alone.dx); near(combined.scale, alone.scale * 1.12, 1e-9)
+        precondition(MV.EffectMath.sceneMotion(effects: all, at: sec(20), beats: { _ in [3.0] }) == .identity, "after the layers end")
+        precondition(MV.EffectMath.sceneMotion(effects: [vignette], at: sec(3), beats: { _ in [] }) == .identity)
+        precondition(MV.EffectMath.sceneMotion(effects: [], at: sec(3), beats: { _ in [] }) == .identity)
+    }
+
+    static func effectProject() throws {
+        var p = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(1), to: &p)                       // 0-3
+        let textID = MV.TimelineEngine.addText("T", at: .zero, to: &p)!
+        let vignetteID = MV.TimelineEngine.addEffect(.vignette, audioID: nil, to: &p)!
+        precondition(p.effects.count == 1 && p.layerCount == 3)
+        near(p.effects[0].core.start.seconds, 0)
+        precondition(MV.TimelineEngine.addEffect(.flash, audioID: nil, to: &p) == nil, "a beat effect needs music")
+        precondition(MV.TimelineEngine.addEffect(.beatPulse, audioID: UUID(), to: &p) == nil)
+
+        let order = MV.TimelineEngine.renderItems(in: p, at: sec(1)).map(\.id)
+        precondition(order == [p.photos[0].core.id, vignetteID, textID], "effects sit above pictures and below text")
+        precondition(MV.TimelineEngine.activeLayerIDs(in: p, at: sec(1)).contains(vignetteID))
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 200, y: 150), items: MV.TimelineEngine.renderItems(in: p, at: sec(1)).filter { $0.id == vignetteID },
+                                             canvas: CGSize(width: 400, height: 300)) == nil, "full-frame effects are never picked on the canvas")
+
+        p.audios.append(audioLayer(start: 1, duration: 4))
+        let flashID = MV.TimelineEngine.addEffect(.flash, audioID: p.audios[0].core.id, to: &p)!
+        let flash = p.effects.first { $0.core.id == flashID }!
+        precondition(flash.audioLayerID == p.audios[0].core.id && flash.colorHex == "#FFFFFF")
+        near(flash.core.start.seconds, 1); near(flash.core.duration.seconds, 4)
+        let fadeID = MV.TimelineEngine.addEffect(.fadeBlack, audioID: nil, to: &p)!
+        near(p.effects.first { $0.core.id == fadeID }!.intensity, 1)
+        precondition(p.effects.first { $0.core.id == vignetteID }!.audioLayerID == nil)
+
+        let copies = MV.TimelineEngine.duplicate([vignetteID], in: &p)
+        precondition(copies.count == 1 && p.effects.count == 4)
+        let cut = MV.TimelineEditing.split([vignetteID], at: sec(1.5), in: &p)
+        precondition(cut.count == 1 && p.effects.count == 5)
+        near(p.effects[0].core.end.seconds, 1.5)
+        p.removeLayers([vignetteID])
+        precondition(p.effects.contains { $0.core.id == vignetteID } == false)
+
+        var q = MV.VideoProject()
+        MV.TimelineEngine.addEffect(.lightLeak, audioID: nil, to: &q)
+        q.effects[0].intensity = 0.9; q.effects[0].speed = 2.5; q.effects[0].colorHex = "#00FF00"; q.effects[0].everyBeats = 3
+        q.photos.append(MV.PhotoLayer(core: MV.LayerCore(name: "p", track: .photo, start: .zero, duration: sec(3), zIndex: 0),
+                                      mediaFile: "a.jpg", pixelWidth: 10, pixelHeight: 10, transitionIn: MV.PhotoTransition(kind: .flip, duration: 1.2)))
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(q))
+        precondition(back.effects == q.effects && back.photos[0].transitionIn.kind == .flip)
+
+        let bare = try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8))
+        precondition(bare.effects.isEmpty)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(q)) as! [String: Any]
+        var layers = json["effects"] as! [[String: Any]]
+        for key in ["kind", "intensity", "speed", "colorHex", "fadeIn", "fadeOut"] { layers[0].removeValue(forKey: key) }
+        layers[0]["everyBeats"] = 99
+        json["effects"] = layers
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.effects[0].kind == .vignette && old.effects[0].intensity == 0.6 && old.effects[0].everyBeats == 8, "missing fields get defaults, counts are clamped")
     }
 }
