@@ -73,6 +73,10 @@ extension MusicVideoStudio {
             VStack(spacing: 0) {
                 VideoPreviewView(model: model, playback: model.playback)
                     .frame(minHeight: 160)
+                if let report = model.importReport {
+                    Text(report).font(.caption2).foregroundStyle(report.hasPrefix("Đã nhập") ? Color.green : Color.red)
+                        .padding(.horizontal, 12).padding(.bottom, 2)
+                }
                 if let message = model.statusMessage {
                     Text(message).font(.caption2).foregroundStyle(.orange).padding(.bottom, 2)
                 }

@@ -15,6 +15,8 @@ extension MusicVideoStudio {
         @Published private(set) var isImporting = false
         @Published private(set) var importProgress = ""
         @Published private(set) var statusMessage: String?
+        /// What the last photo import did (or why it failed). Unlike `statusMessage`, saving does not overwrite it.
+        @Published private(set) var importReport: String?
         /// Where a dragged clip edge is snapping (drawn as a guide line).
         @Published private(set) var snapGuide: ProjectTime?
         /// The lyrics layer whose editor sheet is open.
@@ -364,25 +366,41 @@ extension MusicVideoStudio {
             let manager = self.manager
             var imported: [TimelineEngine.ImportedPhoto] = []
             var failed = 0
+            var reasons: [String] = []
             for (index, item) in items.enumerated() {
                 importProgress = "Đang nhập \(index + 1)/\(items.count)…"
                 do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else { failed += 1; continue }
+                    var data = try? await item.loadTransferable(type: Data.self)
+                    if data == nil { data = (try? await item.loadTransferable(type: PickedImageData.self))?.data }
+                    guard let data else {
+                        failed += 1
+                        reasons.append("không lấy được dữ liệu ảnh từ thư viện (thử tải ảnh về máy nếu đang ở iCloud)")
+                        continue
+                    }
                     let photo = try await Task.detached(priority: .userInitiated) {
                         try manager.storeImage(data: data, projectID: projectID)
                     }.value
                     imported.append(photo)
                 } catch {
                     failed += 1
+                    reasons.append(error.localizedDescription)
                 }
             }
+            var added = 0
             if !imported.isEmpty, project.id == projectID {
                 var created: [UUID] = []
                 edit { created = TimelineEngine.appendPhotos(imported, to: &$0) }
-                selection = Set(created)
+                added = created.count
+                if !created.isEmpty { selection = Set(created) }
                 prefetch(around: playback.state.frameTime)
+                if created.isEmpty { reasons.append("dự án đã đạt tối đa \(VideoProject.maxLayers) lớp") }
             }
             statusMessage = failed > 0 ? "Không nhập được \(failed) ảnh." : nil
+            if added == items.count {
+                importReport = "Đã nhập \(added) ảnh."
+            } else {
+                importReport = "Nhập được \(added)/\(items.count) ảnh" + (reasons.first.map { ". Lý do: \($0)" } ?? ".")
+            }
             importProgress = ""
             isImporting = false
         }

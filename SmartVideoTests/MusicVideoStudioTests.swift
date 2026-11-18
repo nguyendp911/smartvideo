@@ -1457,4 +1457,38 @@ final class MusicVideoStudioTests: XCTestCase {
         XCTAssertEqual(engine.frameClock.time, engine.state.frameTime)
         subscription.cancel()
     }
+
+    // MARK: The live path: a photo appears on screen after it is added (no cache warm-up)
+
+    @MainActor
+    func testAddedPhotoShowsInTheLivePreviewAndTimelineLanes() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("live"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        // Exactly what importing does: store the bytes, append, select.
+        let stored = try manager.storeImage(data: try solidPNG(.red), projectID: model.project.id)
+        var created: [UUID] = []
+        model.edit { created = MV.TimelineEngine.appendPhotos([stored], to: &$0) }
+        model.selection = Set(created)
+        XCTAssertEqual(model.project.photos.count, 1)
+        XCTAssertEqual(MV.TimelineEngine.clips(in: model.project).count, 1, "the timeline has the clip")
+        XCTAssertTrue(model.visibleTracks.contains(.photo))
+
+        let host = UIHostingController(rootView: MV.VideoPreviewView(model: model, playback: model.playback).frame(width: 400, height: 300))
+        let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 400, height: 300))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        var seen = false
+        for _ in 0..<120 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
+                window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+            }
+            let center = try pixel(image, 0.5, 0.5)
+            if center.r > 150 && center.g < 90 && center.b < 90 { seen = true; break }
+        }
+        XCTAssertTrue(seen, "the red photo shows in the on-screen preview after loading asynchronously")
+    }
 }
