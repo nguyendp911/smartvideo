@@ -394,7 +394,7 @@ struct MusicVideoCoreTests {
         p = fourPhotos()
         let t2 = MV.TimelineEngine.addText("keep", at: sec(10), to: &p)!
         MV.TimelineEditing.rippleDelete([p.photos[1].core.id], in: &p)
-        precondition(p.photos.map(\\.core.start.seconds) == [0, 3, 6] && p.photos.count == 3)
+        precondition(p.photos.map(\.core.start.seconds) == [0, 3, 6] && p.photos.count == 3)
         precondition(p.core(for: t2)?.start == sec(10), "other tracks are untouched")
         p = fourPhotos()
         p.updateCore(p.photos[3].core.id) { $0.isLocked = true }
@@ -403,7 +403,7 @@ struct MusicVideoCoreTests {
 
         // Order + pack.
         p = fourPhotos()
-        let ids = p.photos.map(\\.core.id)
+        let ids = p.photos.map(\.core.id)
         precondition(MV.TimelineEditing.orderedPhotoIDs(in: p) == ids)
         precondition(MV.TimelineEditing.movePhoto(ids[0], by: 1, in: &p))
         precondition(MV.TimelineEditing.orderedPhotoIDs(in: p) == [ids[1], ids[0], ids[2], ids[3]])
@@ -421,11 +421,11 @@ struct MusicVideoCoreTests {
         p = fourPhotos()
         p.photos[2].core.start = sec(20)                         // a gap and out of order
         MV.TimelineEditing.packPhotos(in: &p)
-        precondition(p.photos.map(\\.core.start.seconds) == [0, 3, 9, 6], "play order is by start time, then packed")
+        precondition(p.photos.map(\.core.start.seconds) == [0, 3, 9, 6], "play order is by start time, then packed")
 
         MV.TimelineEditing.setAllPhotoDurations(sec(2), in: &p)
         precondition(p.photos.allSatisfy { $0.core.duration == sec(2) })
-        precondition(Set(p.photos.map(\\.core.start.seconds)) == [0, 2, 4, 6])
+        precondition(Set(p.photos.map(\.core.start.seconds)) == [0, 2, 4, 6])
         MV.TimelineEditing.setAllPhotoDurations(sec(0.001), in: &p)
         precondition(p.photos.allSatisfy { $0.core.duration >= MV.LayerCore.minimumDuration })
     }
