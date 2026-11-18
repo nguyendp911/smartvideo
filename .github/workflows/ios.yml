@@ -60,6 +60,11 @@ jobs:
           swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
           /tmp/project-audio-track-tests
 
+      - name: Validate Music Video Studio time model, timeline, transport and undo
+        run: |
+          swiftc -swift-version 5 SmartVideo/MusicVideoStudio/Core/MusicVideoStudio.swift SmartVideo/MusicVideoStudio/Core/ProjectTime.swift SmartVideo/MusicVideoStudio/Core/VideoProject.swift SmartVideo/MusicVideoStudio/Core/TimelineEngine.swift SmartVideo/MusicVideoStudio/Core/TimelineScale.swift SmartVideo/MusicVideoStudio/Core/UndoHistory.swift SmartVideo/MusicVideoStudio/Core/TransportState.swift SmartVideo/MusicVideoStudio/Models/Layer.swift SmartVideo/MusicVideoStudio/Models/PhotoLayer.swift SmartVideo/MusicVideoStudio/Models/TextLayer.swift SmartVideo/MusicVideoStudio/Models/TimelineClip.swift scripts/music-video-core-tests.swift -o /tmp/music-video-core-tests
+          /tmp/music-video-core-tests
+
       - name: Validate Mockup Studio catalog, search, masks and geometry
         run: |
           swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift SmartVideo/Models/MockupStudioGeometry.swift scripts/mockup-studio-tests.swift -o /tmp/mockup-studio-tests
@@ -102,7 +107,7 @@ jobs:
 
       - name: Validate 42 mockup assets, motion and saved settings
         run: |
-          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
           /tmp/mockup-tests
 
       - name: Prepare ViePN app icon
@@ -175,7 +180,7 @@ jobs:
 
       - name: Validate 42 mockup assets, motion and saved settings
         run: |
-          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
+          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
           /tmp/mockup-tests
 
       - name: Prepare ViePN app icon
