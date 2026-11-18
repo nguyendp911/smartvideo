@@ -162,8 +162,8 @@ extension MusicVideoStudio {
             }
             .scaleEffect(style.scale)
             .opacity(style.opacity)
-            .shadow(color: shadow ? Color.black.opacity(0.6) : .clear, radius: fontPx * 0.08, x: 0, y: 2)
-            .shadow(color: color(highlight).opacity(style.glow), radius: fontPx * 0.5 * CGFloat(style.glow))
+            .modifier(OptionalShadow(enabled: shadow, color: Color.black.opacity(0.6), radius: fontPx * 0.08, y: 2))
+            .modifier(OptionalShadow(enabled: style.glow > 0.01, color: color(highlight).opacity(style.glow), radius: fontPx * 0.5 * CGFloat(style.glow)))
         }
     }
 

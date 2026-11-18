@@ -225,10 +225,16 @@ extension MusicVideoStudio {
             let grooveOpacity = layer.style == .classic ? 1.0 : (layer.style == .neon ? 0.3 : 0.55)
             ZStack {
                 // Glow behind the disc.
-                Circle().fill(color([VinylStyle.colored, .splatter, .neon].contains(layer.style) ? layer.discColorHex : layer.glowColorHex, .cyan))
-                    .frame(width: diameter * 1.02, height: diameter * 1.02)
-                    .blur(radius: diameter * 0.12)
+                let glowColor = color([VinylStyle.colored, .splatter, .neon].contains(layer.style) ? layer.discColorHex : layer.glowColorHex, .cyan)
+                Circle().fill(RadialGradient(colors: [glowColor, glowColor.opacity(0)], center: .center,
+                                             startRadius: diameter * 0.4, endRadius: diameter * 0.66))
+                    .frame(width: diameter * 1.32, height: diameter * 1.32)
                     .opacity(min(1, max(0, layer.glow + glowBoost)) * 0.9)
+
+                // Soft shadow under the disc. It does not turn, so it is not recomputed while the record spins.
+                Circle().fill(Color.black).frame(width: diameter, height: diameter)
+                    .shadow(color: .black.opacity(min(1, max(0, layer.shadow)) * 0.75),
+                            radius: diameter * 0.05, x: diameter * 0.015, y: diameter * 0.04)
 
                 // The disc itself (this part turns).
                 ZStack {
@@ -277,9 +283,8 @@ extension MusicVideoStudio {
                     .frame(width: labelD, height: labelD)
                 }
                 .frame(width: diameter, height: diameter)
+                .drawingGroup()                                  // grooves are drawn once; only the turn is repeated
                 .rotationEffect(.degrees(angle))
-                .shadow(color: .black.opacity(min(1, max(0, layer.shadow)) * 0.75),
-                        radius: diameter * 0.05, x: diameter * 0.015, y: diameter * 0.04)
 
                 // Light reflection: fixed in the room, so it does NOT turn with the disc.
                 Circle()
@@ -293,8 +298,7 @@ extension MusicVideoStudio {
                         .init(color: .white.opacity(0), location: 1.00)
                     ]), center: .center, angle: .degrees(-35)))
                     .frame(width: diameter, height: diameter)
-                    .opacity(min(1, max(0, layer.reflection)) * 0.55)
-                    .blendMode(.screen)
+                    .opacity(min(1, max(0, layer.reflection)) * 0.4)
                     .allowsHitTesting(false)
             }
         }

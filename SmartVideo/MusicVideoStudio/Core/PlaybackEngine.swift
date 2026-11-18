@@ -22,6 +22,7 @@ extension MusicVideoStudio {
     /// Used from the main thread only (UI and display link).
     final class PlaybackEngine: ObservableObject {
         @Published private(set) var state = TransportState()
+        let frameClock = FrameClock()
 
         private var displayLink: CADisplayLink?
         private var lastTimestamp: CFTimeInterval = 0
@@ -45,6 +46,7 @@ extension MusicVideoStudio {
             var next = state
             change(&next)
             if next != state { state = next }
+            frameClock.set(state.frameTime)
             if next.isPlaying { startLink() } else { stopLink() }
             if !before.isPlaying && next.isPlaying {
                 observer?.transportDidStart(at: next.time)
@@ -83,6 +85,7 @@ extension MusicVideoStudio {
                 next.time = audioTime.clamped(.zero, next.duration)
             }
             state = next
+            frameClock.set(next.frameTime)
             if !next.isPlaying {
                 stopLink()
                 observer?.transportDidStop()
@@ -94,6 +97,13 @@ extension MusicVideoStudio {
         }
 
         deinit { displayLink?.invalidate() }
+    }
+
+    /// Changes only when the picture changes (once per project frame), unlike `PlaybackEngine.state`
+    /// which changes on every display tick. The preview watches this so it is not rebuilt more often than needed.
+    final class FrameClock: ObservableObject {
+        @Published private(set) var time = ProjectTime.zero
+        func set(_ newTime: ProjectTime) { if newTime != time { time = newTime } }
     }
 
     /// CADisplayLink retains its target, so it gets a weak proxy.

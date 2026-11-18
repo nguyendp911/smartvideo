@@ -44,7 +44,6 @@ extension MusicVideoStudio {
                     RadialGradient(colors: [tint.opacity(leak.opacity), tint.opacity(0)],
                                    center: UnitPoint(x: leak.x, y: leak.y), startRadius: 0,
                                    endRadius: max(canvas.width, canvas.height) * 0.7)
-                        .blendMode(.screen)
                 case .flash:
                     color(layer.colorHex).opacity(EffectMath.flash(layer, beats: beats, at: time.seconds))
                 case .fadeBlack:
@@ -88,16 +87,51 @@ extension MusicVideoStudio {
         }
     }
 
-    /// Applies Shake / Beat Pulse to a picture layer.
+    /// Blur, flip and wipe of a photo transition. A plain photo gets none of these modifiers,
+    /// so it is not pushed through extra offscreen passes every frame.
+    struct TransitionEffectsModifier: ViewModifier {
+        let effect: PhotoTransitionEngine.Effect
+        let canvas: CGSize
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if effect.blur > 0 || effect.flip != 0 || effect.reveal != nil {
+                content
+                    .modifier(RevealMaskModifier(reveal: effect.reveal, canvas: canvas))
+                    .blur(radius: CGFloat(effect.blur) * min(canvas.width, canvas.height))
+                    .rotation3DEffect(.degrees(effect.flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            } else {
+                content
+            }
+        }
+    }
+
+    /// Applies Shake / Beat Pulse to a picture layer (nothing is added while there is no such effect).
     struct SceneMotionModifier: ViewModifier {
         let motion: SceneMotion
         let canvas: CGSize
 
-        func body(content: Content) -> some View {
-            content
-                .scaleEffect(CGFloat(motion.scale))
-                .rotationEffect(.degrees(motion.rotation))
-                .offset(x: CGFloat(motion.dx) * canvas.width, y: CGFloat(motion.dy) * canvas.height)
+        @ViewBuilder func body(content: Content) -> some View {
+            if motion == .identity {
+                content
+            } else {
+                content
+                    .scaleEffect(CGFloat(motion.scale))
+                    .rotationEffect(.degrees(motion.rotation))
+                    .offset(x: CGFloat(motion.dx) * canvas.width, y: CGFloat(motion.dy) * canvas.height)
+            }
+        }
+    }
+
+    /// A shadow only when it is switched on.
+    struct OptionalShadow: ViewModifier {
+        let enabled: Bool
+        let color: Color
+        let radius: CGFloat
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+
+        @ViewBuilder func body(content: Content) -> some View {
+            if enabled { content.shadow(color: color, radius: radius, x: x, y: y) } else { content }
         }
     }
 }

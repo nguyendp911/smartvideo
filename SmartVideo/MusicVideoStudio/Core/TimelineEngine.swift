@@ -232,10 +232,32 @@ extension MusicVideoStudio {
         }
 
         /// Spreads the photos evenly across the music (`seconds`) and packs them.
+        /// Photos that overlap for a transition still add up to `seconds`: each one is longer by its share of the overlap.
         static func fitPhotos(toDuration seconds: Double, in project: inout VideoProject) {
-            let count = max(1, project.photos.filter { !$0.core.isLocked }.count)
-            let each = max(LayerCore.minimumDuration.seconds, seconds / Double(count))
+            let unlocked = TimelineEditing.orderedPhotoIDs(in: project).compactMap { id in
+                project.photos.first { $0.core.id == id && !$0.core.isLocked }
+            }
+            let count = max(1, unlocked.count)
+            let base = max(LayerCore.minimumDuration.seconds, seconds / Double(count))
+            var overlap = 0.0
+            for photo in unlocked.dropFirst() where photo.transitionIn.isActive {
+                overlap += PhotoTransitionEngine.effectiveDuration(photo.transitionIn, layerDuration: ProjectTime(seconds: base)).seconds
+            }
+            let each = max(LayerCore.minimumDuration.seconds, (seconds + overlap) / Double(count))
             TimelineEditing.setAllPhotoDurations(ProjectTime(seconds: each), in: &project)
+        }
+
+        /// Puts `kind` into every unlocked photo but the first (which has nothing to cross from) and
+        /// lays the photos out so each one really overlaps the previous. `.none` clears them all.
+        static func applyTransition(_ kind: PhotoTransitionKind, duration: Double, in project: inout VideoProject) {
+            let order = TimelineEditing.orderedPhotoIDs(in: project)
+            var first = true
+            for id in order {
+                guard let i = project.photos.firstIndex(where: { $0.core.id == id }), !project.photos[i].core.isLocked else { continue }
+                project.photos[i].transitionIn = (first || kind == .none) ? PhotoTransition() : PhotoTransition(kind: kind, duration: duration)
+                first = false
+            }
+            TimelineEditing.packPhotos(in: &project)
         }
 
         /// Copies are placed right after the original on the same track.

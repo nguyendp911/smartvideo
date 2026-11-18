@@ -606,6 +606,33 @@ extension MusicVideoStudio {
             }
         }
 
+        // MARK: Photo transitions
+
+        /// One transition for every photo, applied at once and made visible by overlapping the photos.
+        func applyTransitionToAll(_ kind: PhotoTransitionKind, duration: Double = 0.8) {
+            guard project.photos.filter({ !$0.core.isLocked }).count >= 2 else {
+                statusMessage = "Cần ít nhất 2 ảnh (chưa khóa) để có chuyển cảnh."
+                return
+            }
+            edit { TimelineEngine.applyTransition(kind, duration: duration, in: &$0) }
+            statusMessage = kind == .none
+                ? "Đã bỏ chuyển cảnh giữa các ảnh."
+                : "Đã áp dụng \"\(kind.rawValue)\" cho các ảnh. Ảnh được nối chồng nhau; bấm \"Chia đều ảnh theo độ dài nhạc\" để khớp lại với nhạc."
+        }
+
+        /// The transition of the selected photos; photos are re-laid so the overlap is real straight away.
+        func setPhotoTransition(kind: PhotoTransitionKind? = nil, duration: Double? = nil, undoable: Bool) {
+            let ids = editableSelection
+            let change: (inout VideoProject) -> Void = { project in
+                for i in project.photos.indices where ids.contains(project.photos[i].core.id) {
+                    if let kind { project.photos[i].transitionIn.kind = kind }
+                    if let duration { project.photos[i].transitionIn.duration = duration }
+                }
+                TimelineEditing.packPhotos(in: &project)
+            }
+            if undoable { edit(change) } else { mutate(change) }
+        }
+
         // MARK: Visualizer + beats
 
         func selectedVisualizerLayer() -> VisualizerLayer? { project.visualizers.first { selection.contains($0.core.id) } }

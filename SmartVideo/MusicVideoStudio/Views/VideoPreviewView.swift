@@ -6,16 +6,24 @@ extension MusicVideoStudio {
     /// will use, so what plays here is what gets rendered.
     struct VideoPreviewView: View {
         @ObservedObject var model: MusicVideoEditorModel
-        @ObservedObject var playback: PlaybackEngine
+        let playback: PlaybackEngine
+        /// Redraws once per frame instead of on every display tick.
+        @ObservedObject private var clock: FrameClock
+
+        init(model: MusicVideoEditorModel, playback: PlaybackEngine) {
+            self.model = model
+            self.playback = playback
+            _clock = ObservedObject(wrappedValue: playback.frameClock)
+        }
 
         var body: some View {
             GeometryReader { geo in
                 let canvas = Self.fitted(ratio: model.project.aspect.ratio, in: geo.size)
-                let items = TimelineEngine.renderItems(in: model.project, at: playback.state.frameTime)
+                let items = TimelineEngine.renderItems(in: model.project, at: clock.time)
                 ZStack {
                     Color(white: 0.03)
                     ZStack {
-                        ProjectFrameView(resources: model.resources, canvas: canvas, time: playback.state.frameTime,
+                        ProjectFrameView(resources: model.resources, canvas: canvas, time: clock.time,
                                          selection: model.selection)
                         TransformGuidesView(guides: model.transformGuides, showSafeArea: model.showSafeArea, canvas: canvas)
                         TransformOverlay(model: model, canvas: canvas, items: items)
@@ -33,8 +41,8 @@ extension MusicVideoStudio {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
             }
-            .onChange(of: Int(playback.state.time.seconds * 2)) { _ in
-                model.prefetch(around: playback.state.frameTime)
+            .onChange(of: Int(clock.time.seconds * 2)) { _ in
+                model.prefetch(around: clock.time)
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Xem trước video")
@@ -165,9 +173,7 @@ extension MusicVideoStudio {
                 if selected { Rectangle().strokeBorder(Color.cyan, lineWidth: 2) }
             }
             .frame(width: canvas.width, height: canvas.height)
-            .modifier(RevealMaskModifier(reveal: tr.reveal, canvas: canvas))
-            .blur(radius: CGFloat(tr.blur) * min(canvas.width, canvas.height))
-            .rotation3DEffect(.degrees(tr.flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            .modifier(TransitionEffectsModifier(effect: tr, canvas: canvas))
             .scaleEffect(t.scale * tr.scale)
             .rotationEffect(.degrees(t.rotation + tr.rotation))
             .offset(x: CGFloat(t.x - 0.5 + tr.offsetX) * canvas.width, y: CGFloat(t.y - 0.5 + tr.offsetY) * canvas.height)

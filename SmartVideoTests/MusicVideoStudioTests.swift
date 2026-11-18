@@ -1,5 +1,6 @@
 import XCTest
 import SwiftUI
+import Combine
 import AVFoundation
 import ImageIO
 import UniformTypeIdentifiers
@@ -1404,5 +1405,56 @@ final class MusicVideoStudioTests: XCTestCase {
         let calm = try litPixels(try vinylImage(layer, time: 5, audio: MV.VisualizerFrame(bands: bands, bass: 0, pulse: 0)))
         let beat = try litPixels(try vinylImage(layer, time: 5, audio: MV.VisualizerFrame(bands: bands, bass: 0, pulse: 1)))
         XCTAssertGreaterThan(beat, calm, "the record swells on a beat")
+    }
+
+    // MARK: Transitions you can see, and a calmer preview
+
+    @MainActor
+    func testApplyingATransitionToAllPhotosShowsTheCrossFade() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let red = try manager.storeImage(data: try solidPNG(.red), projectID: project.id)
+        let blue = try manager.storeImage(data: try solidPNG(.blue), projectID: project.id)
+        MV.TimelineEngine.appendPhotos([red, blue], to: &project)
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        let canvas = MV.VideoPreviewView.fitted(ratio: project.aspect.ratio, in: CGSize(width: 400, height: 300))
+        let maxPixel = MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)
+        for layer in model.project.photos { _ = await MV.PhotoImageCache.shared.load(model.mediaURL(for: layer), maxPixel: maxPixel) }
+
+        let cut = try pixel(try render(model, at: 2.6), 0.5, 0.5)
+        XCTAssertGreaterThan(cut.r, 200); XCTAssertLessThan(cut.b, 60, "no transition: still the red photo at 2.6 s")
+
+        model.applyTransitionToAll(.crossfade)
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 2.2, accuracy: 0.05)
+        let mixed = try pixel(try render(model, at: 2.6), 0.5, 0.5)
+        XCTAssertTrue((60...200).contains(mixed.r) && (60...200).contains(mixed.b), "halfway through the cross-fade both photos show: \(mixed)")
+        model.undo()
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 3, accuracy: 1e-9, "one undo step")
+
+        model.setPhotoTransition(kind: .slideLeft, undoable: true)                      // nothing selected: no change
+        XCTAssertFalse(model.project.photos[1].transitionIn.isActive)
+        model.selection = [model.project.photos[1].core.id]
+        model.setPhotoTransition(kind: .slideLeft, undoable: true)
+        XCTAssertEqual(model.project.photos[1].transitionIn.kind, .slideLeft)
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 2.2, accuracy: 0.05, "choosing a transition lays the photos out at once")
+    }
+
+    @MainActor
+    func testPreviewRedrawsOncePerFrameNotOncePerTick() {
+        let engine = MV.PlaybackEngine()
+        engine.configure(duration: MV.ProjectTime(seconds: 5), fps: 30)
+        var changes = 0
+        let subscription = engine.frameClock.objectWillChange.sink { changes += 1 }
+        engine.seek(to: MV.ProjectTime(seconds: 0.01))
+        XCTAssertEqual(changes, 0, "still frame 0")
+        engine.seek(to: MV.ProjectTime(seconds: 0.05))
+        XCTAssertEqual(changes, 1, "frame 1")
+        engine.seek(to: MV.ProjectTime(seconds: 0.06))
+        XCTAssertEqual(changes, 1, "still frame 1 although the playhead moved")
+        engine.step(frames: 1)
+        XCTAssertEqual(changes, 2)
+        XCTAssertEqual(engine.frameClock.time, engine.state.frameTime)
+        subscription.cancel()
     }
 }

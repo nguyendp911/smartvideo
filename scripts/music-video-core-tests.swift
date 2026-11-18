@@ -40,6 +40,7 @@ struct MusicVideoCoreTests {
         try exportSettings()
         lyricsOnBeats()
         try vinylExtras()
+        applyTransitions()
         print("music video core tests passed")
     }
 
@@ -1635,5 +1636,44 @@ struct MusicVideoCoreTests {
         near(Double(early.bands[3]), 1); near(Double(early.peaks[3]), 1)
         near(Double(later.bands[3]), 0, 1e-6, "the bar has dropped"); near(Double(later.peaks[3]), pow(0.95, 4), 1e-5, "the cap falls slowly")
         precondition(MV.VisualizerFrame(bands: [1], bass: 0, pulse: 0).peaks.isEmpty, "no peaks = painter falls back to the bars")
+    }
+
+    // MARK: Applying transitions to all photos
+
+    static func applyTransitions() {
+        func project(_ n: Int) -> MV.VideoProject {
+            var p = MV.VideoProject()
+            MV.TimelineEngine.appendPhotos(photos(n), to: &p)            // 3 s each
+            return p
+        }
+        var p = project(3)
+        MV.TimelineEngine.applyTransition(.crossfade, duration: 0.8, in: &p)
+        precondition(p.photos[0].transitionIn.kind == .none, "the first photo has nothing to cross from")
+        precondition(p.photos[1].transitionIn.kind == .crossfade && p.photos[2].transitionIn.kind == .crossfade)
+        near(p.photos[1].transitionIn.duration, 0.8)
+        near(p.photos[1].core.start.seconds, 2.2, 1e-3, "the second photo starts 0.8 s early, over the first")
+        near(p.photos[2].core.start.seconds, 4.4, 1e-3)
+        precondition(MV.TimelineEngine.activeLayerIDs(in: p, at: sec(2.5)).count == 2, "both photos are on screen during the overlap")
+        precondition(MV.TimelineEngine.activeLayerIDs(in: p, at: sec(1)).count == 1)
+
+        MV.TimelineEngine.applyTransition(.none, duration: 0.8, in: &p)
+        precondition(p.photos.allSatisfy { !$0.transitionIn.isActive })
+        near(p.photos[1].core.start.seconds, 3); near(p.photos[2].core.start.seconds, 6, 1e-9, "no transition: back to back")
+
+        var q = project(3)
+        q.photos[1].core.isLocked = true
+        MV.TimelineEngine.applyTransition(.slideLeft, duration: 1, in: &q)
+        precondition(q.photos[1].transitionIn.kind == .none, "locked photos keep what they have")
+        precondition(q.photos[2].transitionIn.kind == .slideLeft && q.photos[0].transitionIn.kind == .none)
+
+        // Fitting to the music keeps the total length even though photos overlap.
+        var r = project(4)
+        MV.TimelineEngine.applyTransition(.crossfade, duration: 0.8, in: &r)
+        MV.TimelineEngine.fitPhotos(toDuration: 12, in: &r)
+        near(r.photos.map { $0.core.end.seconds }.max()!, 12, 0.05, "the photos still end with the music")
+        near(r.photos[0].core.duration.seconds, 3.6, 0.01)
+        var plain = project(4)
+        MV.TimelineEngine.fitPhotos(toDuration: 12, in: &plain)
+        near(plain.photos[0].core.duration.seconds, 3, 1e-6); near(plain.photos[3].core.end.seconds, 12, 1e-6)
     }
 }

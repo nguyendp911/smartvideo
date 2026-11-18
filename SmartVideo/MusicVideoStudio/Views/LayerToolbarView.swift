@@ -36,6 +36,13 @@ extension MusicVideoStudio {
                             Button(kind.rawValue) { model.addEffect(kind) }
                         }
                     } label: { item("Hiệu ứng", "sparkles") }
+                    Menu {
+                        Button("Không có") { model.applyTransitionToAll(.none) }
+                        ForEach(PhotoTransitionKind.allCases.filter { $0 != .none }) { kind in
+                            Button(kind.rawValue) { model.applyTransitionToAll(kind) }
+                        }
+                    } label: { item("Chuyển cảnh", "rectangle.2.swap") }
+                    .disabled(model.project.photos.count < 2)
                     Button { model.addVinyl() } label: { item("Đĩa than", "opticaldisc") }
                     Button { model.addText() } label: { item("Chữ", "textformat") }
                     Divider().frame(height: 28)

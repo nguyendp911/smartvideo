@@ -139,15 +139,22 @@ extension MusicVideoStudio {
                             }
                         }
                         group("Chuyển cảnh vào") {
-                            Picker("Kiểu", selection: model.photoBinding(\.transitionIn.kind, fallback: .none)) {
+                            Picker("Kiểu", selection: Binding(
+                                get: { photo.transitionIn.kind },
+                                set: { model.setPhotoTransition(kind: $0, undoable: true) })) {
                                 ForEach(PhotoTransitionKind.allCases) { Text($0.rawValue).tag($0) }
                             }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
                             if photo.transitionIn.isActive {
-                                slider("Thời lượng", model.photoBinding(\.transitionIn.duration, fallback: 0.8), PhotoTransition.durationRange) { String(format: "%.1f s", $0) }
-                                Button { model.packPhotos() } label: {
-                                    Label("Nối tiếp ảnh để chồng chuyển cảnh", systemImage: "rectangle.split.3x1").frame(maxWidth: .infinity)
+                                slider("Thời lượng", Binding(
+                                    get: { photo.transitionIn.duration },
+                                    set: { model.setPhotoTransition(duration: $0, undoable: false) }),
+                                       PhotoTransition.durationRange) { String(format: "%.1f s", $0) }
+                                Button { model.applyTransitionToAll(photo.transitionIn.kind, duration: photo.transitionIn.duration) } label: {
+                                    Label("Dùng kiểu này cho tất cả ảnh", systemImage: "rectangle.2.swap").frame(maxWidth: .infinity)
                                 }.buttonStyle(.bordered).font(.caption)
                             }
+                            Text("Chuyển cảnh chạy khi ảnh này bắt đầu; ảnh tự chồng lên ảnh trước. Ảnh đầu tiên không có chuyển cảnh vào.")
+                                .font(.caption2).foregroundStyle(.secondary)
                         }
                         group("Thứ tự ảnh") {
                             HStack {
