@@ -20,10 +20,13 @@ struct MockupSidebarView: View {
         } else {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 6) {
-                    ForEach(MockupStudioSession.Section.allCases) { chip(title: $0.rawValue, symbol: $0.symbol,
-                        selected: session.section == $0 && session.category == nil) {
-                            session.section = $0; session.category = nil
-                        } }
+                    ForEach(MockupStudioSession.Section.allCases) { section in
+                        chip(title: section.rawValue, symbol: section.symbol,
+                             selected: session.section == section && session.category == nil) {
+                            session.section = section
+                            session.category = nil
+                        }
+                    }
                     ForEach(MockupStudioCategory.allCases) { category in
                         chip(title: category.title, symbol: category.symbol,
                              selected: session.category == category) {
