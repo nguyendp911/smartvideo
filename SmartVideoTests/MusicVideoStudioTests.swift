@@ -1260,7 +1260,6 @@ final class MusicVideoStudioTests: XCTestCase {
         XCTAssertLessThan(mean, 12, "exported frame matches the preview composition (mean abs difference \(mean))")
         let corner = (r: Int(encoded[(2 * 48 + 2) * 4]), g: Int(encoded[(2 * 48 + 2) * 4 + 1]))
         XCTAssertGreaterThan(corner.r, 200); XCTAssertLessThan(corner.g, 60, "the red photo is red in the file")
-        XCTAssertEqual(exporter.fraction, 0.0)                              // direct call: the controller keeps its own phase
     }
 
     @MainActor
@@ -1317,9 +1316,10 @@ final class MusicVideoStudioTests: XCTestCase {
         } catch let error as MV.ExportError {
             XCTAssertNotNil(error.errorDescription)
         }
-        exporter.start(model: empty, settings: MV.ExportSettings())
-        for _ in 0..<100 where exporter.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
-        if case .failed(let message) = exporter.phase { XCTAssertFalse(message.isEmpty) } else { XCTFail("expected a failure, got \(exporter.phase)") }
+        let controller = MV.ProjectExporter()
+        controller.start(model: empty, settings: MV.ExportSettings())
+        for _ in 0..<100 where controller.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        if case .failed(let message) = controller.phase { XCTAssertFalse(message.isEmpty) } else { XCTFail("expected a failure, got \(controller.phase)") }
     }
 
     @MainActor

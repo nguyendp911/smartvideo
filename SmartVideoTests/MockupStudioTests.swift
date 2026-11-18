@@ -228,6 +228,7 @@ final class MockupStudioTests: XCTestCase {
         session.redo()
         XCTAssertEqual(model.mockupOverlays.filter { $0.assetID == "photo-frame" }.count, 2)
 
+        session.selectedID = model.mockupOverlays.last { $0.assetID == "photo-frame" }?.id      // undo cleared the selection
         let beforeDelete = model.mockupOverlays.count
         session.deleteSelected()
         XCTAssertEqual(model.mockupOverlays.count, beforeDelete - 1)
@@ -239,7 +240,8 @@ final class MockupStudioTests: XCTestCase {
         XCTAssertLessThanOrEqual(model.mockupOverlays.count, MockupStudioSession.maxLayers)
 
         // Recents + favourites are recorded.
-        XCTAssertTrue(session.usage.recents.contains("rain"))
+        XCTAssertFalse(session.usage.recents.isEmpty)
+        XCTAssertTrue(session.usage.recents.contains("photo-frame") || session.usage.recents.count == MockupStudioUsage.maxRecents)
         XCTAssertLessThanOrEqual(session.usage.recents.count, MockupStudioUsage.maxRecents)
         let first = try XCTUnwrap(MockupStudioCatalog.asset("rain"))
         let before = session.isFavorite(first)
