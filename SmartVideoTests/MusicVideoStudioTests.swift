@@ -281,4 +281,168 @@ final class MusicVideoStudioTests: XCTestCase {
         }
         XCTAssertGreaterThan(bright, 15, "white text pixels near the centre")
     }
+
+    // MARK: Phase 2 - timeline editing through the model
+
+    @MainActor
+    private func modelWithPhotos(_ count: Int) throws -> MV.MusicVideoEditorModel {
+        let manager = MV.ProjectManager(root: root)
+        let model = MV.MusicVideoEditorModel(manager: manager, project: MV.VideoProject())
+        let png = try solidPNG(.red)
+        let photo = try manager.storeImage(data: png, projectID: model.project.id)
+        model.edit { _ = MV.TimelineEngine.appendPhotos(Array(repeating: photo, count: count), to: &$0) }
+        model.selection = []
+        return model
+    }
+
+    @MainActor
+    func testDraggingAClipIsOneUndoStepAndSnapsWithAGuide() throws {
+        let model = try modelWithPhotos(3)                       // 0-3, 3-6, 6-9
+        let id = model.project.photos[1].core.id
+        let session = try XCTUnwrap(model.beginClipEdit(id))
+        XCTAssertEqual(model.selection, [id], "beginning a drag selects the clip")
+
+        model.moveClips(session, deltaSeconds: 0.5)
+        model.moveClips(session, deltaSeconds: 1.0)              // origin-based: not 1.5
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 4, accuracy: 1e-9)
+        XCTAssertNil(model.snapGuide, "nothing near, nothing to snap to")
+
+        // Close to the end of the next clip (9 s): the edge snaps and a guide appears.
+        model.moveClips(session, deltaSeconds: 2.97)
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 6, accuracy: 1e-9)
+        XCTAssertNotNil(model.snapGuide)
+        model.endClipEdit()
+        XCTAssertNil(model.snapGuide)
+
+        model.undo()
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 3, accuracy: 1e-9,
+                       "the whole drag was ONE undo step")
+        model.redo()
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 6, accuracy: 1e-9)
+    }
+
+    @MainActor
+    func testLockedClipsCannotBeDraggedOrTrimmed() throws {
+        let model = try modelWithPhotos(2)
+        let id = model.project.photos[0].core.id
+        model.selection = [id]
+        model.flagBinding(\.isLocked).wrappedValue = true
+        XCTAssertNil(model.beginClipEdit(id))
+        model.rippleDeleteSelection()
+        XCTAssertEqual(model.project.photos.count, 2, "locked layers survive a ripple delete")
+    }
+
+    @MainActor
+    func testTrimSplitRippleAndReorder() throws {
+        let model = try modelWithPhotos(4)                       // 0-3, 3-6, 6-9, 9-12
+        let ids = model.project.photos.map(\.core.id)
+
+        // Trim the end of the second photo by one second.
+        let session = try XCTUnwrap(model.beginClipEdit(ids[1]))
+        model.trimClip(session, edge: .end, deltaSeconds: -1)
+        model.endClipEdit()
+        XCTAssertEqual(model.project.photos[1].core.duration.seconds, 2, accuracy: 1e-9)
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 3, accuracy: 1e-9)
+
+        // Split at the playhead.
+        model.selection = [ids[2]]
+        model.playback.seek(to: MV.ProjectTime(seconds: 7.5))
+        model.splitAtPlayhead()
+        XCTAssertEqual(model.project.photos.count, 5)
+        XCTAssertEqual(model.project.photos[2].core.end.seconds, 7.5, accuracy: 1e-9)
+        XCTAssertEqual(model.selection.count, 1, "the new second half is selected")
+        model.undo()
+        XCTAssertEqual(model.project.photos.count, 4)
+
+        // A split that cannot happen records nothing and says why.
+        model.selection = []
+        model.playback.seek(to: MV.ProjectTime(seconds: 50))
+        let undoBefore = model.canUndo
+        model.splitAtPlayhead()
+        XCTAssertNotNil(model.statusMessage)
+        XCTAssertEqual(model.canUndo, undoBefore)
+
+        // Ripple delete closes the gap; Pack lays the rest out back to back.
+        model.selection = [ids[0]]
+        model.rippleDeleteSelection()
+        XCTAssertEqual(model.project.photos.count, 3)
+        XCTAssertEqual(model.project.photos.first?.core.start.seconds ?? -1, 0, accuracy: 1e-9)
+        model.packPhotos()
+        let starts = model.project.photos.map(\.core.start.seconds)
+        XCTAssertEqual(starts, [0, 2, 5])                        // 2 s, 3 s, 3 s photos
+
+        // Reorder the last photo to the front.
+        model.selection = [ids[3]]
+        model.movePhotoInOrder(-1)
+        model.movePhotoInOrder(-1)
+        XCTAssertEqual(MV.TimelineEditing.orderedPhotoIDs(in: model.project).first, ids[3])
+
+        model.setAllPhotoDurations(1.5)
+        XCTAssertTrue(model.project.photos.allSatisfy { abs($0.core.duration.seconds - 1.5) < 1e-9 })
+        model.selectAll()
+        XCTAssertEqual(model.selection.count, 3)
+    }
+
+    @MainActor
+    func testPreviewCrossfadesBetweenOverlappingPhotos() async throws {
+        let manager = MV.ProjectManager(root: root)
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let red = try manager.storeImage(data: try solidPNG(.red), projectID: project.id)
+        let blue = try manager.storeImage(data: try solidPNG(.blue), projectID: project.id)
+        MV.TimelineEngine.appendPhotos([red, blue], to: &project)
+        project.photos[1].transitionIn = MV.PhotoTransition(kind: .crossfade, duration: 1.0)
+        MV.TimelineEditing.packPhotos(in: &project)             // blue now starts at 2 s and overlaps red
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 2, accuracy: 1e-9)
+
+        let canvas = MV.VideoPreviewView.fitted(ratio: project.aspect.ratio, in: CGSize(width: 400, height: 300))
+        let maxPixel = MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)
+        for layer in project.photos { _ = await MV.PhotoImageCache.shared.load(model.mediaURL(for: layer), maxPixel: maxPixel) }
+
+        let before = try pixel(try render(model, at: 1.9), 0.5, 0.5)
+        XCTAssertGreaterThan(before.r, 200); XCTAssertLessThan(before.b, 60, "only red before the transition")
+
+        let mid = try pixel(try render(model, at: 2.5), 0.5, 0.5)
+        XCTAssertGreaterThan(mid.r, 70); XCTAssertGreaterThan(mid.b, 70)
+        XCTAssertLessThan(mid.r, 190); XCTAssertLessThan(mid.b, 190)
+        XCTAssertEqual(Double(mid.r + mid.b), 255, accuracy: 60, "halfway the two photos mix")
+
+        let after = try pixel(try render(model, at: 3.2), 0.5, 0.5)
+        XCTAssertGreaterThan(after.b, 200); XCTAssertLessThan(after.r, 60)
+    }
+
+    @MainActor
+    func testKenBurnsZoomsThePictureOverTheClip() async throws {
+        let manager = MV.ProjectManager(root: root)
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        // White square in the middle of a black photo: zooming in makes it cover more pixels.
+        let size = CGSize(width: 400, height: 225)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        let data = try XCTUnwrap(UIGraphicsImageRenderer(size: size, format: format).image { ctx in
+            UIColor.black.setFill(); ctx.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setFill(); ctx.fill(CGRect(x: 150, y: 62, width: 100, height: 100))
+        }.pngData())
+        let photo = try manager.storeImage(data: data, projectID: project.id)
+        MV.TimelineEngine.appendPhotos([photo], to: &project)
+        project.photos[0].motion = MV.PhotoMotion(preset: .zoomIn, intensity: 0.5)
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        let canvas = MV.VideoPreviewView.fitted(ratio: project.aspect.ratio, in: CGSize(width: 400, height: 300))
+        let maxPixel = MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)
+        _ = await MV.PhotoImageCache.shared.load(model.mediaURL(for: project.photos[0]), maxPixel: maxPixel)
+
+        func whiteCount(_ image: UIImage) throws -> Int {
+            var count = 0
+            for ny in stride(from: 0.2, through: 0.8, by: 0.04) {
+                for nx in stride(from: 0.2, through: 0.8, by: 0.04) {
+                    if try pixel(image, nx, ny).r > 200 { count += 1 }
+                }
+            }
+            return count
+        }
+        let start = try whiteCount(try render(model, at: 0.0))
+        let end = try whiteCount(try render(model, at: 2.9))
+        XCTAssertGreaterThan(end, start + 20, "the white square grows as the zoom-in plays")
+    }
 }

@@ -15,6 +15,8 @@ extension MusicVideoStudio {
         @Published private(set) var isImporting = false
         @Published private(set) var importProgress = ""
         @Published private(set) var statusMessage: String?
+        /// Where a dragged clip edge is snapping (drawn as a guide line).
+        @Published private(set) var snapGuide: ProjectTime?
 
         let playback = PlaybackEngine()
         let manager: ProjectManager
@@ -52,17 +54,25 @@ extension MusicVideoStudio {
         func mutate(_ change: (inout VideoProject) -> Void) {
             var next = project
             change(&next)
-            guard next != project else { return }
+            apply(next)
+        }
+
+        private func apply(_ candidate: VideoProject) {
+            guard candidate != project else { return }
+            var next = candidate
             next.modifiedAt = Date()
             project = next
             playback.configure(duration: project.duration, fps: project.fps)
             scheduleSave()
         }
 
-        /// One undo step, then apply.
+        /// One undo step, then apply. A change that alters nothing records nothing.
         func edit(_ change: (inout VideoProject) -> Void) {
+            var next = project
+            change(&next)
+            guard next != project else { return }
             history.checkpoint(project)
-            mutate(change)
+            apply(next)
         }
 
         /// Call once when a slider drag / text edit begins.
@@ -128,6 +138,98 @@ extension MusicVideoStudio {
         func setAspect(_ aspect: AspectRatio) { edit { $0.aspect = aspect } }
         func setFPS(_ fps: Int) { edit { $0.fps = ProjectTime.supportedFrameRates.contains(fps) ? fps : $0.fps } }
         func rename(_ name: String) { mutate { $0.name = name } }
+
+        // MARK: Timeline editing (drag, trim, split, ripple, order)
+
+        /// One continuous clip interaction: the ranges at the moment it began,
+        /// so every drag event is computed from the origin (no drift).
+        struct ClipEditSession {
+            let primary: UUID
+            let origins: [UUID: TimeRange]
+        }
+
+        private var snapThreshold: ProjectTime {
+            ProjectTime(seconds: 8 / max(1, scale.pixelsPerSecond))      // 8 pt on screen
+        }
+
+        /// Starts moving/trimming `id` (and the rest of an existing selection
+        /// that contains it). nil when the layer is locked. One undo step.
+        func beginClipEdit(_ id: UUID) -> ClipEditSession? {
+            guard let core = project.core(for: id), !core.isLocked else { return nil }
+            if !selection.contains(id) { selection = [id] }
+            let ids = editableSelection.union([id])
+            var origins: [UUID: TimeRange] = [:]
+            for c in project.allCores where ids.contains(c.id) { origins[c.id] = c.range }
+            history.checkpoint(project)
+            return ClipEditSession(primary: id, origins: origins)
+        }
+
+        func moveClips(_ session: ClipEditSession, deltaSeconds: Double) {
+            let points = TimelineEditing.snapPoints(
+                in: project, excluding: Set(session.origins.keys), playhead: playback.state.time)
+            let threshold = snapThreshold
+            var snapped: ProjectTime?
+            mutate { p in
+                snapped = TimelineEditing.move(origins: session.origins, delta: ProjectTime(seconds: deltaSeconds),
+                                               in: &p, snapPoints: points, threshold: threshold)
+            }
+            snapGuide = snapped
+        }
+
+        func trimClip(_ session: ClipEditSession, edge: TrimEdge, deltaSeconds: Double) {
+            guard let origin = session.origins[session.primary] else { return }
+            let points = TimelineEditing.snapPoints(
+                in: project, excluding: [session.primary], playhead: playback.state.time)
+            let threshold = snapThreshold
+            var snapped: ProjectTime?
+            mutate { p in
+                snapped = TimelineEditing.trim(id: session.primary, origin: origin, edge: edge,
+                                               delta: ProjectTime(seconds: deltaSeconds), in: &p,
+                                               snapPoints: points, threshold: threshold)
+            }
+            snapGuide = snapped
+        }
+
+        func endClipEdit() { snapGuide = nil }
+
+        /// Cuts the selected layers (or, with no selection, everything under the
+        /// playhead) at the playhead.
+        func splitAtPlayhead() {
+            let time = playback.state.frameTime
+            let ids = selection.isEmpty ? Set(TimelineEngine.activeLayerIDs(in: project, at: time)) : selection
+            var created: [UUID] = []
+            edit { created = TimelineEditing.split(ids, at: time, in: &$0) }
+            if created.isEmpty {
+                statusMessage = "Đặt con trỏ bên trong một clip (cách mép ít nhất 0,1 giây) rồi bấm Cắt."
+            } else {
+                statusMessage = nil
+                selection = Set(created)
+            }
+        }
+
+        /// Delete and close the gap on the same track.
+        func rippleDeleteSelection() {
+            let ids = editableSelection
+            guard !ids.isEmpty else { return }
+            edit { TimelineEditing.rippleDelete(ids, in: &$0) }
+            selection.subtract(ids)
+        }
+
+        func packPhotos() { edit { TimelineEditing.packPhotos(in: &$0) } }
+
+        /// Move the selected photo earlier (-1) or later (+1) in play order.
+        func movePhotoInOrder(_ offset: Int) {
+            guard let photo = selectedPhotoLayer() else { return }
+            var moved = false
+            edit { moved = TimelineEditing.movePhoto(photo.core.id, by: offset, in: &$0) }
+            statusMessage = moved ? nil : "Ảnh đã ở đầu hoặc cuối danh sách, hoặc đang bị khóa."
+        }
+
+        func setAllPhotoDurations(_ seconds: Double) {
+            edit { TimelineEditing.setAllPhotoDurations(ProjectTime(seconds: seconds), in: &$0) }
+        }
+
+        func selectAll() { selection = Set(project.allCores.map(\.id)) }
 
         // MARK: Bindings for the inspector
 

@@ -49,6 +49,7 @@ extension MusicVideoStudio {
                     }.pickerStyle(.segmented)
                 }
                 LoopToggleView(playback: playback)
+                photoDurationRow
                 infoLine("Thời lượng", model.project.duration.timecode(fps: model.project.fps))
                 infoLine("Số lớp", "\(model.project.layerCount)")
                 let size = model.project.aspect.pixelSize(shortSide: 1080)
@@ -56,6 +57,19 @@ extension MusicVideoStudio {
                 Text("Chạm một clip trên timeline để chỉnh thuộc tính của lớp.")
                     .font(.caption2).foregroundStyle(.secondary)
                 projectsMenu
+            }
+        }
+
+        @State private var allPhotoSeconds = 3.0
+
+        private var photoDurationRow: some View {
+            VStack(alignment: .leading, spacing: 4) {
+                slider("Thời lượng chung của ảnh", $allPhotoSeconds, 0.5...15) { String(format: "%.1f s", $0) }
+                Button { model.setAllPhotoDurations(allPhotoSeconds) } label: {
+                    Label("Áp dụng cho mọi ảnh và nối tiếp", systemImage: "equal.square").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered).font(.caption)
+                .disabled(model.project.photos.isEmpty)
             }
         }
 
@@ -115,6 +129,31 @@ extension MusicVideoStudio {
                                 }.pickerStyle(.segmented)
                             }
                             infoLine("Kích thước gốc", "\(photo.pixelWidth)×\(photo.pixelHeight)")
+                        }
+                        group("Chuyển động Ken Burns") {
+                            Picker("Kiểu", selection: model.photoBinding(\.motion.preset, fallback: .none)) {
+                                ForEach(PhotoMotionPreset.allCases) { Text($0.rawValue).tag($0) }
+                            }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                            if photo.motion.isActive {
+                                slider("Mức", model.photoBinding(\.motion.intensity, fallback: 0.15), PhotoMotion.intensityRange) { "\(Int($0 * 100))%" }
+                            }
+                        }
+                        group("Chuyển cảnh vào") {
+                            Picker("Kiểu", selection: model.photoBinding(\.transitionIn.kind, fallback: .none)) {
+                                ForEach(PhotoTransitionKind.allCases) { Text($0.rawValue).tag($0) }
+                            }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                            if photo.transitionIn.isActive {
+                                slider("Thời lượng", model.photoBinding(\.transitionIn.duration, fallback: 0.8), PhotoTransition.durationRange) { String(format: "%.1f s", $0) }
+                                Button { model.packPhotos() } label: {
+                                    Label("Nối tiếp ảnh để chồng chuyển cảnh", systemImage: "rectangle.split.3x1").frame(maxWidth: .infinity)
+                                }.buttonStyle(.bordered).font(.caption)
+                            }
+                        }
+                        group("Thứ tự ảnh") {
+                            HStack {
+                                Button { model.movePhotoInOrder(-1) } label: { Label("Đưa lên trước", systemImage: "arrow.left") }
+                                Button { model.movePhotoInOrder(1) } label: { Label("Đưa ra sau", systemImage: "arrow.right") }
+                            }.font(.caption).buttonStyle(.bordered)
                         }
                     }
                     if single?.track == .text, model.selectedTextLayer() != nil {

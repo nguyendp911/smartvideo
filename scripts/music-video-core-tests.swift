@@ -17,6 +17,9 @@ struct MusicVideoCoreTests {
         undo()
         transport()
         try coding()
+        editing()
+        photoEffects()
+        try photoCoding()
         print("music video core tests passed")
     }
 
@@ -304,5 +307,226 @@ struct MusicVideoCoreTests {
         precondition(empty.aspect == .portrait9x16 && empty.fps == 30 && empty.photos.isEmpty)
         let oddFPS = try decoder.decode(MV.VideoProject.self, from: Data(#"{"fps":7,"name":"x"}"#.utf8))
         precondition(oddFPS.fps == 30 && oddFPS.name == "x")
+    }
+
+    // MARK: Phase 2 - timeline editing
+
+    static func fourPhotos() -> MV.VideoProject {
+        var p = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(4), to: &p)          // 0-3, 3-6, 6-9, 9-12
+        return p
+    }
+
+    static func sec(_ s: Double) -> MV.ProjectTime { MV.ProjectTime(seconds: s) }
+
+    static func editing() {
+        let threshold = sec(0.1)
+
+        // Snap points: zero, playhead and the other layers' edges, sorted and unique.
+        var p = fourPhotos()
+        let b = p.photos[1].core.id
+        let points = MV.TimelineEditing.snapPoints(in: p, excluding: [b], playhead: sec(4.5))
+        precondition(points == [0, 3, 4.5, 6, 9, 12].map(sec) || points == [0, 4.5, 3, 6, 9, 12].map(sec).sorted(), "\\(points)")
+        precondition(!points.contains(sec(6)) == false && points.first == .zero)
+        precondition(MV.TimelineEditing.nearest(to: sec(5.95), in: points, threshold: threshold) == sec(6))
+        precondition(MV.TimelineEditing.nearest(to: sec(5.5), in: points, threshold: threshold) == nil)
+
+        // Move: free, snapped, clamped at zero, group, locked.
+        let range = p.photos[1].core.range
+        precondition(MV.TimelineEditing.move(origins: [b: range], delta: sec(1), in: &p, snapPoints: points, threshold: threshold) == nil)
+        near(p.photos[1].core.start.seconds, 4)
+        let snapped = MV.TimelineEditing.move(origins: [b: range], delta: sec(2.97), in: &p, snapPoints: points, threshold: threshold)
+        precondition(snapped == sec(6) || snapped == sec(9))
+        near(p.photos[1].core.start.seconds, 6, 1e-9, "snaps to the neighbouring edge")
+        MV.TimelineEditing.move(origins: [b: range], delta: sec(-10), in: &p, snapPoints: [], threshold: threshold)
+        precondition(p.photos[1].core.start == .zero, "never before time zero")
+
+        p = fourPhotos()
+        let a = p.photos[0].core.id, c = p.photos[2].core.id
+        let group: [UUID: MV.TimeRange] = [a: p.photos[0].core.range, c: p.photos[2].core.range]
+        MV.TimelineEditing.move(origins: group, delta: sec(-5), in: &p, snapPoints: [], threshold: threshold)
+        precondition(p.photos[0].core.start == .zero && p.photos[2].core.start == sec(6), "the group stops together at zero")
+        MV.TimelineEditing.move(origins: group, delta: sec(2), in: &p, snapPoints: [], threshold: threshold)
+        near(p.photos[0].core.start.seconds, 2); near(p.photos[2].core.start.seconds, 8)
+
+        p = fourPhotos()
+        p.updateCore(a) { $0.isLocked = true }
+        precondition(MV.TimelineEditing.move(origins: [a: p.photos[0].core.range], delta: sec(5), in: &p, snapPoints: [], threshold: threshold) == nil)
+        precondition(p.photos[0].core.start == .zero, "locked layers do not move")
+
+        // Trim.
+        p = fourPhotos()
+        let id1 = p.photos[1].core.id, r1 = p.photos[1].core.range
+        MV.TimelineEditing.trim(id: id1, origin: r1, edge: .start, delta: sec(1), in: &p, snapPoints: [], threshold: threshold)
+        near(p.photos[1].core.start.seconds, 4); near(p.photos[1].core.duration.seconds, 2)
+        MV.TimelineEditing.trim(id: id1, origin: r1, edge: .start, delta: sec(99), in: &p, snapPoints: [], threshold: threshold)
+        near(p.photos[1].core.duration.seconds, 0.1, 1e-6, "cannot trim past the minimum length")
+        MV.TimelineEditing.trim(id: id1, origin: r1, edge: .start, delta: sec(-99), in: &p, snapPoints: [], threshold: threshold)
+        precondition(p.photos[1].core.start == .zero && p.photos[1].core.end == r1.end, "start clamps at zero, end stays put")
+        MV.TimelineEditing.trim(id: id1, origin: r1, edge: .end, delta: sec(-99), in: &p, snapPoints: [], threshold: threshold)
+        near(p.photos[1].core.duration.seconds, 0.1)
+        MV.TimelineEditing.trim(id: id1, origin: r1, edge: .end, delta: sec(2), in: &p, snapPoints: [], threshold: threshold)
+        near(p.photos[1].core.duration.seconds, 5)
+        let trimSnap = MV.TimelineEditing.trim(id: id1, origin: r1, edge: .end, delta: sec(0.04), in: &p,
+                                               snapPoints: [sec(6)], threshold: threshold)
+        precondition(trimSnap == sec(6)); near(p.photos[1].core.duration.seconds, 3)
+        p.updateCore(id1) { $0.isLocked = true }
+        precondition(MV.TimelineEditing.trim(id: id1, origin: r1, edge: .end, delta: sec(1), in: &p, snapPoints: [], threshold: threshold) == nil)
+
+        // Split.
+        p = fourPhotos()
+        let tid = MV.TimelineEngine.addText("t", at: sec(3.5), to: &p)!      // 3.5-6.5
+        let pid1 = p.photos[1].core.id
+        let created = MV.TimelineEditing.split([pid1, tid], at: sec(4.5123), in: &p)
+        precondition(created.count == 2 && p.photos.count == 5 && p.texts.count == 2)
+        near(p.photos[1].core.end.seconds, 4.5, 1e-9, "cut is quantised to a frame")
+        let right = p.photos.last!
+        precondition(right.core.start.seconds == 4.5 && right.core.end == sec(6) && right.core.name.hasSuffix("(2)"))
+        precondition(right.mediaFile == p.photos[1].mediaFile && right.transitionIn.kind == .none)
+        precondition(MV.TimelineEditing.split([pid1], at: sec(3.05), in: &p).isEmpty, "too close to the edge")
+        precondition(MV.TimelineEditing.split([UUID()], at: sec(4), in: &p).isEmpty)
+        p = fourPhotos()
+        let lockedID = p.photos[1].core.id
+        p.updateCore(lockedID) { $0.isLocked = true }
+        precondition(MV.TimelineEditing.split([lockedID], at: sec(4), in: &p).isEmpty && p.photos.count == 4)
+
+        // Ripple delete closes the gap on the same track only.
+        p = fourPhotos()
+        let t2 = MV.TimelineEngine.addText("keep", at: sec(10), to: &p)!
+        MV.TimelineEditing.rippleDelete([p.photos[1].core.id], in: &p)
+        precondition(p.photos.map(\\.core.start.seconds) == [0, 3, 6] && p.photos.count == 3)
+        precondition(p.core(for: t2)?.start == sec(10), "other tracks are untouched")
+        p = fourPhotos()
+        p.updateCore(p.photos[3].core.id) { $0.isLocked = true }
+        MV.TimelineEditing.rippleDelete([p.photos[0].core.id], in: &p)
+        precondition(p.photos.last?.core.start == sec(9), "locked later layers stay in place")
+
+        // Order + pack.
+        p = fourPhotos()
+        let ids = p.photos.map(\\.core.id)
+        precondition(MV.TimelineEditing.orderedPhotoIDs(in: p) == ids)
+        precondition(MV.TimelineEditing.movePhoto(ids[0], by: 1, in: &p))
+        precondition(MV.TimelineEditing.orderedPhotoIDs(in: p) == [ids[1], ids[0], ids[2], ids[3]])
+        precondition(p.core(for: ids[1])?.start == .zero && p.core(for: ids[0])?.start == sec(3))
+        precondition(!MV.TimelineEditing.movePhoto(ids[3], by: 1, in: &p), "cannot move past the end")
+        precondition(!MV.TimelineEditing.movePhoto(UUID(), by: 1, in: &p))
+
+        p = fourPhotos()
+        p.photos[1].transitionIn = MV.PhotoTransition(kind: .crossfade, duration: 1.0)
+        MV.TimelineEditing.packPhotos(in: &p)
+        near(p.photos[1].core.start.seconds, 2, 1e-9, "a transition overlaps the previous photo")
+        near(p.photos[2].core.start.seconds, 5); near(p.photos[3].core.start.seconds, 8)
+        near(p.duration.seconds, 11)
+
+        p = fourPhotos()
+        p.photos[2].core.start = sec(20)                         // a gap and out of order
+        MV.TimelineEditing.packPhotos(in: &p)
+        precondition(p.photos.map(\\.core.start.seconds) == [0, 3, 9, 6], "play order is by start time, then packed")
+
+        MV.TimelineEditing.setAllPhotoDurations(sec(2), in: &p)
+        precondition(p.photos.allSatisfy { $0.core.duration == sec(2) })
+        precondition(Set(p.photos.map(\\.core.start.seconds)) == [0, 2, 4, 6])
+        MV.TimelineEditing.setAllPhotoDurations(sec(0.001), in: &p)
+        precondition(p.photos.allSatisfy { $0.core.duration >= MV.LayerCore.minimumDuration })
+    }
+
+    // MARK: Phase 2 - Ken Burns and transitions
+
+    static func photoEffects() {
+        let k = MV.KenBurnsEffect.self
+        let i = 0.2
+        func motion(_ preset: MV.PhotoMotionPreset) -> MV.PhotoMotion { MV.PhotoMotion(preset: preset, intensity: i) }
+
+        precondition(k.transform(motion(.none), progress: 0.5) == .identity)
+        near(k.transform(motion(.zoomIn), progress: 0).scale, 1)
+        near(k.transform(motion(.zoomIn), progress: 1).scale, 1.2)
+        near(k.transform(motion(.zoomIn), progress: 0.5).scale, 1.1)
+        near(k.transform(motion(.zoomOut), progress: 0).scale, 1.2)
+        near(k.transform(motion(.zoomOut), progress: 1).scale, 1)
+        let left0 = k.transform(motion(.panLeft), progress: 0), left1 = k.transform(motion(.panLeft), progress: 1)
+        near(left0.offsetX, 0.1); near(left1.offsetX, -0.1); near(left0.scale, 1.2)
+        let up0 = k.transform(motion(.panUp), progress: 0)
+        near(up0.offsetY, 0.1); near(up0.offsetX, 0)
+        near(k.transform(motion(.panDown), progress: 0).offsetY, -0.1)
+        near(k.transform(motion(.panRight), progress: 1).offsetX, 0.1)
+        let drift = k.transform(motion(.drift), progress: 0.5)
+        precondition(drift.scale > 1.2 && drift.scale < 1.32)
+
+        // Panning never reveals an edge: the picture is always bigger than the offset.
+        for preset in MV.PhotoMotionPreset.allCases where preset != .none {
+            for p in stride(from: 0.0, through: 1.0, by: 0.1) {
+                let t = k.transform(motion(preset), progress: p)
+                precondition(t.scale >= 1 - 1e-9)
+                precondition(abs(t.offsetX) <= (t.scale - 1) / 2 + 1e-9 && abs(t.offsetY) <= (t.scale - 1) / 2 + 1e-9, "\\(preset) \\(p)")
+            }
+        }
+        // Robust to bad input.
+        near(k.transform(motion(.zoomIn), progress: .nan).scale, 1)
+        near(k.transform(motion(.zoomIn), progress: -3).scale, 1)
+        near(k.transform(motion(.zoomIn), progress: 9).scale, 1.2)
+        near(k.transform(MV.PhotoMotion(preset: .zoomIn, intensity: 9), progress: 1).scale, 1.5)
+        near(k.transform(MV.PhotoMotion(preset: .zoomIn, intensity: 0), progress: 1).scale, 1.03)
+        near(k.progress(start: sec(3), duration: sec(3), at: sec(4.5)), 0.5)
+        near(k.progress(start: sec(3), duration: sec(3), at: sec(1)), 0)
+        near(k.progress(start: sec(3), duration: sec(3), at: sec(8)), 1)
+        near(k.progress(start: sec(3), duration: .zero, at: sec(4)), 0)
+
+        // Transitions.
+        let e = MV.PhotoTransitionEngine.self
+        precondition(e.effect(.none, progress: 0.3) == .identity)
+        near(e.effect(.crossfade, progress: 0).opacity, 0)
+        near(e.effect(.crossfade, progress: 1).opacity, 1)
+        near(e.effect(.crossfade, progress: 0.5).opacity, 0.5)
+        near(e.effect(.slideLeft, progress: 0).offsetX, 1); near(e.effect(.slideLeft, progress: 1).offsetX, 0)
+        near(e.effect(.slideRight, progress: 0).offsetX, -1)
+        near(e.effect(.slideUp, progress: 0).offsetY, 1)
+        near(e.effect(.zoom, progress: 0).scale, 1.35); near(e.effect(.zoom, progress: 0).opacity, 0)
+        near(e.effect(.zoom, progress: 1).scale, 1); near(e.effect(.zoom, progress: 1).opacity, 1)
+        for kind in MV.PhotoTransitionKind.allCases {
+            var last = -1.0
+            for p in stride(from: 0.0, through: 1.0, by: 0.05) {
+                let o = e.effect(kind, progress: p).opacity
+                precondition(o >= last - 1e-9 && o >= 0 && o <= 1, "opacity is monotonic")
+                last = o
+            }
+        }
+
+        let fade = MV.PhotoTransition(kind: .crossfade, duration: 1.0)
+        precondition(e.progress(fade, start: sec(3), duration: sec(3), at: sec(2.9)) == nil)
+        near(e.progress(fade, start: sec(3), duration: sec(3), at: sec(3))!, 0)
+        near(e.progress(fade, start: sec(3), duration: sec(3), at: sec(3.5))!, 0.5)
+        precondition(e.progress(fade, start: sec(3), duration: sec(3), at: sec(4)) == nil, "half-open: over at exactly 1 s")
+        precondition(e.progress(MV.PhotoTransition(), start: sec(3), duration: sec(3), at: sec(3.1)) == nil)
+        near(e.effectiveDuration(MV.PhotoTransition(kind: .crossfade, duration: 3), layerDuration: sec(1)).seconds, 0.9)
+        near(e.effectiveDuration(MV.PhotoTransition(kind: .crossfade, duration: 0), layerDuration: sec(5)).seconds, 0.2)
+
+        var core = MV.LayerCore(name: "x", track: .photo, start: sec(3), duration: sec(3), zIndex: 0)
+        core.transform = MV.LayerTransform()
+        var layer = MV.PhotoLayer(core: core, mediaFile: "a.jpg", pixelWidth: 10, pixelHeight: 10)
+        precondition(e.effect(for: layer, at: sec(3.1)) == .identity)
+        layer.transitionIn = fade
+        near(e.effect(for: layer, at: sec(3.5)).opacity, 0.5)
+        near(e.effect(for: layer, at: sec(5)).opacity, 1)
+    }
+
+    static func photoCoding() throws {
+        // A phase-1 project (no motion / transition keys) still opens.
+        var p = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(1), to: &p)
+        let data = try JSONEncoder().encode(p)
+        var json = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+        var photosJSON = json["photos"] as! [[String: Any]]
+        photosJSON[0].removeValue(forKey: "motion")
+        photosJSON[0].removeValue(forKey: "transitionIn")
+        photosJSON[0].removeValue(forKey: "fit")
+        json["photos"] = photosJSON
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.photos[0].motion == MV.PhotoMotion() && old.photos[0].transitionIn == MV.PhotoTransition())
+        precondition(old.photos[0].fit == .fill && old.photos[0].mediaFile == "p0.jpg")
+
+        p.photos[0].motion = MV.PhotoMotion(preset: .panLeft, intensity: 0.3)
+        p.photos[0].transitionIn = MV.PhotoTransition(kind: .slideUp, duration: 1.5)
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(p))
+        precondition(back.photos == p.photos)
     }
 }

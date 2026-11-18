@@ -27,6 +27,14 @@ extension MusicVideoStudio {
                     }
                     Button { model.addText() } label: { item("Chữ", "textformat") }
                     Divider().frame(height: 28)
+                    Button { model.splitAtPlayhead() } label: { item("Cắt", "scissors") }
+                    Button { model.rippleDeleteSelection() } label: { item("Xóa dồn", "arrow.left.to.line") }
+                        .disabled(model.editableSelection.isEmpty)
+                    Button { model.packPhotos() } label: { item("Nối tiếp", "rectangle.split.3x1") }
+                        .disabled(model.project.photos.isEmpty)
+                    Divider().frame(height: 28)
+                    Button { model.selectAll() } label: { item("Chọn hết", "checklist") }
+                        .disabled(model.project.layerCount == 0)
                     Button { model.multiSelect.toggle() } label: {
                         item("Chọn nhiều", model.multiSelect ? "checkmark.circle.fill" : "checkmark.circle", highlight: model.multiSelect)
                     }

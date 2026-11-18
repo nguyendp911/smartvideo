@@ -17,7 +17,7 @@ extension MusicVideoStudio {
                     ZStack {
                         Color.black
                         ForEach(items) { item in
-                            LayerRenderView(item: item, canvas: canvas,
+                            LayerRenderView(item: item, canvas: canvas, time: playback.state.frameTime,
                                             selected: model.selection.contains(item.id),
                                             model: model)
                         }
@@ -54,13 +54,14 @@ extension MusicVideoStudio {
     struct LayerRenderView: View {
         let item: RenderItem
         let canvas: CGSize
+        let time: ProjectTime
         let selected: Bool
         let model: MusicVideoEditorModel
 
         var body: some View {
             switch item {
             case .photo(let layer):
-                PhotoLayerView(layer: layer, url: model.mediaURL(for: layer), canvas: canvas, selected: selected)
+                PhotoLayerView(layer: layer, url: model.mediaURL(for: layer), canvas: canvas, time: time, selected: selected)
             case .text(let layer):
                 TextLayerView(layer: layer, canvas: canvas, selected: selected)
             }
@@ -71,13 +72,15 @@ extension MusicVideoStudio {
         let layer: PhotoLayer
         let url: URL
         let canvas: CGSize
+        let time: ProjectTime
         let selected: Bool
         @State private var image: UIImage?
 
-        init(layer: PhotoLayer, url: URL, canvas: CGSize, selected: Bool) {
+        init(layer: PhotoLayer, url: URL, canvas: CGSize, time: ProjectTime, selected: Bool) {
             self.layer = layer
             self.url = url
             self.canvas = canvas
+            self.time = time
             self.selected = selected
             _image = State(initialValue: PhotoImageCache.shared.cached(
                 url, maxPixel: PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)))
@@ -87,21 +90,30 @@ extension MusicVideoStudio {
 
         var body: some View {
             let t = layer.core.transform
+            // Both are pure functions of the clock's frame time, so they look
+            // identical after a seek, a pause or in the exported file.
+            let kb = KenBurnsEffect.transform(
+                layer.motion,
+                progress: KenBurnsEffect.progress(start: layer.core.start, duration: layer.core.duration, at: time))
+            let tr = PhotoTransitionEngine.effect(for: layer, at: time)
             ZStack {
                 if let image {
                     Image(uiImage: image)
                         .resizable()
                         .aspectRatio(contentMode: layer.fit == .fill ? .fill : .fit)
                         .frame(width: canvas.width, height: canvas.height)
+                        .scaleEffect(kb.scale)
+                        .offset(x: CGFloat(kb.offsetX) * canvas.width, y: CGFloat(kb.offsetY) * canvas.height)
+                        .frame(width: canvas.width, height: canvas.height)
                         .clipped()
                 }
                 if selected { Rectangle().strokeBorder(Color.cyan, lineWidth: 2) }
             }
             .frame(width: canvas.width, height: canvas.height)
-            .scaleEffect(t.scale)
+            .scaleEffect(t.scale * tr.scale)
             .rotationEffect(.degrees(t.rotation))
-            .offset(x: CGFloat(t.x - 0.5) * canvas.width, y: CGFloat(t.y - 0.5) * canvas.height)
-            .opacity(t.opacity)
+            .offset(x: CGFloat(t.x - 0.5 + tr.offsetX) * canvas.width, y: CGFloat(t.y - 0.5 + tr.offsetY) * canvas.height)
+            .opacity(t.opacity * tr.opacity)
             .task(id: url) {
                 if image == nil { image = PhotoImageCache.shared.cached(url, maxPixel: pixels) }
                 if image == nil { image = await PhotoImageCache.shared.load(url, maxPixel: pixels) }

@@ -76,6 +76,12 @@ extension MusicVideoStudio {
                                 }
                                 ForEach(tracks) { lane($0, width: width) }
                             }
+                            if let guide = model.snapGuide {
+                                Rectangle().fill(Color.yellow.opacity(0.9))
+                                    .frame(width: 1.5, height: TimelineRulerView.height + laneHeight * CGFloat(tracks.count))
+                                    .padding(.leading, CGFloat(model.scale.x(for: guide)))
+                                    .allowsHitTesting(false)
+                            }
                             PlayheadView(
                                 scale: model.scale, playback: playback,
                                 height: TimelineRulerView.height + laneHeight * CGFloat(tracks.count),
@@ -102,6 +108,14 @@ extension MusicVideoStudio {
             .frame(height: TimelineRulerView.height + laneHeight * CGFloat(tracks.count))
         }
 
+        /// Only blocks near the visible part are built, so hundreds of photos stay smooth.
+        private func isNearViewport(_ clip: TimelineClip) -> Bool {
+            let margin: CGFloat = 400
+            let left = CGFloat(model.scale.x(for: clip.range.start))
+            let right = CGFloat(model.scale.x(for: clip.range.end))
+            return right >= scrollX - margin && left <= scrollX + viewportWidth + margin
+        }
+
         private func lane(_ track: TrackKind, width: CGFloat) -> some View {
             let clips = TimelineEngine.clips(in: model.project, track: track)
             return ZStack(alignment: .topLeading) {
@@ -109,7 +123,7 @@ extension MusicVideoStudio {
                     .frame(width: width, height: laneHeight)
                     .contentShape(Rectangle())
                     .onTapGesture { model.clearSelection() }
-                ForEach(clips) { clip in
+                ForEach(clips.filter { isNearViewport($0) }) { clip in
                     ClipBlockView(clip: clip, track: track, model: model, height: laneHeight - 8)
                         .frame(width: max(8, CGFloat(model.scale.x(for: clip.range.duration))), height: laneHeight - 8)
                         .padding(.leading, CGFloat(model.scale.x(for: clip.range.start)))

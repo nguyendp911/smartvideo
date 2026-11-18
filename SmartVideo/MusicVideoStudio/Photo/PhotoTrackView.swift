@@ -8,6 +8,7 @@ extension MusicVideoStudio {
         let track: TrackKind
         @ObservedObject var model: MusicVideoEditorModel
         let height: CGFloat
+        @State private var session: MusicVideoEditorModel.ClipEditSession?
 
         var body: some View {
             let selected = model.selection.contains(clip.id)
@@ -28,8 +29,12 @@ extension MusicVideoStudio {
                 .padding(.horizontal, 5).padding(.top, 3)
             }
             .overlay(RoundedRectangle(cornerRadius: 6).stroke(selected ? Color.cyan : color.opacity(0.7), lineWidth: selected ? 2.5 : 1))
+            .overlay { if selected && !clip.isLocked { trimHandles } }
             .contentShape(RoundedRectangle(cornerRadius: 6))
             .onTapGesture { model.select(clip.id, additive: false) }
+            // Only a SELECTED clip drags, so an unselected one still lets the
+            // timeline scroll when the finger starts on it.
+            .gesture(moveGesture, including: selected && !clip.isLocked ? .all : .subviews)
             .contextMenu {
                 Button { select(); model.duplicateSelection() } label: { Label("Nhân bản", systemImage: "plus.square.on.square") }
                 Button { select(); model.toggleFlag(\.isLocked) } label: {
@@ -43,6 +48,49 @@ extension MusicVideoStudio {
             }
             .accessibilityLabel("\(track.title): \(clip.title)")
             .accessibilityAddTraits(selected ? [.isButton, .isSelected] : .isButton)
+        }
+
+        private var moveGesture: some Gesture {
+            DragGesture(minimumDistance: 5)
+                .onChanged { value in
+                    if session == nil { session = model.beginClipEdit(clip.id) }
+                    guard let session else { return }
+                    model.moveClips(session, deltaSeconds: Double(value.translation.width) / model.scale.pixelsPerSecond)
+                }
+                .onEnded { _ in
+                    model.endClipEdit()
+                    session = nil
+                }
+        }
+
+        private var trimHandles: some View {
+            HStack(spacing: 0) {
+                handle(.start)
+                Spacer(minLength: 0)
+                handle(.end)
+            }
+        }
+
+        private func handle(_ edge: TrimEdge) -> some View {
+            RoundedRectangle(cornerRadius: 3)
+                .fill(Color.cyan)
+                .frame(width: 8)
+                .overlay(Capsule().fill(Color.black.opacity(0.55)).frame(width: 2, height: 14))
+                .frame(width: 22)                                    // generous touch target
+                .contentShape(Rectangle())
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 1)
+                        .onChanged { value in
+                            if session == nil { session = model.beginClipEdit(clip.id) }
+                            guard let session else { return }
+                            model.trimClip(session, edge: edge,
+                                           deltaSeconds: Double(value.translation.width) / model.scale.pixelsPerSecond)
+                        }
+                        .onEnded { _ in
+                            model.endClipEdit()
+                            session = nil
+                        })
+                .accessibilityLabel(edge == .start ? "Cắt đầu clip" : "Cắt cuối clip")
         }
 
         private func select() {
