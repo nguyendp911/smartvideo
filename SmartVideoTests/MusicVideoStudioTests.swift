@@ -1481,14 +1481,24 @@ final class MusicVideoStudioTests: XCTestCase {
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
         var seen = false
+        var last = (r: 0, g: 0, b: 0)
         for _ in 0..<120 {
             RunLoop.main.run(until: Date().addingTimeInterval(0.05))
             let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in
                 window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
             }
-            let center = try pixel(image, 0.5, 0.5)
-            if center.r > 150 && center.g < 90 && center.b < 90 { seen = true; break }
+            last = try pixel(image, 0.5, 0.5)
+            if last.r > 150 && last.g < 90 && last.b < 90 { seen = true; break }
         }
-        XCTAssertTrue(seen, "the red photo shows in the on-screen preview after loading asynchronously")
+        if !seen {
+            // Tell a capture problem from a loading problem: is the photo in the cache, and does a direct render show it?
+            let canvas = MV.VideoPreviewView.fitted(ratio: project.aspect.ratio, in: CGSize(width: 400, height: 300))
+            let url = model.mediaURL(for: model.project.photos[0])
+            var cached: [Int] = []
+            for scale in [1, 2, 3] where MV.PhotoImageCache.shared.cached(url, maxPixel: MV.PhotoImageCache.bucket(max(canvas.width, canvas.height) * CGFloat(scale))) != nil { cached.append(scale) }
+            model.playback.seek(to: .zero)
+            let direct = try pixel(try render(model, at: 0), 0.5, 0.5)
+            XCTFail("photo not visible in the live window: centre \(last), cached at scales \(cached) (screen scale \(UIScreen.main.scale)), direct render centre \(direct), file exists \(FileManager.default.fileExists(atPath: url.path)), items \(MV.TimelineEngine.renderItems(in: model.project, at: .zero).count)")
+        }
     }
 }
