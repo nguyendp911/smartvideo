@@ -8,6 +8,31 @@ extension MusicVideoStudio {
 
         var body: some View {
             VStack(alignment: .leading, spacing: 8) {
+                Text("Kiểu đĩa").font(.caption).foregroundStyle(.secondary)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(VinylStyle.allCases) { style in
+                            Button {
+                                model.beginEdit()
+                                model.vinylBinding(\.style, fallback: .classic).wrappedValue = style
+                            } label: {
+                                Text(style.rawValue).font(.caption2.bold())
+                                    .padding(.horizontal, 9).padding(.vertical, 5)
+                                    .background(layer.style == style ? Color.cyan : Color.white.opacity(0.1), in: Capsule())
+                                    .foregroundStyle(layer.style == style ? Color.black : Color.white)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                if layer.style == .colored || layer.style == .splatter || layer.style == .neon {
+                    ColorPicker("Màu đĩa", selection: colorBinding(\.discColorHex, "#7E57C2")).font(.caption)
+                }
+                if layer.style == .splatter {
+                    ColorPicker("Màu vẩy thứ hai", selection: colorBinding(\.accentColorHex, "#FFD54F")).font(.caption)
+                }
+                Toggle("Kim đĩa (hạ xuống, chạy vào trong, nhấc lên)", isOn: model.vinylBinding(\.tonearm, fallback: false)).font(.caption)
+                Toggle("Bệ máy quay đĩa", isOn: model.vinylBinding(\.turntable, fallback: false)).font(.caption)
+                slider("Tăng tốc lúc đầu", model.vinylBinding(\.spinUp, fallback: 0), VinylLayer.spinUpRange) { String(format: "%.1f s", $0) }
                 slider("Tốc độ quay", model.vinylBinding(\.rpm, fallback: 33.33), VinylLayer.rpmRange) { String(format: "%.0f vòng/phút", $0) }
                 slider("Kích thước", model.vinylBinding(\.size, fallback: 0.55), VinylLayer.sizeRange) { String(format: "%.0f%%", $0 * 100) }
                 slider("Nhãn giữa", model.vinylBinding(\.labelScale, fallback: 0.38), 0.15...0.7) { String(format: "%.0f%%", $0 * 100) }
@@ -16,6 +41,20 @@ extension MusicVideoStudio {
                 slider("Phản chiếu", model.vinylBinding(\.reflection, fallback: 0.45), 0...1) { String(format: "%.0f%%", $0 * 100) }
                 ColorPicker("Màu phát sáng", selection: colorBinding(\.glowColorHex, "#4DD0E1")).font(.caption)
                 ColorPicker("Màu nhãn", selection: colorBinding(\.labelColorHex, "#C0392B")).font(.caption)
+                Text("Theo nhạc").font(.caption.bold()).foregroundStyle(.secondary)
+                if model.project.audios.isEmpty {
+                    Text("Thêm nhạc để đĩa phồng theo nhịp và có vòng cột nhạc.").font(.caption2).foregroundStyle(.secondary)
+                } else {
+                    Picker("Nhạc", selection: model.vinylBinding(\.audioLayerID, fallback: nil)) {
+                        Text("Không gắn").tag(UUID?.none)
+                        ForEach(model.project.audios) { Text($0.originalName).tag(Optional($0.core.id)) }
+                    }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                    slider("Phồng theo nhịp", model.vinylBinding(\.beatPulse, fallback: 0), 0...1) { String(format: "%.0f%%", $0 * 100) }
+                    Toggle("Vòng cột nhạc quanh đĩa", isOn: model.vinylBinding(\.equalizerRing, fallback: false)).font(.caption)
+                    if layer.equalizerRing {
+                        ColorPicker("Màu vòng cột", selection: colorBinding(\.ringColorHex, "#4DD0E1")).font(.caption)
+                    }
+                }
                 Text("Bìa đĩa").font(.caption).foregroundStyle(.secondary)
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {

@@ -95,6 +95,104 @@ extension MusicVideoStudio {
         }
     }
 
+    /// Easier ways to time lyrics: ONE tap per line instead of one per word, and on the music's beats.
+    /// All times are seconds of the audio FILE, like the words themselves.
+    enum LyricsBeatSync {
+        /// Rough singing time of a line (used when nothing says when it ends).
+        static func estimatedSeconds(_ line: LyricLine) -> Double {
+            min(LyricsWordTiming.maxLineSeconds, max(1.5, 0.35 * Double(line.words.count) + 0.8))
+        }
+
+        /// `taps[i]` = when line i starts. A line ends where the next starts (or after its estimated
+        /// length when the gap is an instrumental break). Words are spread by letter count.
+        static func tapLines(_ lines: [LyricLine], taps: [Double]) -> [LyricLine] {
+            var starts: [Double] = []
+            for tap in taps where tap.isFinite {
+                if let last = starts.last, tap < last + 0.1 { continue }                  // a double tap
+                starts.append(max(0, tap))
+            }
+            var out = lines
+            for i in out.indices where i < starts.count {
+                let start = starts[i]
+                var end = start + estimatedSeconds(out[i])
+                if i + 1 < starts.count, starts[i + 1] - start <= LyricsWordTiming.maxLineSeconds { end = starts[i + 1] }
+                let words = LyricsWordTiming.words(out[i].text, start: start, end: end)
+                if !words.isEmpty { out[i].words = words }
+            }
+            return out
+        }
+
+        /// Median distance between beats (0 when there are fewer than two).
+        static func interval(_ beats: [Double]) -> Double {
+            guard beats.count >= 2 else { return 0 }
+            let gaps = zip(beats, beats.dropFirst()).map { $1 - $0 }.sorted()
+            return gaps[gaps.count / 2]
+        }
+
+        /// Index of the first beat at or after `time`.
+        static func firstBeatIndex(atOrAfter time: Double, beats: [Double]) -> Int? {
+            beats.firstIndex { $0 >= time - 0.02 }
+        }
+
+        /// Each line starts on a beat, `beatsPerLine` beats apart, beginning at `beats[firstBeat]`.
+        /// Past the last known beat the song's median beat length is extended.
+        static func distributeOnBeats(rows: [String], beats: [Double], beatsPerLine: Int, firstBeat: Int) -> [LyricLine] {
+            let clean = rows.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            let step = interval(beats)
+            guard !clean.isEmpty, beats.count >= 2, step > 0, let lastBeat = beats.last else { return [] }
+            let per = max(1, beatsPerLine)
+            let first = min(max(0, firstBeat), beats.count - 1)
+            func start(_ i: Int) -> Double {
+                let index = first + i * per
+                return index < beats.count ? beats[index] : lastBeat + Double(index - (beats.count - 1)) * step
+            }
+            var lines: [LyricLine] = []
+            for (i, row) in clean.enumerated() {
+                let words = LyricsWordTiming.words(row, start: start(i), end: i + 1 < clean.count ? start(i + 1) : start(i) + Double(per) * step)
+                if !words.isEmpty { lines.append(LyricLine(words: words)) }
+            }
+            return lines
+        }
+
+        /// The beat nearest to `time` within `threshold`, else `time` itself.
+        static func snapTime(_ time: Double, beats: [Double], threshold: Double) -> Double {
+            guard time.isFinite else { return time }
+            var best = time, distance = threshold
+            for beat in beats where abs(beat - time) <= distance { best = beat; distance = abs(beat - time) }
+            return best
+        }
+
+        /// The next beat after (`forward`) or before `time`, at least 20 ms away.
+        static func neighbor(of time: Double, beats: [Double], forward: Bool) -> Double? {
+            forward ? beats.first { $0 > time + 0.02 } : beats.last { $0 < time - 0.02 }
+        }
+
+        /// Moves each line start to the nearest beat within `window`; a line keeps its length unless
+        /// that would run into the next line (then it is squeezed). Word positions scale with the line.
+        static func snapLines(_ lines: [LyricLine], beats: [Double], window: Double = 0.25) -> [LyricLine] {
+            guard !beats.isEmpty, !lines.isEmpty else { return lines }
+            var starts: [Double] = []
+            for line in lines {
+                var s = snapTime(line.start, beats: beats, threshold: window)
+                if let previous = starts.last, s < previous + 0.2 { s = max(previous + 0.2, line.start) }
+                starts.append(s)
+            }
+            var out = lines
+            for i in out.indices {
+                let old = lines[i]
+                let oldLength = max(0.05, old.end - old.start)
+                var newLength = oldLength
+                if i + 1 < starts.count { newLength = min(oldLength, max(0.1, starts[i + 1] - starts[i])) }
+                let scale = newLength / oldLength
+                for w in out[i].words.indices {
+                    out[i].words[w].start = starts[i] + (old.words[w].start - old.start) * scale
+                    out[i].words[w].end = starts[i] + (old.words[w].end - old.start) * scale
+                }
+            }
+            return LyricsSynchronizer.normalized(out)
+        }
+    }
+
     /// Maps lyric TEXT onto recognised, timed words (a light forced alignment):
     /// a global sequence alignment of normalised words, with timings interpolated
     /// for text words the recogniser missed. Independent of which recogniser

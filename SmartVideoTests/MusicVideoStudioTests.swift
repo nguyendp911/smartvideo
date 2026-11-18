@@ -655,6 +655,9 @@ final class MusicVideoStudioTests: XCTestCase {
         let cover = try manager.storeImage(data: png, projectID: project.id)
         MV.TimelineEngine.addVinyl(at: .zero, duration: MV.ProjectTime(seconds: 4), coverFile: cover.mediaFile, to: &project)
         project.vinyls[0].rpm = 60
+        project.vinyls[0].spinUp = 0
+        project.vinyls[0].tonearm = false
+        project.vinyls[0].beatPulse = 0
         project.vinyls[0].reflection = 0
         project.vinyls[0].shadow = 0
         project.vinyls[0].glow = 0
@@ -941,12 +944,12 @@ final class MusicVideoStudioTests: XCTestCase {
             loudBands.append(Float(0.4 + 0.5 * wave * wave))
         }
         let loud = MV.VisualizerFrame(bands: loudBands, bass: 0.9, pulse: 1)
-        let growing: Set<MV.VisualizerStyle> = [.bars, .mirror, .area, .dots, .circle]
+        let growing: Set<MV.VisualizerStyle> = [.bars, .mirror, .area, .dots, .circle, .ledMatrix]
         for style in MV.VisualizerStyle.allCases {
             layer.style = style
             let busyImage = try painted(layer, frame: loud)
             let busy = try coverage(busyImage), quiet = try coverage(try painted(layer, frame: silent))
-            XCTAssertGreaterThan(busy, style == .particles ? 10 : 40, "\(style.rawValue) draws something for a loud signal")
+            XCTAssertGreaterThan(busy, [.particles, .starfield, .bubbles].contains(style) ? 10 : 40, "\(style.rawValue) draws something for a loud signal")
             if growing.contains(style) { XCTAssertGreaterThan(busy, quiet, "\(style.rawValue) grows with the level") }
             XCTAssertEqual(try painted(layer, frame: loud).pngData(), busyImage.pngData(), "\(style.rawValue): same input, same picture")
         }
@@ -1336,5 +1339,70 @@ final class MusicVideoStudioTests: XCTestCase {
         XCTAssertEqual(exporter.phase, .cancelled)
         XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: exports.path))?.count ?? 0, before, "nothing half-written is left behind")
         XCTAssertEqual(exporter.fraction, 0)
+    }
+
+    // MARK: More vinyl looks
+
+    @MainActor
+    private func vinylImage(_ layer: MV.VinylLayer, time: Double, audio: MV.VisualizerFrame? = nil) throws -> UIImage {
+        let canvas = CGSize(width: 400, height: 300)
+        let view = ZStack {
+            Color.black
+            MV.VinylLayerView(layer: layer, canvas: canvas, time: MV.ProjectTime(seconds: time), coverURL: nil, selected: false, audio: audio)
+        }.frame(width: canvas.width, height: canvas.height)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.uiImage)
+    }
+
+    private func litPixels(_ image: UIImage) throws -> Int {
+        var count = 0
+        for ny in stride(from: 0.02, to: 1.0, by: 0.02) {
+            for nx in stride(from: 0.02, to: 1.0, by: 0.01) {
+                let p = try pixel(image, nx, ny)
+                if p.r + p.g + p.b > 30 { count += 1 }
+            }
+        }
+        return count
+    }
+
+    @MainActor
+    func testEveryVinylStyleTonearmSwellAndRingDraw() throws {
+        var core = MV.LayerCore(name: "v", track: .vinyl, start: .zero, duration: MV.ProjectTime(seconds: 10), zIndex: 0)
+        core.transform.x = 0.45
+        var layer = MV.VinylLayer(core: core)
+        layer.size = 0.5; layer.glow = 0; layer.shadow = 0; layer.reflection = 0
+        for style in MV.VinylStyle.allCases {
+            layer.style = style
+            let image = try vinylImage(layer, time: 2)
+            XCTAssertGreaterThan(try litPixels(image), style == .neon ? 30 : 200, "\(style.rawValue) draws a record")
+            XCTAssertEqual(try vinylImage(layer, time: 2).pngData(), image.pngData(), "\(style.rawValue): same time, same picture")
+        }
+        layer.style = .classic
+        XCTAssertNotEqual(try vinylImage(layer, time: 2).pngData(), try vinylImage(layer, time: 2.2).pngData(), "the record turns")
+        layer.style = .splatter
+        let colours = try vinylImage(layer, time: 2)
+        layer.style = .colored
+        XCTAssertNotEqual(colours.pngData(), try vinylImage(layer, time: 2).pngData(), "styles look different")
+
+        layer.style = .classic
+        let bare = try litPixels(try vinylImage(layer, time: 5))
+        layer.tonearm = true
+        XCTAssertGreaterThan(try litPixels(try vinylImage(layer, time: 5)), bare + 3, "the tonearm is drawn")
+        XCTAssertNotEqual(try vinylImage(layer, time: 0).pngData(), try vinylImage(layer, time: 5).pngData(), "and it moves")
+        layer.tonearm = false
+        layer.turntable = true
+        XCTAssertGreaterThan(try litPixels(try vinylImage(layer, time: 5)), bare + 200, "the plinth is drawn")
+        layer.turntable = false
+
+        let bands = [Float](repeating: 0.8, count: 48)
+        layer.equalizerRing = true
+        let ring = try litPixels(try vinylImage(layer, time: 5, audio: MV.VisualizerFrame(bands: bands, bass: 0.5, pulse: 0)))
+        XCTAssertGreaterThan(ring, bare + 50, "the equalizer ring surrounds the record")
+        layer.equalizerRing = false
+        layer.beatPulse = 1
+        let calm = try litPixels(try vinylImage(layer, time: 5, audio: MV.VisualizerFrame(bands: bands, bass: 0, pulse: 0)))
+        let beat = try litPixels(try vinylImage(layer, time: 5, audio: MV.VisualizerFrame(bands: bands, bass: 0, pulse: 1)))
+        XCTAssertGreaterThan(beat, calm, "the record swells on a beat")
     }
 }

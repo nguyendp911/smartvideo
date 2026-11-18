@@ -115,7 +115,7 @@ extension MusicVideoStudio {
             case .vinyl(let layer):
                 VinylLayerView(layer: layer, canvas: canvas, time: time,
                                coverURL: layer.coverFile.map { resources.mediaURL($0) },
-                               selected: selected)
+                               selected: selected, audio: resources.vinylAudio(layer, at: time))
             }
         }
     }

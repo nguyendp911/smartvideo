@@ -38,6 +38,8 @@ struct MusicVideoCoreTests {
         effectMath()
         try effectProject()
         try exportSettings()
+        lyricsOnBeats()
+        try vinylExtras()
         print("music video core tests passed")
     }
 
@@ -1133,7 +1135,7 @@ struct MusicVideoCoreTests {
         var q = MV.VideoProject()
         q.audios.append(audioLayer())
         MV.TimelineEngine.addVisualizer(audioID: q.audios[0].core.id, to: &q)
-        precondition(MV.VisualizerStyle.allCases.count == 9)
+        precondition(MV.VisualizerStyle.allCases.count == 15)
         for style in MV.VisualizerStyle.allCases { q.visualizers[0].style = style }
         q.visualizers[0].style = .particles; q.visualizers[0].barCount = 64; q.visualizers[0].colorHex = "#FF0000"
         q.visualizers[0].smoothing = 0.9; q.visualizers[0].rounded = false
@@ -1488,5 +1490,150 @@ struct MusicVideoCoreTests {
         let saved = MV.ExportSettings(resolution: .p2160, fps: 60, codec: .hevc, container: .mov)
         let restored = try JSONDecoder().decode(MV.ExportSettings.self, from: JSONEncoder().encode(saved))
         precondition(restored == saved)
+    }
+
+    // MARK: Easier lyric timing
+
+    static func lyricsOnBeats() {
+        func lines(_ rows: [String]) -> [MV.LyricLine] { MV.PlainLyrics.distribute(rows.joined(separator: "\n"), start: 0, duration: Double(rows.count) * 2) }
+        let base = lines(["one two three", "four five", "six seven eight nine"])
+
+        // One tap per line.
+        let tapped = MV.LyricsBeatSync.tapLines(base, taps: [1, 4, 6.5])
+        near(tapped[0].start, 1); near(tapped[0].end, 4, 1e-9, "a line ends where the next one starts")
+        near(tapped[1].start, 4); near(tapped[1].end, 6.5, 1e-9)
+        near(tapped[2].start, 6.5); precondition(tapped[2].end > 6.5 + 1.4 && tapped[2].end < 6.5 + 8.1, "the last line gets an estimated length")
+        precondition(tapped.map(\.text) == base.map(\.text), "the words stay")
+        for line in tapped { for pair in zip(line.words, line.words.dropFirst()) { precondition(pair.0.end <= pair.1.start + 1e-9) } }
+        let gap = MV.LyricsBeatSync.tapLines(base, taps: [1, 30])
+        precondition(gap[0].end < 1 + 8.1, "a long break is not filled with the previous line")
+        near(gap[1].start, 30)
+        let doubled = MV.LyricsBeatSync.tapLines(base, taps: [1, 1.05, 4])
+        near(doubled[1].start, 4, 1e-9, "a double tap counts once")
+        let few = MV.LyricsBeatSync.tapLines(base, taps: [2])
+        precondition(few[1] == base[1] && few[2] == base[2], "lines without a tap are untouched")
+        precondition(MV.LyricsBeatSync.tapLines(base, taps: [.nan, 3])[0].start == 3)
+        precondition(MV.LyricsBeatSync.tapLines([], taps: [1, 2]).isEmpty && MV.LyricsBeatSync.tapLines(base, taps: []) == base)
+
+        // On the beats.
+        let beats = (0..<20).map { 1 + 0.5 * Double($0) }                           // 1.0, 1.5 ... 10.5
+        near(MV.LyricsBeatSync.interval(beats), 0.5); near(MV.LyricsBeatSync.interval([1]), 0)
+        let rows = ["a b", "c d", "e f"]
+        let spread = MV.LyricsBeatSync.distributeOnBeats(rows: rows, beats: beats, beatsPerLine: 4, firstBeat: 2)
+        precondition(spread.count == 3)
+        near(spread[0].start, 2); near(spread[1].start, 4); near(spread[2].start, 6, 1e-9, "every 4th beat from the third")
+        near(spread[0].end, 4, 1e-9); near(spread[2].end, 8, 1e-9, "the last line lasts as many beats")
+        let past = MV.LyricsBeatSync.distributeOnBeats(rows: rows, beats: [0, 0.5, 1, 1.5, 2], beatsPerLine: 4, firstBeat: 0)
+        near(past[1].start, 2); near(past[2].start, 4, 1e-9, "beyond the last beat the tempo continues")
+        precondition(MV.LyricsBeatSync.distributeOnBeats(rows: rows, beats: [1], beatsPerLine: 4, firstBeat: 0).isEmpty)
+        precondition(MV.LyricsBeatSync.distributeOnBeats(rows: ["", "  "], beats: beats, beatsPerLine: 4, firstBeat: 0).isEmpty)
+        near(MV.LyricsBeatSync.distributeOnBeats(rows: rows, beats: beats, beatsPerLine: 0, firstBeat: 99)[0].start, 10.5, 1e-9, "bad numbers are clamped")
+        precondition(MV.LyricsBeatSync.firstBeatIndex(atOrAfter: 2.2, beats: beats) == 3 && MV.LyricsBeatSync.firstBeatIndex(atOrAfter: 2.0, beats: beats) == 2)
+        precondition(MV.LyricsBeatSync.firstBeatIndex(atOrAfter: 99, beats: beats) == nil)
+
+        // Snapping.
+        near(MV.LyricsBeatSync.snapTime(2.04, beats: beats, threshold: 0.07), 2); near(MV.LyricsBeatSync.snapTime(2.2, beats: beats, threshold: 0.07), 2.2)
+        near(MV.LyricsBeatSync.snapTime(2.26, beats: beats, threshold: 0.3), 2.5, 1e-9, "the nearest beat wins")
+        precondition(MV.LyricsBeatSync.snapTime(.nan, beats: beats, threshold: 1).isNaN)
+        near(MV.LyricsBeatSync.neighbor(of: 2.2, beats: beats, forward: true)!, 2.5); near(MV.LyricsBeatSync.neighbor(of: 2.2, beats: beats, forward: false)!, 2)
+        near(MV.LyricsBeatSync.neighbor(of: 2, beats: beats, forward: true)!, 2.5, 1e-9, "a beat you are on is not 'next'")
+        precondition(MV.LyricsBeatSync.neighbor(of: 0.5, beats: beats, forward: false) == nil && MV.LyricsBeatSync.neighbor(of: 99, beats: beats, forward: true) == nil)
+
+        var loose = base
+        loose = MV.LyricsSynchronizer.shift(MV.LyricsSynchronizer.moveLine(loose, index: 0, toStart: 1.1), by: 0)
+        loose = MV.LyricsSynchronizer.moveLine(loose, index: 1, toStart: 3.2)
+        loose = MV.LyricsSynchronizer.moveLine(loose, index: 2, toStart: 5.4)
+        let snapped = MV.LyricsBeatSync.snapLines(loose, beats: beats)
+        near(snapped[0].start, 1); near(snapped[1].start, 3); near(snapped[2].start, 5.5, 1e-9)
+        precondition(snapped.map(\.text) == loose.map(\.text))
+        for line in snapped { for pair in zip(line.words, line.words.dropFirst()) { precondition(pair.0.start <= pair.1.start + 1e-9) } }
+        for pair in zip(snapped, snapped.dropFirst()) { precondition(pair.0.end <= pair.1.start + 1e-6, "snapped lines do not overlap") }
+        let far = MV.LyricsBeatSync.snapLines(loose, beats: [20, 20.5])
+        near(far[1].start, loose[1].start, 1e-9, "no beat in reach: the line stays")
+        precondition(MV.LyricsBeatSync.snapLines(loose, beats: []) == loose && MV.LyricsBeatSync.snapLines([], beats: beats).isEmpty)
+    }
+
+    // MARK: More vinyl and visualizer looks
+
+    static func vinylExtras() throws {
+        // Spin-up: the angle is the integral of a speed that ramps up evenly, then stays full.
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 0.5, spinUp: 0), 180)
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 0, spinUp: 2), 0)
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 1, spinUp: 2), 360 * 0.25, 1e-9, "after 1 of 2 s the angle is t^2 / (2 ramp) turns")
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 2, spinUp: 2), 360.0.truncatingRemainder(dividingBy: 360) + 0, 1e-9)
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 3, spinUp: 2), 0, 1e-9, "past the ramp: one turn per second, shifted by half the ramp")
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 3.5, spinUp: 2), 180, 1e-9)
+        let before = MV.VinylMath.angle(rpm: 33.33, localSeconds: 1.99, spinUp: 2), after = MV.VinylMath.angle(rpm: 33.33, localSeconds: 2.01, spinUp: 2)
+        precondition(abs(after - before) < 5 || abs(after - before) > 355, "no jump where the ramp ends")
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 0, phase: 4, spinUp: 2), MV.VinylMath.angle(rpm: 60, localSeconds: 4, spinUp: 2), 1e-9, "a split half continues the same spin")
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 1, spinUp: -3), 0, 1e-9, "a negative ramp counts as none")
+        near(MV.VinylMath.angle(rpm: 60, localSeconds: 1, spinUp: .nan), 0, 1e-9)
+
+        // Tonearm geometry: the tip is exactly where we ask for it.
+        for r in [0.3, 0.5, 0.94, 1.28, 1.5] {
+            let tip = MV.VinylMath.headPosition(armAngle: MV.VinylMath.armAngle(headRadius: r))
+            near(hypot(tip.x, tip.y), r, 1e-9, "radius \(r)")
+        }
+        let rest = MV.VinylMath.tonearmHeadRadius(localSeconds: 0, duration: 10)
+        near(rest, MV.VinylMath.restRadius); near(MV.VinylMath.tonearmHeadRadius(localSeconds: 1.2, duration: 10), MV.VinylMath.outerGroove, 1e-9, "landed")
+        let mid = MV.VinylMath.tonearmHeadRadius(localSeconds: 0.6, duration: 10)
+        precondition(mid < rest && mid > MV.VinylMath.outerGroove, "on its way down")
+        var last = MV.VinylMath.tonearmHeadRadius(localSeconds: 1.2, duration: 10)
+        for k in 0..<76 {
+            let r = MV.VinylMath.tonearmHeadRadius(localSeconds: 1.2 + 0.1 * Double(k), duration: 10)
+            precondition(r <= last + 1e-9 && r >= 0.5 - 1e-9, "creeps inward while playing"); last = r
+        }
+        near(MV.VinylMath.tonearmHeadRadius(localSeconds: 9, duration: 10), 0.5, 1e-9, "at the inner groove when the lift starts")
+        near(MV.VinylMath.tonearmHeadRadius(localSeconds: 10, duration: 10), MV.VinylMath.restRadius, 1e-9, "back at rest at the end")
+        near(MV.VinylMath.tonearmHeadRadius(localSeconds: 9.5, duration: 10), (0.5 + MV.VinylMath.restRadius) / 2, 1e-9, "half-way up")
+        precondition(MV.VinylMath.tonearmHeadRadius(localSeconds: 1, duration: 0) == MV.VinylMath.restRadius)
+        precondition(MV.VinylMath.tonearmHeadRadius(localSeconds: .nan, duration: 10) == MV.VinylMath.restRadius)
+        let short = MV.VinylMath.tonearmHeadRadius(localSeconds: 0.5, duration: 1)
+        precondition(short.isFinite && short <= MV.VinylMath.restRadius && short >= 0.2, "a very short layer still works")
+        precondition(MV.VinylMath.armAngle(headRadius: .nan).isFinite && MV.VinylMath.armAngle(headRadius: 99).isFinite)
+
+        // Styles and options survive saving; old files get the plain look.
+        precondition(MV.VinylStyle.allCases.count == 6)
+        var p = MV.VideoProject()
+        p.audios.append(audioLayer())
+        MV.TimelineEngine.addVinyl(at: .zero, coverFile: nil, to: &p)
+        precondition(p.vinyls[0].tonearm && p.vinyls[0].spinUp == 1 && p.vinyls[0].audioLayerID == p.audios[0].core.id && p.vinyls[0].beatPulse == 0.4)
+        p.vinyls[0].style = .splatter; p.vinyls[0].discColorHex = "#112233"; p.vinyls[0].turntable = true; p.vinyls[0].equalizerRing = true
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(p))
+        precondition(back.vinyls == p.vinyls)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(p)) as! [String: Any]
+        var vinyls = json["vinyls"] as! [[String: Any]]
+        for key in ["style", "discColorHex", "accentColorHex", "tonearm", "spinUp", "turntable", "audioLayerID", "beatPulse", "equalizerRing", "ringColorHex"] { vinyls[0].removeValue(forKey: key) }
+        json["vinyls"] = vinyls
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.vinyls[0].style == .classic && !old.vinyls[0].tonearm && old.vinyls[0].spinUp == 0 && old.vinyls[0].audioLayerID == nil && !old.vinyls[0].equalizerRing)
+
+        // Record swell / ring need the spectrum of the linked music only.
+        let spectrum = MV.SpectrumData(frameRate: 10, bandCount: 8, frames: [Float](repeating: 0.5, count: 320), beats: [1])
+        let resources = MV.FrameResources(project: p, spectra: [p.audios[0].mediaFile: spectrum], mediaURL: { URL(fileURLWithPath: "/tmp/\($0)") })
+        let frame = resources.vinylAudio(p.vinyls[0], at: sec(3))        // audio plays file 1-7 at project 2-8: file time 2
+        precondition(frame != nil && frame!.bands.count == 48 && frame!.bands.allSatisfy { $0 == 0.5 })
+        var plain = p.vinyls[0]; plain.beatPulse = 0; plain.equalizerRing = false
+        precondition(resources.vinylAudio(plain, at: sec(3)) == nil, "no swell and no ring: no spectrum needed")
+        var unlinked = p.vinyls[0]; unlinked.audioLayerID = nil
+        precondition(resources.vinylAudio(unlinked, at: sec(3)) == nil)
+
+        // Visualizer: six more styles, falling peaks, palettes.
+        let styles = MV.VisualizerStyle.allCases.map(\.rawValue)
+        precondition(Set(styles).count == 15 && MV.VisualizerStyle.allCases.contains(.peakBars) && MV.VisualizerStyle.allCases.contains(.ledMatrix))
+        precondition(MV.VisualizerPalette.all.count >= 7 && Set(MV.VisualizerPalette.all.map(\.name)).count == MV.VisualizerPalette.all.count)
+        for palette in MV.VisualizerPalette.all {
+            precondition(MV.HexColor.components(palette.first) != nil && MV.HexColor.components(palette.second) != nil, palette.name)
+            precondition(palette.first != palette.second)
+        }
+        var loud = [Float](repeating: 0, count: 80); loud[5 * 8 + 3] = 1
+        let spiky = MV.SpectrumData(frameRate: 10, bandCount: 8, frames: loud)
+        var vz = MV.VisualizerLayer(core: MV.LayerCore(name: "v", track: .visualizer, start: .zero, duration: sec(5), zIndex: 0), audioLayerID: nil)
+        vz.barCount = 8; vz.smoothing = 0
+        let early = MV.VisualizerFrame.make(layer: vz, spectrum: spiky, sourceTime: 0.5)
+        let later = MV.VisualizerFrame.make(layer: vz, spectrum: spiky, sourceTime: 0.9)       // 4 frames after the spike
+        near(Double(early.bands[3]), 1); near(Double(early.peaks[3]), 1)
+        near(Double(later.bands[3]), 0, 1e-6, "the bar has dropped"); near(Double(later.peaks[3]), pow(0.95, 4), 1e-5, "the cap falls slowly")
+        precondition(MV.VisualizerFrame(bands: [1], bass: 0, pulse: 0).peaks.isEmpty, "no peaks = painter falls back to the bars")
     }
 }

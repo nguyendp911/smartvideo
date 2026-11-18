@@ -558,6 +558,13 @@ extension MusicVideoStudio {
             statusMessage = nil
         }
 
+        /// Beats (seconds of the audio file) of the lyrics' linked audio; empty when unknown.
+        func fileBeats(for layer: LyricsLayer) async -> [Double] {
+            guard let id = layer.audioLayerID, let audio = project.audios.first(where: { $0.core.id == id }) else { return [] }
+            let url = manager.mediaURL(projectID: project.id, file: audio.mediaFile)
+            return await SpectrumCache.shared.spectrum(for: url)?.beats ?? []
+        }
+
         func shiftLyrics(_ id: UUID, by seconds: Double) {
             updateLyrics(id) { $0.lines = LyricsSynchronizer.shift($0.lines, by: seconds) }
         }
@@ -617,6 +624,7 @@ extension MusicVideoStudio {
         private func spectrumAudioFiles() -> [String] {
             var ids: [UUID] = project.visualizers.compactMap(\.audioLayerID)
             ids += project.effects.filter { $0.kind.needsAudio }.compactMap(\.audioLayerID)
+            ids += project.vinyls.filter { $0.beatPulse > 0 || $0.equalizerRing }.compactMap(\.audioLayerID)
             var files: [String] = []
             for id in ids {
                 if let file = project.audios.first(where: { $0.core.id == id })?.mediaFile, !files.contains(file) { files.append(file) }
@@ -653,6 +661,17 @@ extension MusicVideoStudio {
 
         func spectrumByAudioID(for layer: VisualizerLayer, in loaded: [String: SpectrumData]) -> SpectrumData? {
             audioFile(for: layer).flatMap { loaded[$0] }
+        }
+
+        /// Both colours of the selected visualizers in one undo step.
+        func applyVisualizerPalette(_ palette: VisualizerPalette) {
+            let ids = editableSelection
+            edit { project in
+                for i in project.visualizers.indices where ids.contains(project.visualizers[i].core.id) {
+                    project.visualizers[i].colorHex = palette.first
+                    project.visualizers[i].secondColorHex = palette.second
+                }
+            }
         }
 
         func addVisualizer() {

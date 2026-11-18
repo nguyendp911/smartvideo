@@ -11,7 +11,31 @@ extension MusicVideoStudio {
         case ring = "Vòng sóng"
         case pulse = "Nhịp đập"
         case particles = "Hạt"
+        case peakBars = "Cột có đỉnh rơi"
+        case sineWaves = "Sóng sin"
+        case flower = "Hoa"
+        case bubbles = "Bong bóng"
+        case starfield = "Sao bay"
+        case ledMatrix = "Ma trận LED"
         var id: String { rawValue }
+    }
+
+    /// A two-colour look in one tap.
+    struct VisualizerPalette: Identifiable, Equatable {
+        let name: String
+        let first: String
+        let second: String
+        var id: String { name }
+
+        static let all: [VisualizerPalette] = [
+            VisualizerPalette(name: "Neon", first: "#4DD0E1", second: "#E040FB"),
+            VisualizerPalette(name: "Hoàng hôn", first: "#FF9800", second: "#E91E63"),
+            VisualizerPalette(name: "Đại dương", first: "#00E5FF", second: "#2979FF"),
+            VisualizerPalette(name: "Lửa", first: "#FFEB3B", second: "#F44336"),
+            VisualizerPalette(name: "Matcha", first: "#B2FF59", second: "#00BFA5"),
+            VisualizerPalette(name: "Tím mộng mơ", first: "#7C4DFF", second: "#FF4081"),
+            VisualizerPalette(name: "Trắng bạc", first: "#FFFFFF", second: "#9E9E9E"),
+        ]
     }
 
     /// An audio visualizer. Its picture is a pure function of (spectrum, clock time):

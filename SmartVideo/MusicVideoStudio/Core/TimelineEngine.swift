@@ -146,7 +146,14 @@ extension MusicVideoStudio {
             let length = duration ?? max(defaultTextDuration, project.duration - start)
             let core = LayerCore(name: "Đĩa than \(project.vinyls.count + 1)", track: .vinyl,
                                  start: start, duration: length, zIndex: project.nextZIndex(for: .vinyl))
-            project.vinyls.append(VinylLayer(core: core, coverFile: coverFile))
+            var layer = VinylLayer(core: core, coverFile: coverFile)
+            layer.tonearm = true                                  // new records start with the nicer look
+            layer.spinUp = 1.0
+            if let audio = project.audios.first {
+                layer.audioLayerID = audio.core.id
+                layer.beatPulse = 0.4
+            }
+            project.vinyls.append(layer)
             return core.id
         }
 

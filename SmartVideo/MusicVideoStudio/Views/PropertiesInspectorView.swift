@@ -228,6 +228,18 @@ extension MusicVideoStudio {
                         }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(VisualizerPalette.all) { palette in
+                            Button { model.applyVisualizerPalette(palette) } label: {
+                                Text(palette.name).font(.caption2.bold()).foregroundStyle(.black)
+                                    .padding(.horizontal, 9).padding(.vertical, 5)
+                                    .background(LinearGradient(colors: [VisualizerExtraStyles.color(palette.first), VisualizerExtraStyles.color(palette.second)],
+                                                               startPoint: .leading, endPoint: .trailing), in: Capsule())
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
                 ColorPicker("Màu đầu", selection: MusicVideoStudio.colorBinding(model.visualizerBinding(\.colorHex, fallback: "#4DD0E1"), beginEdit: model.beginEdit)).font(.caption)
                 ColorPicker("Màu cuối", selection: MusicVideoStudio.colorBinding(model.visualizerBinding(\.secondColorHex, fallback: "#E040FB"), beginEdit: model.beginEdit)).font(.caption)
                 slider("Số cột", Binding(get: { Double(layer.barCount) }, set: { model.visualizerBinding(\.barCount, fallback: 48).wrappedValue = Int($0.rounded()) }),

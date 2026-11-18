@@ -22,7 +22,7 @@ extension MusicVideoStudio {
         var frameCount: Int { bandCount > 0 ? frames.count / bandCount : 0 }
         var duration: Double { frameRate > 0 ? Double(frameCount) / frameRate : 0 }
 
-        static let maxLookback = 10
+        static let maxLookback = 30
 
         /// Trailing-decay smoothing: a band falls at most `decay` per frame after a peak.
         private func smoothed(frame: Int, band: Int, decay: Float) -> Float {
@@ -177,11 +177,14 @@ extension MusicVideoStudio {
         var bands: [Float]
         var bass: Double
         var pulse: Double
+        /// Slowly falling copy of `bands` (peak-hold caps). Empty = use `bands`.
+        var peaks: [Float] = []
 
         static func make(layer: VisualizerLayer, spectrum: SpectrumData?, sourceTime: Double) -> VisualizerFrame {
             guard let spectrum else { return VisualizerFrame(bands: [Float](repeating: 0, count: layer.barCount), bass: 0, pulse: 0) }
             return VisualizerFrame(bands: spectrum.bands(at: sourceTime, count: layer.barCount, decay: layer.smoothing),
-                                   bass: spectrum.bass(at: sourceTime), pulse: spectrum.beatPulse(at: sourceTime))
+                                   bass: spectrum.bass(at: sourceTime), pulse: spectrum.beatPulse(at: sourceTime),
+                                   peaks: spectrum.bands(at: sourceTime, count: layer.barCount, decay: 0.95))
         }
     }
 }

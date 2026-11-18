@@ -3,12 +3,13 @@ import SwiftUI
 extension MusicVideoStudio {
     /// Word timing of ONE lyric line: coloured blocks on a time axis with a draggable
     /// handle at the start of every word (and one at the end of the last word).
-    /// Times are seconds of the audio file, like the words themselves.
+    /// Orange ticks are the music's beats. Times are seconds of the audio file.
     struct LyricsTimelineView: View {
         let line: LyricLine
         let lineIndex: Int
         /// Seconds of the file currently at the playhead (drawn as a cursor).
         let playheadSource: Double
+        var beats: [Double] = []
         let onBeginDrag: () -> Void
         let onMoveStart: (_ word: Int, _ time: Double) -> Void
         let onMoveEnd: (_ word: Int, _ time: Double) -> Void
@@ -23,6 +24,9 @@ extension MusicVideoStudio {
                 let x = { (t: Double) -> CGFloat in CGFloat(t - lower) * pps }
                 ZStack(alignment: .topLeading) {
                     RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05))
+                    ForEach(beats.filter { $0 >= lower && $0 <= lower + span }, id: \.self) { beat in
+                        Rectangle().fill(Color.orange.opacity(0.55)).frame(width: 1, height: 70).offset(x: x(beat))
+                    }
                     ForEach(Array(line.words.enumerated()), id: \.element.id) { index, word in
                         let width = max(6, CGFloat(word.duration) * pps - 1)
                         RoundedRectangle(cornerRadius: 5)
@@ -42,13 +46,13 @@ extension MusicVideoStudio {
                         .offset(x: x(last.end) - 11, y: 14)
                     }
                     if playheadSource >= lower, playheadSource <= lower + span {
-                        Rectangle().fill(Color.cyan).frame(width: 2, height: 62).offset(x: x(playheadSource) - 1)
+                        Rectangle().fill(Color.cyan).frame(width: 2, height: 70).offset(x: x(playheadSource) - 1)
                     }
                     Text(String(format: "%.2fs", line.start)).font(.system(size: 9)).foregroundStyle(.secondary)
                         .offset(x: 4, y: 0)
                 }
             }
-            .frame(height: 64)
+            .frame(height: 70)
             .accessibilityLabel("Thời gian từng từ của dòng \(lineIndex + 1)")
         }
     }
