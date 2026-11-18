@@ -9,6 +9,7 @@ extension MusicVideoStudio {
         @Environment(\.dismiss) private var dismiss
         @Environment(\.scenePhase) private var scenePhase
         @State private var showInspector = false
+        @State private var showExport = false
 
         init(manager: ProjectManager = ProjectManager()) {
             _model = StateObject(wrappedValue: MusicVideoEditorModel(manager: manager))
@@ -54,6 +55,11 @@ extension MusicVideoStudio {
                     .presentationDragIndicator(.visible)
                     .preferredColorScheme(.dark)
             }
+            .sheet(isPresented: $showExport) {
+                ExportSheetView(model: model)
+                    .presentationDetents([.large])
+                    .preferredColorScheme(.dark)
+            }
             .onChange(of: scenePhase) { phase in
                 if phase != .active { model.playback.pause(); model.saveNow() }
             }
@@ -80,7 +86,7 @@ extension MusicVideoStudio {
                     .accessibilityLabel("Đóng")
                 VStack(alignment: .leading, spacing: 0) {
                     Text(model.project.name).font(.subheadline.bold()).lineLimit(1)
-                    Text("Music Photo Video Studio · giai đoạn 1")
+                    Text("Music Photo Video Studio")
                         .font(.system(size: 9)).foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 4)
@@ -105,6 +111,12 @@ extension MusicVideoStudio {
                 .accessibilityLabel("Tỉ lệ khung hình")
                 Button { model.saveNow() } label: { Image(systemName: "square.and.arrow.down") }
                     .accessibilityLabel("Lưu dự án")
+                Button { showExport = true } label: {
+                    Text("Xuất").font(.system(size: 12, weight: .bold))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Color.cyan, in: Capsule()).foregroundStyle(.black)
+                }
+                .accessibilityLabel("Xuất video")
             }
             .font(.system(size: 16, weight: .semibold))
             .buttonStyle(.borderless)
@@ -121,7 +133,7 @@ extension MusicVideoStudio {
         var body: some View {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Music Photo Video Studio", systemImage: "music.note.tv").font(.headline)
-                Text("Biến ảnh thành video nhạc trong một trình dựng riêng: nhiều track, đồng hồ phát thống nhất theo khung hình, xem trước thời gian thực. Giai đoạn 1 gồm giao diện editor, xem trước, ảnh, chữ, timeline, hoàn tác và tự lưu dự án; nhạc, lời karaoke, đĩa than, visualizer, hiệu ứng và xuất video sẽ được thêm theo từng giai đoạn.")
+                Text("Biến ảnh thành video nhạc trong một trình dựng riêng: ảnh, nhạc, lời karaoke, đĩa than, visualizer, hiệu ứng và chữ trên nhiều track; kéo, phóng to, xoay ngay trên khung; một đồng hồ chung theo khung hình cho xem trước và xuất video 720p đến 4K (H.264/HEVC, MP4/MOV).")
                     .font(.caption).foregroundStyle(.secondary)
                 Button { show = true } label: {
                     Label("Mở Music Video Studio", systemImage: "play.rectangle.fill").frame(maxWidth: .infinity)

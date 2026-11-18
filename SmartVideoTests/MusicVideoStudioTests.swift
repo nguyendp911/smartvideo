@@ -1176,4 +1176,165 @@ final class MusicVideoStudioTests: XCTestCase {
         let between = try pixel(try render(model, at: flashBeat + 0.35), 0.5, 0.5)
         XCTAssertGreaterThan(onBeat.g, between.g + 40, "the red photo flashes white on the beat")
     }
+
+    // MARK: Phase 9 - export
+
+    @MainActor
+    private func exportableModel(audio: Bool) async throws -> MV.MusicVideoEditorModel {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .square
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        let red = try manager.storeImage(data: try solidPNG(.red), projectID: model.project.id)
+        model.edit { _ = MV.TimelineEngine.appendPhotos([red], to: &$0) }
+        model.mutate { _ = MV.TimelineEngine.addText("HI", at: .zero, to: &$0) }
+        model.mutate { $0.texts[0].fontSize = 0.3; $0.texts[0].colorHex = "#FFFFFF"; $0.texts[0].hasShadow = false }
+        if audio { await model.importAudio(from: try writeSine("a.wav", seconds: 3, frequency: 440, amplitude: 0.5)) }
+        model.selection = []
+        return model
+    }
+
+    /// The image squeezed to `side` x `side` RGBA bytes (averages away compression noise).
+    private func thumbnail(_ image: CGImage, side: Int = 48) throws -> [UInt8] {
+        var bytes = [UInt8](repeating: 0, count: side * side * 4)
+        let context = try XCTUnwrap(CGContext(data: &bytes, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: side, height: side))
+        return bytes
+    }
+
+    private func averageColor(_ image: CGImage) throws -> (r: Int, g: Int, b: Int) {
+        let pixels = try thumbnail(image, side: 4)
+        var r = 0, g = 0, b = 0
+        for i in 0..<16 { r += Int(pixels[i * 4]); g += Int(pixels[i * 4 + 1]); b += Int(pixels[i * 4 + 2]) }
+        return (r / 16, g / 16, b / 16)
+    }
+
+    private func frame(of asset: AVURLAsset, at seconds: Double) async throws -> CGImage {
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+        return try await generator.image(at: CMTime(seconds: seconds, preferredTimescale: 24_000)).image
+    }
+
+    @MainActor
+    func testExportWritesARealVideoThatLooksLikeThePreview() async throws {
+        let model = try await exportableModel(audio: true)
+        let exporter = MV.ProjectExporter()
+        let url = try await exporter.export(model: model, settings: MV.ExportSettings(resolution: .p720, fps: 24, codec: .h264, container: .mp4))
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertEqual(url.pathExtension, "mp4")
+
+        let asset = AVURLAsset(url: url)
+        let duration = try await asset.load(.duration)
+        XCTAssertEqual(duration.seconds, 3, accuracy: 0.15)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        let video = try XCTUnwrap(videoTracks.first)
+        let natural = try await video.load(.naturalSize)
+        XCTAssertEqual(natural.width, 720); XCTAssertEqual(natural.height, 720, "square project at 720p")
+        let frameRate = try await video.load(.nominalFrameRate)
+        XCTAssertEqual(Double(frameRate), 24, accuracy: 0.6)
+        let formats = try await video.load(.formatDescriptions)
+        XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_H264)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        XCTAssertEqual(audioTracks.count, 1, "the mixdown is in the file")
+        let audioTrack = try XCTUnwrap(audioTracks.first)
+        let audioDuration = try await audioTrack.load(.timeRange).duration
+        XCTAssertEqual(audioDuration.seconds, 3, accuracy: 0.15)
+
+        // The same composition the preview uses, rendered directly, matches what was encoded.
+        let side = 720
+        let resources = model.resources
+        let photoURL = resources.photoURL(model.project.photos[0])
+        _ = await MV.PhotoImageCache.shared.load(photoURL, maxPixel: MV.PhotoImageCache.bucket(CGFloat(side)))
+        let renderer = ImageRenderer(content: MV.ProjectFrameView(resources: resources, canvas: CGSize(width: side, height: side),
+                                                                  time: MV.ProjectTime(seconds: 1.0), renderScale: 1))
+        renderer.scale = 1
+        let expected = try thumbnail(try XCTUnwrap(renderer.cgImage))
+        let encoded = try thumbnail(try await frame(of: asset, at: 1.0))
+        var difference = 0
+        for i in 0..<expected.count where i % 4 != 3 { difference += abs(Int(expected[i]) - Int(encoded[i])) }
+        let mean = Double(difference) / Double(expected.count / 4 * 3)
+        XCTAssertLessThan(mean, 12, "exported frame matches the preview composition (mean abs difference \(mean))")
+        let corner = (r: Int(encoded[(2 * 48 + 2) * 4]), g: Int(encoded[(2 * 48 + 2) * 4 + 1]))
+        XCTAssertGreaterThan(corner.r, 200); XCTAssertLessThan(corner.g, 60, "the red photo is red in the file")
+        XCTAssertEqual(exporter.fraction, 0.0)                              // direct call: the controller keeps its own phase
+    }
+
+    @MainActor
+    func testExportCutsLandOnTheExactFrame() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .square
+        let red = try manager.storeImage(data: try solidPNG(.red), projectID: project.id)
+        let blue = try manager.storeImage(data: try solidPNG(.blue), projectID: project.id)
+        MV.TimelineEngine.appendPhotos([red, blue], to: &project)
+        project.photos[0].core.duration = MV.ProjectTime(seconds: 1.5)
+        project.photos[1].core.start = MV.ProjectTime(seconds: 1.5)
+        project.photos[1].core.duration = MV.ProjectTime(seconds: 1.5)
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        XCTAssertEqual(model.project.duration.seconds, 3, accuracy: 1e-9)
+
+        let url = try await MV.ProjectExporter().export(model: model, settings: MV.ExportSettings(resolution: .p720, fps: 24))
+        defer { try? FileManager.default.removeItem(at: url) }
+        let asset = AVURLAsset(url: url)
+        let noAudio = try await asset.loadTracks(withMediaType: .audio)
+        XCTAssertTrue(noAudio.isEmpty, "no music, no audio track")
+        let before = try averageColor(try await frame(of: asset, at: 35.0 / 24))
+        let after = try averageColor(try await frame(of: asset, at: 36.0 / 24))
+        XCTAssertGreaterThan(before.r, 200); XCTAssertLessThan(before.b, 60, "frame 35 (1.4583 s) is still the red photo")
+        XCTAssertGreaterThan(after.b, 200); XCTAssertLessThan(after.r, 60, "frame 36 is exactly 1.5 s: the blue photo has started (half-open ranges)")
+    }
+
+    @MainActor
+    func testExportHEVCInAMovAndTheErrorPaths() async throws {
+        let model = try await exportableModel(audio: false)
+        let exporter = MV.ProjectExporter()
+        do {
+            let url = try await exporter.export(model: model, settings: MV.ExportSettings(resolution: .p720, fps: 30, codec: .hevc, container: .mov))
+            defer { try? FileManager.default.removeItem(at: url) }
+            XCTAssertEqual(url.pathExtension, "mov")
+            let asset = AVURLAsset(url: url)
+            let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        let video = try XCTUnwrap(videoTracks.first)
+            let formats = try await video.load(.formatDescriptions)
+            XCTAssertEqual(CMFormatDescriptionGetMediaSubType(try XCTUnwrap(formats.first)), kCMVideoCodecType_HEVC)
+            let frameRate = try await video.load(.nominalFrameRate)
+            XCTAssertEqual(Double(frameRate), 30, accuracy: 0.6)
+            let noAudio = try await asset.loadTracks(withMediaType: .audio)
+            XCTAssertTrue(noAudio.isEmpty)
+        } catch MV.ExportError.codecUnsupported {
+            throw XCTSkip("This machine has no HEVC encoder.")
+        }
+
+        // An empty project cannot be exported, and says why.
+        let empty = MV.MusicVideoEditorModel(manager: MV.ProjectManager(root: root.appendingPathComponent("e")), project: MV.VideoProject())
+        do {
+            _ = try await exporter.export(model: empty, settings: MV.ExportSettings())
+            XCTFail("an empty project must not export")
+        } catch let error as MV.ExportError {
+            XCTAssertNotNil(error.errorDescription)
+        }
+        exporter.start(model: empty, settings: MV.ExportSettings())
+        for _ in 0..<100 where exporter.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        if case .failed(let message) = exporter.phase { XCTAssertFalse(message.isEmpty) } else { XCTFail("expected a failure, got \(exporter.phase)") }
+    }
+
+    @MainActor
+    func testCancellingAnExportStopsAndLeavesNoFile() async throws {
+        let model = try await exportableModel(audio: false)
+        let exports = MediaStorage.exportsDirectory
+        let before = (try? FileManager.default.contentsOfDirectory(atPath: exports.path))?.count ?? 0
+        let exporter = MV.ProjectExporter()
+        exporter.start(model: model, settings: MV.ExportSettings(resolution: .p1080, fps: 60))
+        try await Task.sleep(nanoseconds: 400_000_000)
+        XCTAssertTrue(exporter.isRunning, "a 180-frame 1080p job does not finish in 0.4 s")
+        exporter.cancel()
+        for _ in 0..<600 where exporter.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(exporter.phase, .cancelled)
+        XCTAssertEqual((try? FileManager.default.contentsOfDirectory(atPath: exports.path))?.count ?? 0, before, "nothing half-written is left behind")
+        XCTAssertEqual(exporter.fraction, 0)
+    }
 }

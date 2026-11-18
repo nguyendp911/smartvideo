@@ -2,7 +2,7 @@
 
 ## v6.2.0 – Editor roadmap (nhánh feat/editor-roadmap, chưa kiểm thử trên thiết bị)
 
-Auto-ducking theo giọng nói, ripple delete, tách nền video PIP (chroma key / người), LUT `.cube`, nhận link từ Shortcuts qua `smartvideo://`, dọn dung lượng, tách `EditorViewModel` thành các extension. Thêm Mockup Studio (71 mẫu WebP, canvas kéo thả, mask, 11 blend) và Music Photo Video Studio giai đoạn 1. Chi tiết và giới hạn: xem README.
+Auto-ducking theo giọng nói, ripple delete, tách nền video PIP (chroma key / người), LUT `.cube`, nhận link từ Shortcuts qua `smartvideo://`, dọn dung lượng, tách `EditorViewModel` thành các extension. Thêm Mockup Studio (71 mẫu WebP, canvas kéo thả, mask, 11 blend) và Music Photo Video Studio (9 giai đoạn: ảnh, nhạc, đĩa than, lời karaoke, visualizer, canvas, hiệu ứng, xuất video). Chi tiết và giới hạn: xem README.
 
 > Tài liệu giới thiệu hiện hành nằm ở [README.md](README.md). Tệp này giữ nguyên ghi chú từng phiên bản, kể cả các mục "giới hạn" lúc đó (một số đã được khắc phục ở bản sau).
 

@@ -12,16 +12,11 @@ extension MusicVideoStudio {
             GeometryReader { geo in
                 let canvas = Self.fitted(ratio: model.project.aspect.ratio, in: geo.size)
                 let items = TimelineEngine.renderItems(in: model.project, at: playback.state.frameTime)
-                let motion = model.sceneMotion(items: items, at: playback.state.frameTime)
                 ZStack {
                     Color(white: 0.03)
                     ZStack {
-                        Color.black
-                        ForEach(items) { item in
-                            LayerRenderView(item: item, canvas: canvas, time: playback.state.frameTime,
-                                            selected: model.selection.contains(item.id),
-                                            model: model, motion: motion)
-                        }
+                        ProjectFrameView(resources: model.resources, canvas: canvas, time: playback.state.frameTime,
+                                         selection: model.selection)
                         TransformGuidesView(guides: model.transformGuides, showSafeArea: model.showSafeArea, canvas: canvas)
                         TransformOverlay(model: model, canvas: canvas, items: items)
                         if model.project.layerCount == 0 {
@@ -54,13 +49,39 @@ extension MusicVideoStudio {
         }
     }
 
+    /// One complete frame: every active layer at `time`, drawn by the SAME code for the
+    /// preview (on screen) and the exporter (into video frames).
+    struct ProjectFrameView: View {
+        let resources: FrameResources
+        let canvas: CGSize
+        let time: ProjectTime
+        var selection: Set<UUID> = []
+        /// Points -> pixels used to size decoded photos (the screen scale on screen, 1 when exporting).
+        var renderScale: CGFloat = UIScreen.main.scale
+
+        var body: some View {
+            let items = TimelineEngine.renderItems(in: resources.project, at: time)
+            let motion = resources.sceneMotion(items: items, at: time)
+            ZStack {
+                Color.black
+                ForEach(items) { item in
+                    LayerRenderView(item: item, canvas: canvas, time: time, selected: selection.contains(item.id),
+                                    resources: resources, motion: motion, renderScale: renderScale)
+                }
+            }
+            .frame(width: canvas.width, height: canvas.height)
+            .clipped()
+        }
+    }
+
     struct LayerRenderView: View {
         let item: RenderItem
         let canvas: CGSize
         let time: ProjectTime
         let selected: Bool
-        let model: MusicVideoEditorModel
+        let resources: FrameResources
         var motion = SceneMotion.identity
+        var renderScale: CGFloat = UIScreen.main.scale
 
         /// Pictures shake and pulse; text, lyrics and overlay effects stay still.
         private var isScene: Bool {
@@ -77,22 +98,23 @@ extension MusicVideoStudio {
         @ViewBuilder private var content: some View {
             switch item {
             case .effect(let layer):
-                EffectLayerView(layer: layer, canvas: canvas, time: time, beats: model.effectBeats(for: layer), selected: selected)
+                EffectLayerView(layer: layer, canvas: canvas, time: time, beats: resources.effectBeats(for: layer), selected: selected)
             case .photo(let layer):
-                PhotoLayerView(layer: layer, url: model.mediaURL(for: layer), canvas: canvas, time: time, selected: selected)
+                PhotoLayerView(layer: layer, url: resources.photoURL(layer), canvas: canvas, time: time, selected: selected,
+                               renderScale: renderScale)
             case .text(let layer):
                 TextLayerView(layer: layer, canvas: canvas, selected: selected)
             case .lyrics(let layer):
                 KaraokeLyricsView(layer: layer, canvas: canvas,
-                                  sourceTime: LyricsTiming.sourceTime(layer, in: model.project, at: time), selected: selected)
+                                  sourceTime: LyricsTiming.sourceTime(layer, in: resources.project, at: time), selected: selected)
             case .visualizer(let layer):
-                let source = VisualizerTiming.sourceTime(layer, in: model.project, at: time)
+                let source = VisualizerTiming.sourceTime(layer, in: resources.project, at: time)
                 VisualizerLayerView(layer: layer, canvas: canvas,
-                                    frame: VisualizerFrame.make(layer: layer, spectrum: model.spectrum(for: layer), sourceTime: source),
+                                    frame: VisualizerFrame.make(layer: layer, spectrum: resources.spectrum(for: layer), sourceTime: source),
                                     time: time.seconds, selected: selected)
             case .vinyl(let layer):
                 VinylLayerView(layer: layer, canvas: canvas, time: time,
-                               coverURL: layer.coverFile.map { model.manager.mediaURL(projectID: model.project.id, file: $0) },
+                               coverURL: layer.coverFile.map { resources.mediaURL($0) },
                                selected: selected)
             }
         }
@@ -104,19 +126,22 @@ extension MusicVideoStudio {
         let canvas: CGSize
         let time: ProjectTime
         let selected: Bool
+        let renderScale: CGFloat
         @State private var image: UIImage?
 
-        init(layer: PhotoLayer, url: URL, canvas: CGSize, time: ProjectTime, selected: Bool) {
+        init(layer: PhotoLayer, url: URL, canvas: CGSize, time: ProjectTime, selected: Bool,
+             renderScale: CGFloat = UIScreen.main.scale) {
             self.layer = layer
             self.url = url
             self.canvas = canvas
             self.time = time
             self.selected = selected
+            self.renderScale = renderScale
             _image = State(initialValue: PhotoImageCache.shared.cached(
-                url, maxPixel: PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale)))
+                url, maxPixel: PhotoImageCache.bucket(max(canvas.width, canvas.height) * renderScale)))
         }
 
-        private var pixels: Int { PhotoImageCache.bucket(max(canvas.width, canvas.height) * UIScreen.main.scale) }
+        private var pixels: Int { PhotoImageCache.bucket(max(canvas.width, canvas.height) * renderScale) }
 
         var body: some View {
             let t = layer.core.transform

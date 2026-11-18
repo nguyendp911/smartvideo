@@ -37,6 +37,7 @@ struct MusicVideoCoreTests {
         transitionKinds()
         effectMath()
         try effectProject()
+        try exportSettings()
         print("music video core tests passed")
     }
 
@@ -1239,7 +1240,7 @@ struct MusicVideoCoreTests {
 
         precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 200, y: 75), items: items, canvas: canvas) == textID, "text is above the photo")
         precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 200, y: 250), items: items, canvas: canvas) == p.photos[0].core.id, "empty canvas picks the photo")
-        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: .nan, y: 0), items: items, canvas: canvas) == nil)
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: CGFloat.nan, y: 0), items: items, canvas: canvas) == nil)
         precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 5, y: 5), items: [], canvas: canvas) == nil)
 
         // Scale and rotation move the box.
@@ -1418,5 +1419,73 @@ struct MusicVideoCoreTests {
         json["effects"] = layers
         let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
         precondition(old.effects[0].kind == .vignette && old.effects[0].intensity == 0.6 && old.effects[0].everyBeats == 8, "missing fields get defaults, counts are clamped")
+    }
+
+    // MARK: Export settings (phase 9)
+
+    static func exportSettings() throws {
+        // Output size: the resolution is the short side, both sides even, ratio kept.
+        for aspect in MV.AspectRatio.allCases {
+            for resolution in MV.ExportResolution.allCases {
+                let s = MV.ExportSettings(resolution: resolution).size(aspect: aspect)
+                precondition(s.width % 2 == 0 && s.height % 2 == 0, "\(aspect.rawValue) \(resolution.rawValue): even sizes")
+                precondition(min(s.width, s.height) == resolution.rawValue)
+                precondition(abs(Double(s.width) / Double(s.height) - aspect.ratio) < 0.01)
+            }
+        }
+        func size(_ a: MV.AspectRatio, _ r: MV.ExportResolution) -> [Int] {
+            let s = MV.ExportSettings(resolution: r).size(aspect: a)
+            return [s.width, s.height]
+        }
+        precondition(size(.portrait9x16, .p1080) == [1080, 1920] && size(.landscape16x9, .p720) == [1280, 720])
+        precondition(size(.landscape16x9, .p2160) == [3840, 2160] && size(.portrait9x16, .p2160) == [2160, 3840])
+        precondition(size(.square, .p1440) == [1440, 1440] && size(.portrait4x5, .p1080) == [1080, 1350] && size(.portrait3x4, .p1080) == [1080, 1440])
+
+        // Bit rate grows with size and frame rate, HEVC needs less, and it is bounded.
+        let wide = MV.AspectRatio.landscape16x9
+        func rate(_ r: MV.ExportResolution, _ fps: Int, _ codec: MV.ExportCodec = .h264) -> Int {
+            MV.ExportSettings(resolution: r, fps: fps, codec: codec).videoBitrate(aspect: wide)
+        }
+        precondition(rate(.p720, 30) < rate(.p1080, 30) && rate(.p1080, 30) < rate(.p1440, 30) && rate(.p1440, 30) < rate(.p2160, 30))
+        precondition(rate(.p1080, 24) < rate(.p1080, 30) && rate(.p1080, 30) < rate(.p1080, 60))
+        precondition(rate(.p1080, 30, .hevc) < rate(.p1080, 30, .h264))
+        precondition(abs(rate(.p1080, 30) - 7_464_960) < 10, "1080p30 H.264 is about 7.5 Mbit/s")
+        precondition(rate(.p2160, 60) == 60_000_000 || rate(.p2160, 60) <= 80_000_000)
+        precondition(MV.ExportResolution.allCases.allSatisfy { r in MV.ExportSettings.supportedFPS.allSatisfy { rate(r, $0) >= 2_000_000 && rate(r, $0) <= 80_000_000 } })
+
+        // Frames: ceil(duration * fps), on the project's exact clock.
+        func frames(_ seconds: Double, _ fps: Int) -> Int { MV.ExportSettings(fps: fps).totalFrames(duration: sec(seconds)) }
+        precondition(frames(3, 30) == 90 && frames(3, 24) == 72 && frames(3, 60) == 180)
+        precondition(frames(3.01, 30) == 91, "a started frame still counts")
+        precondition(frames(0, 30) == 0 && MV.ExportSettings().totalFrames(duration: MV.ProjectTime(ticks: 1)) == 1)
+        precondition(MV.ExportSettings(fps: 25).totalFrames(duration: sec(2)) == 60, "an unsupported rate counts as 30")
+        precondition(MV.ExportSettings(fps: 30).frameTime(30).ticks == 60_000 && MV.ExportSettings(fps: 24).frameTime(24).ticks == 60_000)
+        precondition(MV.ExportSettings(fps: 60).frameTime(1).ticks == 1_000 && MV.ExportSettings(fps: 24).frameTime(1).ticks == 2_500)
+        precondition(MV.ExportSettings(fps: 30).frameTime(-5) == .zero)
+        for fps in MV.ExportSettings.supportedFPS {
+            for i in [0, 1, 7, 59, 61, 3599] { precondition(MV.ExportSettings(fps: fps).frameTime(i).ticks * Int64(fps) == Int64(i) * 60_000, "frame \(i) at \(fps) fps is exact") }
+        }
+        precondition(MV.ExportSettings(fps: 25).sanitized.fps == 30 && MV.ExportSettings(fps: 24).sanitized.fps == 24)
+
+        // Size estimate and problems.
+        let tenSeconds = MV.ExportSettings().estimatedBytes(duration: sec(10), aspect: wide)
+        precondition(tenSeconds > 9_000_000 && tenSeconds < 11_000_000, "got \(tenSeconds)")
+        precondition(MV.ExportSettings().estimatedBytes(duration: .zero, aspect: wide) == 0)
+        precondition(MV.ExportSettings().estimatedBytes(duration: sec(20), aspect: wide) > 2 * tenSeconds - 10)
+        let good = MV.ExportSettings()
+        precondition(good.problems(duration: sec(5), hasVisuals: true).isEmpty)
+        precondition(good.problems(duration: .zero, hasVisuals: true).count == 1)
+        precondition(good.problems(duration: sec(3601), hasVisuals: true).count == 1)
+        precondition(good.problems(duration: sec(5), hasVisuals: false).count == 1)
+        precondition(good.problems(duration: .zero, hasVisuals: false).count == 2)
+
+        // File names: safe characters, right extension, a timestamp.
+        func matches(_ name: String, _ pattern: String) -> Bool { name.range(of: pattern, options: .regularExpression) != nil }
+        precondition(matches(good.fileName(projectName: "My Video: ok/?"), #"^My Video_ ok__-\d{8}-\d{6}\.mp4$"#), good.fileName(projectName: "My Video: ok/?"))
+        precondition(matches(MV.ExportSettings(container: .mov).fileName(projectName: "  "), #"^MusicVideo-\d{8}-\d{6}\.mov$"#))
+        precondition(good.fileName(projectName: String(repeating: "a", count: 200)).count < 70)
+
+        let saved = MV.ExportSettings(resolution: .p2160, fps: 60, codec: .hevc, container: .mov)
+        precondition(try JSONDecoder().decode(MV.ExportSettings.self, from: JSONEncoder().encode(saved)) == saved)
     }
 }
