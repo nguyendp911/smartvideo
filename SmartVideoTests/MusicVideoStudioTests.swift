@@ -826,4 +826,144 @@ final class MusicVideoStudioTests: XCTestCase {
         let again = try counts(at: 1.0)
         XCTAssertEqual(again.yellow, middle.yellow); XCTAssertEqual(again.white, middle.white, "same time, same picture")
     }
+
+    // MARK: Phase 6 - visualizer
+
+    private func writeKicks(_ name: String, seconds: Double) throws -> URL {
+        let url = root.appendingPathComponent(name)
+        let rate = 44_100.0
+        let format = try XCTUnwrap(AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: 1, interleaved: false))
+        let file = try AVAudioFile(forWriting: url, settings: [
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: rate, AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16, AVLinearPCMIsFloatKey: false, AVLinearPCMIsBigEndianKey: false
+        ], commonFormat: .pcmFormatFloat32, interleaved: false)
+        let frames = AVAudioFrameCount(seconds * rate)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames))
+        buffer.frameLength = frames
+        let data = try XCTUnwrap(buffer.floatChannelData)[0]
+        for i in 0..<Int(frames) { data[i] = 0 }
+        var start = 0.1
+        while start + 0.1 < seconds {
+            for i in 0..<Int(0.08 * rate) {
+                let t = Double(i) / rate
+                data[Int(start * rate) + i] = Float(0.8 * sin(2 * Double.pi * 60 * t) * exp(-t * 20))
+            }
+            start += 0.5
+        }
+        try file.write(from: buffer)
+        return url
+    }
+
+    func testSpectrumOfARealFileAndItsCache() async throws {
+        let url = try writeSine("tone.wav", seconds: 3, frequency: 1000, amplitude: 0.5)
+        let data = try await MV.SpectrumGenerator.generate(url: url)
+        XCTAssertEqual(data.duration, 3, accuracy: 0.1)
+        let frame = data.frameCount / 2
+        let edges = MV.SpectrumAnalyzer.bandEdges(count: data.bandCount, sampleRate: MV.SpectrumGenerator.sampleRate)
+        let band = (0..<data.bandCount).max { data.frames[frame * data.bandCount + $0] < data.frames[frame * data.bandCount + $1] }!
+        XCTAssertEqual((edges[band] * edges[band + 1]).squareRoot(), 1000, accuracy: 100, "the decoded 1 kHz tone peaks near 1 kHz")
+
+        let cacheDir = root.appendingPathComponent("cache")
+        let first = await MV.SpectrumCache(directory: cacheDir).spectrum(for: url)
+        let second = MV.SpectrumCache(directory: cacheDir).cached(for: url)
+        XCTAssertEqual(first, second, "memory and disk copies are identical")
+        XCTAssertNotNil(first)
+        XCTAssertNil(MV.SpectrumCache(directory: root.appendingPathComponent("empty")).cached(for: url))
+        let none = await MV.SpectrumCache(directory: cacheDir).spectrum(for: root.appendingPathComponent("missing.wav"))
+        XCTAssertNil(none, "a missing file is reported as no spectrum, not a crash")
+    }
+
+    @MainActor
+    func testVisualizerLayerFollowsTheAudioAndShowsInPreview() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        model.addVisualizer()
+        XCTAssertTrue(model.project.visualizers.isEmpty, "no music, no visualizer")
+        XCTAssertNotNil(model.statusMessage)
+
+        await model.importAudio(from: try writeSine("tone.wav", seconds: 3, frequency: 1000, amplitude: 0.5))
+        model.addVisualizer()
+        let layer = try XCTUnwrap(model.project.visualizers.first)
+        XCTAssertEqual(layer.audioLayerID, model.project.audios[0].core.id)
+        XCTAssertNil(model.spectrum(for: layer), "analysis runs in the background")
+        let before = try render(model, at: 1.0).pngData()
+
+        for _ in 0..<100 where model.spectrum(for: layer) == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        let spectrum = try XCTUnwrap(model.spectrum(for: layer))
+        XCTAssertGreaterThan(model.spectrumVersion, 0)
+        let frame = MV.VisualizerFrame.make(layer: layer, spectrum: spectrum, sourceTime: 1.0)
+        XCTAssertGreaterThan(frame.bands.max() ?? 0, 0.8, "the tone lights one band")
+        let after = try render(model, at: 1.0).pngData()
+        XCTAssertNotEqual(before, after, "the picture changes once the spectrum is known")
+        XCTAssertEqual(try render(model, at: 1.0).pngData(), after, "same time, same picture")
+
+        // Undo/redo, duplicate and delete keep working on the new layer type.
+        model.duplicateSelection()
+        XCTAssertEqual(model.project.visualizers.count, 2)
+        model.undo()
+        XCTAssertEqual(model.project.visualizers.count, 1)
+    }
+
+    @MainActor
+    private func painted(_ layer: MV.VisualizerLayer, frame: MV.VisualizerFrame, time: Double = 1) throws -> UIImage {
+        let canvas = CGSize(width: 400, height: 300)
+        let view = ZStack { Color.black; MV.VisualizerLayerView(layer: layer, canvas: canvas, frame: frame, time: time, selected: false) }
+            .frame(width: canvas.width, height: canvas.height)
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+        return try XCTUnwrap(renderer.uiImage)
+    }
+
+    private func coverage(_ image: UIImage) throws -> Int {
+        var count = 0
+        for ny in stride(from: 0.02, to: 1.0, by: 0.02) {
+            for nx in stride(from: 0.02, to: 1.0, by: 0.01) {
+                let p = try pixel(image, nx, ny)
+                if p.r + p.g + p.b > 120 { count += 1 }
+            }
+        }
+        return count
+    }
+
+    @MainActor
+    func testEveryVisualizerStyleDrawsAndReactsToLevel() throws {
+        var core = MV.LayerCore(name: "v", track: .visualizer, start: .zero, duration: MV.ProjectTime(seconds: 5), zIndex: 0)
+        core.transform.y = 0.5
+        var layer = MV.VisualizerLayer(core: core, audioLayerID: nil)
+        layer.width = 1; layer.height = 0.8; layer.glow = 0
+        let silent = MV.VisualizerFrame(bands: [Float](repeating: 0, count: layer.barCount), bass: 0, pulse: 0)
+        let loud = MV.VisualizerFrame(bands: (0..<layer.barCount).map { Float(0.4 + 0.5 * sin(Double($0) / 4) * sin(Double($0) / 4)) }, bass: 0.9, pulse: 1)
+        let growing: Set<MV.VisualizerStyle> = [.bars, .mirror, .area, .dots, .circle]
+        for style in MV.VisualizerStyle.allCases {
+            layer.style = style
+            let busyImage = try painted(layer, frame: loud)
+            let busy = try coverage(busyImage), quiet = try coverage(try painted(layer, frame: silent))
+            XCTAssertGreaterThan(busy, style == .particles ? 10 : 40, "\(style.rawValue) draws something for a loud signal")
+            if growing.contains(style) { XCTAssertGreaterThan(busy, quiet, "\(style.rawValue) grows with the level") }
+            XCTAssertEqual(try painted(layer, frame: loud).pngData(), busyImage.pngData(), "\(style.rawValue): same input, same picture")
+        }
+        layer.style = .particles
+        XCTAssertNotEqual(try painted(layer, frame: loud, time: 0.3).pngData(), try painted(layer, frame: loud, time: 1.7).pngData(), "particles move with the clock")
+    }
+
+    @MainActor
+    func testCutPhotosOnTheBeat() async throws {
+        let model = try modelWithPhotos(4)
+        await model.importAudio(from: try writeKicks("kicks.wav", seconds: 6))
+        XCTAssertEqual(model.project.audios.count, 1)
+        await model.cutPhotosOnBeats(every: 2)
+        let starts = model.project.photos.map { $0.core.start.seconds }
+        XCTAssertEqual(starts[0], 0, accuracy: 1e-9)
+        for (k, start) in starts.enumerated().dropFirst() {
+            XCTAssertEqual(start, 0.1 + Double(k) * 1.0, accuracy: 0.15, "photo \(k) starts on every second beat")
+        }
+        for (a, b) in zip(model.project.photos, model.project.photos.dropFirst()) {
+            XCTAssertEqual(a.core.end.seconds, b.core.start.seconds, accuracy: 0.04, "photos stay back to back")
+        }
+        XCTAssertEqual(model.project.photos.last!.core.end.seconds, model.project.audios[0].core.end.seconds, accuracy: 0.04)
+        model.undo()
+        XCTAssertEqual(model.project.photos[1].core.start.seconds, 3, accuracy: 1e-9, "one undo step restores the old timing")
+    }
 }

@@ -67,6 +67,11 @@ extension MusicVideoStudio {
             case .lyrics(let layer):
                 KaraokeLyricsView(layer: layer, canvas: canvas,
                                   sourceTime: LyricsTiming.sourceTime(layer, in: model.project, at: time), selected: selected)
+            case .visualizer(let layer):
+                let source = VisualizerTiming.sourceTime(layer, in: model.project, at: time)
+                VisualizerLayerView(layer: layer, canvas: canvas,
+                                    frame: VisualizerFrame.make(layer: layer, spectrum: model.spectrum(for: layer), sourceTime: source),
+                                    time: time.seconds, selected: selected)
             case .vinyl(let layer):
                 VinylLayerView(layer: layer, canvas: canvas, time: time,
                                coverURL: layer.coverFile.map { model.manager.mediaURL(projectID: model.project.id, file: $0) },

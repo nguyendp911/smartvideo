@@ -7,6 +7,7 @@ extension MusicVideoStudio {
         case text(TextLayer)
         case vinyl(VinylLayer)
         case lyrics(LyricsLayer)
+        case visualizer(VisualizerLayer)
 
         var id: UUID { core.id }
 
@@ -16,6 +17,7 @@ extension MusicVideoStudio {
             case .text(let layer): return layer.core
             case .vinyl(let layer): return layer.core
             case .lyrics(let layer): return layer.core
+            case .visualizer(let layer): return layer.core
             }
         }
     }
@@ -40,6 +42,9 @@ extension MusicVideoStudio {
             }
             for (i, layer) in project.lyrics.enumerated() where layer.core.isActive(at: time) {
                 items.append((project.photos.count + project.texts.count + project.vinyls.count + i, .lyrics(layer)))
+            }
+            for (i, layer) in project.visualizers.enumerated() where layer.core.isActive(at: time) {
+                items.append((project.photos.count + project.texts.count + project.vinyls.count + project.lyrics.count + i, .visualizer(layer)))
             }
             return items.sorted {
                 $0.item.core.zIndex != $1.item.core.zIndex
@@ -153,6 +158,44 @@ extension MusicVideoStudio {
             return core.id
         }
 
+        /// A visualizer for `audioID`'s clip, centred in the lower half of the canvas.
+        @discardableResult
+        static func addVisualizer(audioID: UUID?, to project: inout VideoProject) -> UUID? {
+            guard project.layerCount < VideoProject.maxLayers else { return nil }
+            let audio = audioID.flatMap { id in project.audios.first { $0.core.id == id } }
+            var core = LayerCore(name: "Visualizer \(project.visualizers.count + 1)", track: .visualizer,
+                                 start: audio?.core.start ?? .zero,
+                                 duration: audio?.core.duration ?? max(defaultTextDuration, project.duration),
+                                 zIndex: project.nextZIndex(for: .visualizer))
+            core.transform.y = 0.72
+            project.visualizers.append(VisualizerLayer(core: core, audioLayerID: audio?.core.id))
+            return core.id
+        }
+
+        /// Puts the unlocked photos, in timeline order, between consecutive cut times (project
+        /// seconds). Extra photos continue after the last cut; a last photo stretches to the final cut.
+        static func fitPhotos(toCuts cuts: [Double], in project: inout VideoProject) {
+            let order = TimelineEditing.orderedPhotoIDs(in: project).compactMap { id in
+                project.photos.firstIndex { $0.core.id == id && !$0.core.isLocked }
+            }
+            guard cuts.count >= 2, !order.isEmpty else { return }
+            let fps = project.fps
+            let intervals = cuts.count - 1
+            var tail = ProjectTime(seconds: cuts[cuts.count - 1]).quantized(fps: fps)
+            for (slot, index) in order.enumerated() {
+                if slot < intervals {
+                    let start = ProjectTime(seconds: cuts[slot]).quantized(fps: fps)
+                    let endSeconds = slot == order.count - 1 ? cuts[cuts.count - 1] : cuts[slot + 1]
+                    let end = ProjectTime(seconds: endSeconds).quantized(fps: fps)
+                    project.photos[index].core.start = start
+                    project.photos[index].core.duration = max(LayerCore.minimumDuration, end - start)
+                } else {
+                    project.photos[index].core.start = tail
+                    tail = tail + project.photos[index].core.duration
+                }
+            }
+        }
+
         /// Spreads the photos evenly across the music (`seconds`) and packs them.
         static func fitPhotos(toDuration seconds: Double, in project: inout VideoProject) {
             let count = max(1, project.photos.filter { !$0.core.isLocked }.count)
@@ -194,6 +237,16 @@ extension MusicVideoStudio {
                 copy.core.start = layer.core.end
                 copy.core.isLocked = false
                 project.audios.append(copy)
+                created.append(copy.core.id)
+            }
+            for layer in project.visualizers where ids.contains(layer.core.id) {
+                guard project.layerCount < VideoProject.maxLayers else { break }
+                var copy = layer
+                copy.core.id = UUID()
+                copy.core.name = layer.core.name + " (bản sao)"
+                copy.core.isLocked = false
+                copy.core.zIndex = project.nextZIndex(for: .visualizer)
+                project.visualizers.append(copy)
                 created.append(copy.core.id)
             }
             for layer in project.lyrics where ids.contains(layer.core.id) {

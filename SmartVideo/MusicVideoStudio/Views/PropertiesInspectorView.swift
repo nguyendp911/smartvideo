@@ -162,6 +162,9 @@ extension MusicVideoStudio {
                     if single?.track == .audio, let audio = model.selectedAudioLayer() {
                         audioSection(audio)
                     }
+                    if single?.track == .visualizer, let visualizer = model.selectedVisualizerLayer() {
+                        visualizerSection(visualizer)
+                    }
                     if single?.track == .lyrics, let lyrics = model.selectedLyricsLayer() {
                         lyricsSection(lyrics)
                     }
@@ -174,6 +177,37 @@ extension MusicVideoStudio {
                     Label("Đặt lại biến đổi", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered).disabled(locked)
+            }
+        }
+
+        private func visualizerSection(_ layer: VisualizerLayer) -> some View {
+            group("Visualizer") {
+                Picker("Kiểu", selection: model.visualizerBinding(\.style, fallback: .bars)) {
+                    ForEach(VisualizerStyle.allCases) { Text($0.rawValue).tag($0) }
+                }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                if !model.project.audios.isEmpty {
+                    row("Nhạc") {
+                        Picker("Nhạc", selection: model.visualizerBinding(\.audioLayerID, fallback: nil)) {
+                            Text("Không gắn").tag(UUID?.none)
+                            ForEach(model.project.audios) { Text($0.originalName).tag(Optional($0.core.id)) }
+                        }.pickerStyle(.menu).labelsHidden().frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                ColorPicker("Màu đầu", selection: MusicVideoStudio.colorBinding(model.visualizerBinding(\.colorHex, fallback: "#4DD0E1"), beginEdit: model.beginEdit)).font(.caption)
+                ColorPicker("Màu cuối", selection: MusicVideoStudio.colorBinding(model.visualizerBinding(\.secondColorHex, fallback: "#E040FB"), beginEdit: model.beginEdit)).font(.caption)
+                slider("Số cột", Binding(get: { Double(layer.barCount) }, set: { model.visualizerBinding(\.barCount, fallback: 48).wrappedValue = Int($0.rounded()) }),
+                       Double(VisualizerLayer.barRange.lowerBound)...Double(VisualizerLayer.barRange.upperBound)) { "\(Int($0))" }
+                slider("Độ dày", model.visualizerBinding(\.thickness, fallback: 0.6), VisualizerLayer.thicknessRange) { "\(Int($0 * 100))%" }
+                slider("Độ nhạy", model.visualizerBinding(\.sensitivity, fallback: 1.2), VisualizerLayer.sensitivityRange) { String(format: "%.1fx", $0) }
+                slider("Độ mượt", model.visualizerBinding(\.smoothing, fallback: 0.7), VisualizerLayer.smoothingRange) { "\(Int($0 * 100))%" }
+                slider("Rộng", model.visualizerBinding(\.width, fallback: 0.8), VisualizerLayer.widthRange) { "\(Int($0 * 100))%" }
+                slider("Cao", model.visualizerBinding(\.height, fallback: 0.25), VisualizerLayer.heightRange) { "\(Int($0 * 100))%" }
+                slider("Phát sáng", model.visualizerBinding(\.glow, fallback: 0.4), 0...1) { "\(Int($0 * 100))%" }
+                slider("Phồng theo nhịp", model.visualizerBinding(\.beatPulse, fallback: 0.5), 0...1) { "\(Int($0 * 100))%" }
+                Toggle("Bo tròn", isOn: model.visualizerBinding(\.rounded, fallback: true)).font(.caption)
+                if model.spectrum(for: layer) == nil && layer.audioLayerID != nil {
+                    HStack(spacing: 6) { ProgressView().controlSize(.small); Text("Đang phân tích âm thanh…").font(.caption2) }
+                }
             }
         }
 
@@ -217,6 +251,7 @@ extension MusicVideoStudio {
                 slider("Mờ dần vào", model.audioBinding(\.fadeIn, fallback: 0), 0...min(30, max(0.5, audio.core.duration.seconds / 2))) { String(format: "%.1f s", $0) }
                 slider("Mờ dần ra", model.audioBinding(\.fadeOut, fallback: 0), 0...min(30, max(0.5, audio.core.duration.seconds / 2))) { String(format: "%.1f s", $0) }
                 Toggle("Lặp lại đến hết clip", isOn: model.audioBinding(\.loops, fallback: false)).font(.caption)
+                BeatCutControl(model: model)
                 Button { model.fitPhotosToAudio() } label: {
                     Label("Chia đều ảnh theo độ dài nhạc", systemImage: "rectangle.split.3x1").frame(maxWidth: .infinity)
                 }.buttonStyle(.bordered).font(.caption).disabled(model.project.photos.isEmpty)

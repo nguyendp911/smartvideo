@@ -28,6 +28,10 @@ struct MusicVideoCoreTests {
         lyricsSyncAndKaraoke()
         lyricsAligner()
         try lyricsProject()
+        spectrumData()
+        beatMaths()
+        spectrumAnalysis()
+        try visualizerProject()
         print("music video core tests passed")
     }
 
@@ -931,7 +935,7 @@ struct MusicVideoCoreTests {
         precondition(p.lyrics[2].lines == p.lyrics[0].lines && p.lyrics[2].audioLayerID == p.lyrics[0].audioLayerID, "both halves keep the same sync")
         p.lyrics[1].core.isLocked = true
         precondition(MV.TimelineEditing.split([p.lyrics[1].core.id], at: sec(4), in: &p).isEmpty)
-        p.remove([id])
+        p.removeLayers([id])
         precondition(p.lyrics.contains { $0.core.id == id } == false)
 
         var q = MV.VideoProject()
@@ -948,5 +952,195 @@ struct MusicVideoCoreTests {
         json["lyrics"] = layers
         let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
         precondition(old.lyrics[0].animation == .fill && old.lyrics[0].fontSize == 0.06 && old.lyrics[0].lines.isEmpty && old.lyrics[0].showNextLine)
+    }
+
+    // MARK: Visualizer (phase 6)
+
+    static func spectrumData() {
+        // 20 frames at 10 fps, 4 bands; one loud band-2 frame at 0.5 s.
+        var frames = [Float](repeating: 0, count: 80)
+        frames[5 * 4 + 2] = 1
+        frames[7 * 4 + 0] = 204.0 / 255
+        let data = MV.SpectrumData(frameRate: 10, bandCount: 4, frames: frames, beats: [1.0, 2.0])
+        precondition(data.frameCount == 20); near(data.duration, 2.0)
+
+        near(Double(data.bands(at: 0.5, count: 4, decay: 0.5)[2]), 1)
+        near(Double(data.bands(at: 0.6, count: 4, decay: 0.5)[2]), 0.5, 1e-6, "it falls at most `decay` per frame")
+        near(Double(data.bands(at: 0.7, count: 4, decay: 0.5)[2]), 0.25)
+        near(Double(data.bands(at: 0.55, count: 4, decay: 0.5)[2]), 0.75, 1e-6, "interpolated between frames")
+        near(Double(data.bands(at: 0.6, count: 4, decay: 0)[2]), 0, 1e-6, "no smoothing = the raw frame")
+        precondition(data.bands(at: -1, count: 4) == [0, 0, 0, 0] && data.bands(at: 99, count: 4) == [0, 0, 0, 0])
+        precondition(data.bands(at: .nan, count: 3) == [0, 0, 0] && data.bands(at: .infinity, count: 3) == [0, 0, 0])
+        precondition(data.bands(at: 0.5, count: 0).isEmpty)
+        let fewer = data.bands(at: 0.5, count: 2, decay: 0.5)
+        precondition(fewer.count == 2 && fewer[1] == 1 && fewer[0] == 0, "fewer bars take the loudest of their bands")
+        let more = data.bands(at: 0.5, count: 8, decay: 0.5)
+        precondition(more.count == 8 && more[4] == 1 && more[5] == 1 && more[0] == 0, "more bars repeat bands")
+        precondition(data.bands(at: 0.5, count: 4, decay: 0.5) == data.bands(at: 0.5, count: 4, decay: 0.5), "pure function of time")
+        near(data.bass(at: 0.7), 0.8, 1e-6); near(data.bass(at: 9), 0)
+
+        near(data.beatPulse(at: 0.5), 0); near(data.beatPulse(at: 1.0), 1)
+        near(data.beatPulse(at: 1.18), exp(-1), 1e-9)
+        precondition(data.beatPulse(at: 1.99) < 0.01); near(data.beatPulse(at: 2.0), 1)
+        near(MV.SpectrumData(frameRate: 10, bandCount: 4, frames: frames).beatPulse(at: 1), 0, 1e-9, "no beats, no pulse")
+
+        // Disk form is exact, and bad data is refused.
+        let quantised = MV.SpectrumData(frameRate: 30, bandCount: 3, frames: (0..<30).map { Float($0 * 8 % 256) / 255 }, beats: [0.5, 1.25])
+        precondition(MV.SpectrumData(decoding: quantised.encoded()) == quantised)
+        let bytes = quantised.encoded()
+        precondition(MV.SpectrumData(decoding: bytes.prefix(bytes.count - 1)) == nil, "truncated")
+        precondition(MV.SpectrumData(decoding: Data("nope".utf8)) == nil && MV.SpectrumData(decoding: Data()) == nil)
+        var wrongMagic = bytes; wrongMagic[0] = 0x58
+        precondition(MV.SpectrumData(decoding: wrongMagic) == nil)
+    }
+
+    static func beatMaths() {
+        var flux = [Float](repeating: 0.01, count: 300)
+        for k in 0..<20 { flux[10 + 15 * k] = 1 }                          // a beat every 0.5 s at 30 fps
+        let beats = MV.BeatDetector.detect(flux: flux, frameRate: 30)
+        precondition(beats.count == 20, "got \(beats.count)")
+        for (k, beat) in beats.enumerated() { near(beat, Double(10 + 15 * k) / 30, 1e-9) }
+        precondition(MV.BeatDetector.detect(flux: [Float](repeating: 0.01, count: 300), frameRate: 30).isEmpty, "flat = no beats")
+        precondition(MV.BeatDetector.detect(flux: [Float](repeating: 0.015, count: 300).enumerated().map { $0.offset % 7 == 0 ? 0.03 : 0.015 }, frameRate: 30).isEmpty, "noise under the floor")
+        var close = [Float](repeating: 0.01, count: 100); close[40] = 1; close[43] = 0.9
+        precondition(MV.BeatDetector.detect(flux: close, frameRate: 30).count == 1, "0.1 s apart is one beat")
+        precondition(MV.BeatDetector.detect(flux: [], frameRate: 30).isEmpty && MV.BeatDetector.detect(flux: [1, 1], frameRate: 30).isEmpty)
+
+        precondition(MV.BeatMath.cutTimes(beats: [1, 2, 3, 4, 5], every: 2, from: 0, to: 6) == [0, 1, 3, 5, 6])
+        precondition(MV.BeatMath.cutTimes(beats: [1, 2, 3, 4, 5], every: 1, from: 0, to: 6) == [0, 1, 2, 3, 4, 5, 6])
+        precondition(MV.BeatMath.cutTimes(beats: [0.1, 5.8, 9], every: 1, from: 0, to: 6) == [0, 6], "too close to an edge, or outside")
+        precondition(MV.BeatMath.cutTimes(beats: [1], every: 1, from: 6, to: 6).isEmpty && MV.BeatMath.cutTimes(beats: [1], every: 0, from: 0, to: 6).isEmpty)
+        precondition(MV.BeatMath.cutTimes(beats: [3, 1, 2], every: 1, from: 0, to: 6) == [0, 1, 2, 3, 6], "unsorted input")
+
+        // Photos follow the cuts.
+        func project(_ count: Int) -> MV.VideoProject {
+            var p = MV.VideoProject()
+            MV.TimelineEngine.appendPhotos(photos(count), to: &p)                  // 3 s each
+            return p
+        }
+        func spans(_ p: MV.VideoProject) -> [[Double]] {
+            p.photos.map { [$0.core.start.seconds, $0.core.end.seconds] }
+        }
+        var a = project(3)
+        MV.TimelineEngine.fitPhotos(toCuts: [0, 1, 3, 7], in: &a)
+        precondition(spans(a) == [[0, 1], [1, 3], [3, 7]])
+        var b = project(3)
+        MV.TimelineEngine.fitPhotos(toCuts: [0, 2, 4], in: &b)
+        precondition(spans(b) == [[0, 2], [2, 4], [4, 7]], "extra photos continue after the last cut")
+        var c = project(2)
+        MV.TimelineEngine.fitPhotos(toCuts: [0, 1, 2, 3, 10], in: &c)
+        precondition(spans(c) == [[0, 1], [1, 10]], "the last photo stretches to the final cut")
+        var d = project(3)
+        d.photos[1].core.isLocked = true
+        MV.TimelineEngine.fitPhotos(toCuts: [0, 2, 4], in: &d)
+        precondition(spans(d) == [[0, 2], [3, 6], [2, 4]], "locked photos stay put")
+        var e = project(2)
+        MV.TimelineEngine.fitPhotos(toCuts: [5], in: &e)
+        precondition(spans(e) == [[0, 3], [3, 6]], "fewer than two cuts changes nothing")
+    }
+
+    static func sine(_ frequency: Double, amplitude: Double, seconds: Double, rate: Double = 22_050) -> [Float] {
+        (0..<Int(seconds * rate)).map { Float(amplitude * sin(2 * Double.pi * frequency * Double($0) / rate)) }
+    }
+
+    static func spectrumAnalysis() {
+        let rate = 22_050.0
+        let edges = MV.SpectrumAnalyzer.bandEdges(count: 96, sampleRate: rate)
+        precondition(edges.count == 97 && edges[0] == 40 && edges[96] <= 16_000 && zip(edges, edges.dropFirst()).allSatisfy { $0 < $1 })
+
+        func level(_ data: MV.SpectrumData, frame: Int, band: Int) -> Double { Double(data.frames[frame * data.bandCount + band]) }
+        func loudest(_ data: MV.SpectrumData, frame: Int) -> Int {
+            (0..<data.bandCount).max { level(data, frame: frame, band: $0) < level(data, frame: frame, band: $1) }!
+        }
+
+        let loud = MV.SpectrumAnalyzer.analyze(samples: sine(1000, amplitude: 0.5, seconds: 2), sampleRate: rate)
+        precondition(loud.frameCount == 60 && loud.bandCount == 96)
+        let peak = loudest(loud, frame: 30)
+        let center = (edges[peak] * edges[peak + 1]).squareRoot()
+        precondition(abs(center - 1000) < 80, "1 kHz sine peaks in the 1 kHz band, got \(center) Hz")
+        precondition(level(loud, frame: 30, band: peak) > 0.85)
+        precondition(level(loud, frame: 30, band: 5) < 0.2 && level(loud, frame: 30, band: 90) < 0.2, "far bands stay low")
+
+        let quiet = MV.SpectrumAnalyzer.analyze(samples: sine(1000, amplitude: 0.25, seconds: 2), sampleRate: rate)
+        near(level(loud, frame: 30, band: peak) - level(quiet, frame: 30, band: peak), 6.02 / 66, 0.02, "half the amplitude = -6 dB")
+
+        let low = MV.SpectrumAnalyzer.analyze(samples: sine(100, amplitude: 0.5, seconds: 1), sampleRate: rate)
+        let lowPeak = loudest(low, frame: 15)
+        precondition(abs((edges[lowPeak] * edges[lowPeak + 1]).squareRoot() - 100) < 20)
+        precondition(lowPeak < peak, "bands are ordered low to high")
+
+        let silent = MV.SpectrumAnalyzer.analyze(samples: [Float](repeating: 0, count: 22_050), sampleRate: rate)
+        precondition(silent.frames.allSatisfy { $0 == 0 } && silent.beats.isEmpty)
+        precondition(loud == MV.SpectrumAnalyzer.analyze(samples: sine(1000, amplitude: 0.5, seconds: 2), sampleRate: rate), "deterministic")
+        precondition(MV.SpectrumAnalyzer.analyze(samples: [], sampleRate: rate).frames.isEmpty)
+        precondition(MV.SpectrumAnalyzer.analyze(samples: [0.1], sampleRate: 0).frames.isEmpty)
+        precondition(loud.frames.allSatisfy { $0 >= 0 && $0 <= 1 })
+
+        // A kick every 0.5 s: 80 ms bursts of a decaying 60 Hz tone.
+        var kicks = [Float](repeating: 0, count: Int(6 * rate))
+        let starts = (0..<12).map { 0.1 + 0.5 * Double($0) }
+        for start in starts {
+            let first = Int(start * rate)
+            for i in 0..<Int(0.08 * rate) {
+                let t = Double(i) / rate
+                kicks[first + i] = Float(0.8 * sin(2 * Double.pi * 60 * t) * exp(-t * 20))
+            }
+        }
+        let kickData = MV.SpectrumAnalyzer.analyze(samples: kicks, sampleRate: rate)
+        precondition((10...13).contains(kickData.beats.count), "found \(kickData.beats.count) beats")
+        for start in starts {
+            precondition(kickData.beats.contains { $0 > start - 0.1 && $0 < start + 0.08 }, "no beat near the kick at \(start)")
+        }
+    }
+
+    static func visualizerProject() throws {
+        var p = MV.VideoProject()
+        p.audios.append(audioLayer())                                   // project 2-8 plays file 1-7
+        let audio = p.audios[0]
+        let id = MV.TimelineEngine.addVisualizer(audioID: audio.core.id, to: &p)!
+        precondition(p.visualizers.count == 1 && p.layerCount == 2)
+        near(p.visualizers[0].core.start.seconds, 2); near(p.visualizers[0].core.duration.seconds, 6)
+        near(p.visualizers[0].core.transform.y, 0.72)
+        precondition(MV.TimelineEngine.activeLayerIDs(in: p, at: sec(3)).contains(id) && !MV.TimelineEngine.activeLayerIDs(in: p, at: sec(9)).contains(id))
+        near(MV.VisualizerTiming.sourceTime(p.visualizers[0], in: p, at: sec(5)), 4)
+        p.audios.removeAll()
+        near(MV.VisualizerTiming.sourceTime(p.visualizers[0], in: p, at: sec(5)), 3, 1e-9, "no audio: relative to the layer")
+        p.audios.append(audioLayer())
+
+        let silent = MV.VisualizerFrame.make(layer: p.visualizers[0], spectrum: nil, sourceTime: 1)
+        precondition(silent.bands == [Float](repeating: 0, count: 48) && silent.bass == 0 && silent.pulse == 0)
+        let data = MV.SpectrumData(frameRate: 10, bandCount: 8, frames: [Float](repeating: 0.5, count: 160), beats: [1])
+        let frame = MV.VisualizerFrame.make(layer: p.visualizers[0], spectrum: data, sourceTime: 1.0)
+        precondition(frame.bands.count == 48 && frame.bands.allSatisfy { $0 == 0.5 } && frame.pulse == 1 && frame.bass == 0.5)
+        precondition(frame == MV.VisualizerFrame.make(layer: p.visualizers[0], spectrum: data, sourceTime: 1.0))
+
+        let copies = MV.TimelineEngine.duplicate([id], in: &p)
+        precondition(copies.count == 1 && p.visualizers.count == 2)
+        let cut = MV.TimelineEditing.split([id], at: sec(5), in: &p)
+        precondition(cut.count == 1 && p.visualizers.count == 3)
+        near(p.visualizers[0].core.end.seconds, 5); near(p.visualizers[2].core.start.seconds, 5)
+        precondition(p.visualizers[2].audioLayerID == p.visualizers[0].audioLayerID && p.visualizers[2].style == p.visualizers[0].style)
+        p.removeLayers([id])
+        precondition(p.visualizers.contains { $0.core.id == id } == false)
+
+        var q = MV.VideoProject()
+        q.audios.append(audioLayer())
+        MV.TimelineEngine.addVisualizer(audioID: q.audios[0].core.id, to: &q)
+        precondition(MV.VisualizerStyle.allCases.count == 9)
+        for style in MV.VisualizerStyle.allCases { q.visualizers[0].style = style }
+        q.visualizers[0].style = .particles; q.visualizers[0].barCount = 64; q.visualizers[0].colorHex = "#FF0000"
+        q.visualizers[0].smoothing = 0.9; q.visualizers[0].rounded = false
+        let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(q))
+        precondition(back.visualizers == q.visualizers)
+
+        precondition(try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8)).visualizers.isEmpty)
+        var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(q)) as! [String: Any]
+        var layers = json["visualizers"] as! [[String: Any]]
+        for key in ["style", "colorHex", "secondColorHex", "thickness", "rounded", "sensitivity", "smoothing", "width", "height", "glow", "beatPulse"] { layers[0].removeValue(forKey: key) }
+        layers[0]["barCount"] = 9999
+        json["visualizers"] = layers
+        let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
+        precondition(old.visualizers[0].style == .bars && old.visualizers[0].barCount == 128, "out-of-range counts are clamped")
+        precondition(old.visualizers[0].sensitivity == 1.2 && old.visualizers[0].rounded)
     }
 }

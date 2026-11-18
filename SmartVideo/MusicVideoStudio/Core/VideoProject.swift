@@ -50,6 +50,7 @@ extension MusicVideoStudio {
         var audios: [AudioLayer] = []
         var vinyls: [VinylLayer] = []
         var lyrics: [LyricsLayer] = []
+        var visualizers: [VisualizerLayer] = []
 
         init() {}
 
@@ -68,6 +69,7 @@ extension MusicVideoStudio {
             audios = try c.decodeIfPresent([AudioLayer].self, forKey: .audios) ?? []
             vinyls = try c.decodeIfPresent([VinylLayer].self, forKey: .vinyls) ?? []
             lyrics = try c.decodeIfPresent([LyricsLayer].self, forKey: .lyrics) ?? []
+            visualizers = try c.decodeIfPresent([VisualizerLayer].self, forKey: .visualizers) ?? []
         }
 
         /// End of the last layer, never shorter than the minimum.
@@ -76,10 +78,10 @@ extension MusicVideoStudio {
             return max(Self.minimumDuration, end)
         }
 
-        var layerCount: Int { photos.count + texts.count + audios.count + vinyls.count + lyrics.count }
+        var layerCount: Int { photos.count + texts.count + audios.count + vinyls.count + lyrics.count + visualizers.count }
 
         var allCores: [LayerCore] {
-            photos.map(\.core) + texts.map(\.core) + audios.map(\.core) + vinyls.map(\.core) + lyrics.map(\.core)
+            photos.map(\.core) + texts.map(\.core) + audios.map(\.core) + vinyls.map(\.core) + lyrics.map(\.core) + visualizers.map(\.core)
         }
 
         func core(for id: UUID) -> LayerCore? { allCores.first { $0.id == id } }
@@ -88,7 +90,7 @@ extension MusicVideoStudio {
         @discardableResult
         mutating func updateCore(_ id: UUID, _ change: (inout LayerCore) -> Void) -> Bool {
             Self.update(&photos, id, change) || Self.update(&texts, id, change) ||
-                Self.update(&audios, id, change) || Self.update(&vinyls, id, change) || Self.update(&lyrics, id, change)
+                Self.update(&audios, id, change) || Self.update(&vinyls, id, change) || Self.update(&lyrics, id, change) || Self.update(&visualizers, id, change)
         }
 
         private static func update<L: StudioLayer>(_ layers: inout [L], _ id: UUID,
@@ -105,6 +107,7 @@ extension MusicVideoStudio {
             audios.removeAll { ids.contains($0.core.id) }
             vinyls.removeAll { ids.contains($0.core.id) }
             lyrics.removeAll { ids.contains($0.core.id) }
+            visualizers.removeAll { ids.contains($0.core.id) }
         }
 
         /// Highest z-index in use + 1 (new layers go on top of their track's base).

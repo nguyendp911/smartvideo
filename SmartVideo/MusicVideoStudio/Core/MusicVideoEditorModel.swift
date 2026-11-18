@@ -20,6 +20,10 @@ extension MusicVideoStudio {
         /// The lyrics layer whose editor sheet is open.
         @Published var lyricsEditorLayerID: UUID?
         @Published private(set) var lyricsBusy = ""
+        /// Bumped whenever a spectrum finishes loading, so the preview redraws.
+        @Published private(set) var spectrumVersion = 0
+        private var spectra: [String: SpectrumData] = [:]
+        private var spectrumRequests = Set<String>()
 
         let playback = PlaybackEngine()
         let audio = AudioPlaybackEngine()
@@ -41,6 +45,7 @@ extension MusicVideoStudio {
             playback.observer = audio
             audio.onInterruption = { [weak self] in self?.playback.pause() }
             syncAudio()
+            prepareSpectra()
         }
 
         /// Keeps the live audio engine in step with the project's audio clips.
@@ -80,6 +85,7 @@ extension MusicVideoStudio {
             project = next
             playback.configure(duration: project.duration, fps: project.fps)
             if audioChanged { syncAudio() }
+            prepareSpectra()
             scheduleSave()
         }
 
@@ -586,6 +592,94 @@ extension MusicVideoStudio {
             }
         }
 
+        // MARK: Visualizer + beats
+
+        func selectedVisualizerLayer() -> VisualizerLayer? { project.visualizers.first { selection.contains($0.core.id) } }
+
+        private func audioFile(for layer: VisualizerLayer) -> String? {
+            layer.audioLayerID.flatMap { id in project.audios.first { $0.core.id == id }?.mediaFile }
+        }
+
+        /// The analysed spectrum for the layer's audio, once it has finished loading.
+        func spectrum(for layer: VisualizerLayer) -> SpectrumData? {
+            audioFile(for: layer).flatMap { spectra[$0] }
+        }
+
+        /// Starts the (one-off, cached) analysis of every audio file a visualizer uses.
+        func prepareSpectra() {
+            for layer in project.visualizers {
+                guard let file = audioFile(for: layer), spectra[file] == nil, spectrumRequests.insert(file).inserted else { continue }
+                let url = manager.mediaURL(projectID: project.id, file: file)
+                Task { [weak self] in
+                    let value = await SpectrumCache.shared.spectrum(for: url)
+                    guard let self else { return }
+                    self.spectrumRequests.remove(file)
+                    if let value { self.spectra[file] = value; self.spectrumVersion += 1 }
+                    else { self.statusMessage = "Không phân tích được âm thanh cho visualizer." }
+                }
+            }
+        }
+
+        /// Spectra of every visualizer's audio, awaiting analysis if needed (used by export).
+        func loadSpectra() async -> [String: SpectrumData] {
+            var result: [String: SpectrumData] = [:]
+            for layer in project.visualizers {
+                guard let file = audioFile(for: layer) else { continue }
+                if let known = spectra[file] { result[file] = known; continue }
+                if let value = await SpectrumCache.shared.spectrum(for: manager.mediaURL(projectID: project.id, file: file)) {
+                    spectra[file] = value
+                    result[file] = value
+                }
+            }
+            return result
+        }
+
+        func spectrumByAudioID(for layer: VisualizerLayer, in loaded: [String: SpectrumData]) -> SpectrumData? {
+            audioFile(for: layer).flatMap { loaded[$0] }
+        }
+
+        func addVisualizer() {
+            guard let audio = selectedAudioLayer() ?? project.audios.first else {
+                statusMessage = "Thêm nhạc trước, rồi thêm visualizer."
+                return
+            }
+            var created: UUID?
+            edit { created = TimelineEngine.addVisualizer(audioID: audio.core.id, to: &$0) }
+            if let created { selection = [created] }
+        }
+
+        func visualizerBinding<T>(_ keyPath: WritableKeyPath<VisualizerLayer, T>, fallback: T) -> Binding<T> {
+            Binding(
+                get: { [weak self] in self?.selectedVisualizerLayer()?[keyPath: keyPath] ?? fallback },
+                set: { [weak self] value in
+                    guard let self else { return }
+                    let ids = self.editableSelection
+                    self.mutate { project in
+                        for i in project.visualizers.indices where ids.contains(project.visualizers[i].core.id) {
+                            project.visualizers[i][keyPath: keyPath] = value
+                        }
+                    }
+                }
+            )
+        }
+
+        /// Re-times the photos so every `n`-th beat of the music starts a new photo.
+        func cutPhotosOnBeats(every n: Int) async {
+            guard let audio = selectedAudioLayer() ?? project.audios.first else { return }
+            statusMessage = "Đang phân tích nhịp…"
+            let url = manager.mediaURL(projectID: project.id, file: audio.mediaFile)
+            guard let data = await SpectrumCache.shared.spectrum(for: url), !data.beats.isEmpty else {
+                statusMessage = "Không tìm thấy nhịp rõ ràng trong bài này."
+                return
+            }
+            let offset = audio.core.start.seconds - audio.sourceStart
+            let cuts = BeatMath.cutTimes(beats: data.beats.map { $0 + offset }, every: n,
+                                         from: audio.core.start.seconds, to: audio.core.end.seconds)
+            guard cuts.count >= 2 else { statusMessage = nil; return }
+            edit { TimelineEngine.fitPhotos(toCuts: cuts, in: &$0) }
+            statusMessage = "Đã cắt ảnh theo \(cuts.count - 1) đoạn nhịp."
+        }
+
         // MARK: Persistence
 
         private func scheduleSave() {
@@ -618,6 +712,7 @@ extension MusicVideoStudio {
             playback.configure(duration: project.duration, fps: project.fps)
             playback.seek(to: .zero)
             syncAudio()
+            prepareSpectra()
             try? manager.save(project)
         }
 
@@ -631,6 +726,7 @@ extension MusicVideoStudio {
             playback.configure(duration: project.duration, fps: project.fps)
             playback.seek(to: .zero)
             syncAudio()
+            prepareSpectra()
             statusMessage = nil
         }
 
