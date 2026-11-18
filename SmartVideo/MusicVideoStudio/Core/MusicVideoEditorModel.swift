@@ -367,6 +367,8 @@ extension MusicVideoStudio {
             var imported: [TimelineEngine.ImportedPhoto] = []
             var failed = 0
             var reasons: [String] = []
+            var unreadable = 0
+            var unreadableKind = ""
             for (index, item) in items.enumerated() {
                 importProgress = "Đang nhập \(index + 1)/\(items.count)…"
                 do {
@@ -380,6 +382,10 @@ extension MusicVideoStudio {
                     let photo = try await Task.detached(priority: .userInitiated) {
                         try manager.storeImage(data: data, projectID: projectID)
                     }.value
+                    // Make sure the stored file can really be drawn; say so if not.
+                    let stored = manager.mediaURL(projectID: projectID, file: photo.mediaFile)
+                    let readable = await Task.detached(priority: .userInitiated) { PhotoImageCache.decode(stored, maxPixel: 256) != nil }.value
+                    if !readable { unreadable += 1; unreadableKind = stored.pathExtension }
                     imported.append(photo)
                 } catch {
                     failed += 1
@@ -396,7 +402,9 @@ extension MusicVideoStudio {
                 if created.isEmpty { reasons.append("dự án đã đạt tối đa \(VideoProject.maxLayers) lớp") }
             }
             statusMessage = failed > 0 ? "Không nhập được \(failed) ảnh." : nil
-            if added == items.count {
+            if unreadable > 0 {
+                importReport = "Nhập \(added) ảnh nhưng \(unreadable) ảnh không giải mã được để hiển thị (định dạng .\(unreadableKind))."
+            } else if added == items.count {
                 importReport = "Đã nhập \(added) ảnh."
             } else {
                 importReport = "Nhập được \(added)/\(items.count) ảnh" + (reasons.first.map { ". Lý do: \($0)" } ?? ".")

@@ -49,7 +49,20 @@ extension MusicVideoStudio {
                             cost: Int(image.size.width * image.size.height * image.scale * image.scale * 4))
         }
 
+        /// Thumbnail through ImageIO; if that cannot read the file, a full decode that is shrunk by hand.
         static func decode(_ url: URL, maxPixel: Int) -> UIImage? {
+            if let image = thumbnail(url, maxPixel: maxPixel) { return image }
+            guard let full = UIImage(contentsOfFile: url.path), full.size.width > 0, full.size.height > 0 else { return nil }
+            let longest = max(full.size.width, full.size.height)
+            guard longest > CGFloat(maxPixel) else { return full }
+            let ratio = CGFloat(maxPixel) / longest
+            let size = CGSize(width: full.size.width * ratio, height: full.size.height * ratio)
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            return UIGraphicsImageRenderer(size: size, format: format).image { _ in full.draw(in: CGRect(origin: .zero, size: size)) }
+        }
+
+        private static func thumbnail(_ url: URL, maxPixel: Int) -> UIImage? {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,

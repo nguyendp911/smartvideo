@@ -119,16 +119,20 @@ extension MusicVideoStudio {
     struct PhotoThumbnailView: View {
         let url: URL
         @State private var image: UIImage?
+        @State private var failed = false
 
         var body: some View {
             ZStack {
                 if let image {
                     Image(uiImage: image).resizable().scaledToFill()
+                } else if failed {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.caption).foregroundStyle(.orange)
                 }
             }
             .task(id: url) {
                 image = PhotoImageCache.shared.cached(url, maxPixel: 256)
                 if image == nil { image = await PhotoImageCache.shared.load(url, maxPixel: 256) }
+                failed = image == nil
             }
         }
     }

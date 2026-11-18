@@ -136,6 +136,7 @@ extension MusicVideoStudio {
         let selected: Bool
         let renderScale: CGFloat
         @State private var image: UIImage?
+        @State private var loadFailed = false
 
         init(layer: PhotoLayer, url: URL, canvas: CGSize, time: ProjectTime, selected: Bool,
              renderScale: CGFloat = UIScreen.main.scale) {
@@ -169,6 +170,11 @@ extension MusicVideoStudio {
                         .offset(x: CGFloat(kb.offsetX) * canvas.width, y: CGFloat(kb.offsetY) * canvas.height)
                         .frame(width: canvas.width, height: canvas.height)
                         .clipped()
+                } else if loadFailed {
+                    VStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle").font(.title2)
+                        Text("Không hiển thị được ảnh").font(.caption2)
+                    }.foregroundStyle(.orange)
                 }
                 if selected { Rectangle().strokeBorder(Color.cyan, lineWidth: 2) }
             }
@@ -181,6 +187,7 @@ extension MusicVideoStudio {
             .task(id: url) {
                 if image == nil { image = PhotoImageCache.shared.cached(url, maxPixel: pixels) }
                 if image == nil { image = await PhotoImageCache.shared.load(url, maxPixel: pixels) }
+                loadFailed = image == nil
             }
         }
     }
