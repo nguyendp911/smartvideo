@@ -1318,7 +1318,7 @@ final class MusicVideoStudioTests: XCTestCase {
         }
         let controller = MV.ProjectExporter()
         controller.start(model: empty, settings: MV.ExportSettings())
-        for _ in 0..<100 where controller.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
+        for _ in 0..<100 where controller.phase == .idle || controller.isRunning { try await Task.sleep(nanoseconds: 50_000_000) }
         if case .failed(let message) = controller.phase { XCTAssertFalse(message.isEmpty) } else { XCTFail("expected a failure, got \(controller.phase)") }
     }
 
