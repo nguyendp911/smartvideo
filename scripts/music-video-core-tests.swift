@@ -32,6 +32,8 @@ struct MusicVideoCoreTests {
         beatMaths()
         spectrumAnalysis()
         try visualizerProject()
+        transformMath()
+        layerHitTest()
         print("music video core tests passed")
     }
 
@@ -1144,5 +1146,119 @@ struct MusicVideoCoreTests {
         let old = try JSONDecoder().decode(MV.VideoProject.self, from: JSONSerialization.data(withJSONObject: json))
         precondition(old.visualizers[0].style == .bars && old.visualizers[0].barCount == 128, "out-of-range counts are clamped")
         precondition(old.visualizers[0].sensitivity == 1.2 && old.visualizers[0].rounded)
+    }
+
+    // MARK: Canvas transforms (phase 7)
+
+    static func session(_ transforms: [(String, Double, Double)], anchor: String, canvas: Double = 400) -> (MV.TransformSession, [String: UUID]) {
+        var ids: [String: UUID] = [:]
+        var originals: [UUID: MV.LayerTransform] = [:]
+        for (name, x, y) in transforms {
+            let id = UUID()
+            ids[name] = id
+            var t = MV.LayerTransform(); t.x = x; t.y = y
+            originals[id] = t
+        }
+        let targets = MV.TransformMath.targets(from: [])
+        return (MV.TransformSession(originals: originals, anchor: ids[anchor]!, targetsX: targets.x, targetsY: targets.y,
+                                    thresholdX: 6 / canvas, thresholdY: 6 / canvas), ids)
+    }
+
+    static func transformMath() {
+        // Snapping to the canvas centre, edges and safe margins.
+        let t = MV.TransformMath.targets(from: [])
+        precondition(t.x == [0, 0.05, 0.5, 0.95, 1] && t.y == t.x)
+        precondition(MV.TransformMath.snap(0.505, to: t.x, threshold: 0.015).target == 0.5)
+        precondition(MV.TransformMath.snap(0.52, to: t.x, threshold: 0.015).target == nil)
+        near(MV.TransformMath.snap(0.045, to: t.x, threshold: 0.015).value, 0.05)
+        near(MV.TransformMath.snap(0.07, to: [0.05, 0.08], threshold: 0.03).value, 0.08, 1e-9, "the nearest target wins")
+
+        var (s, ids) = session([("a", 0.5, 0.5)], anchor: "a")
+        let a = ids["a"]!
+        s.dx = 0.01
+        var r = MV.TransformMath.resolve(s)
+        near(r.transforms[a]!.x, 0.5); precondition(r.guides.x == 0.5 && r.guides.y == nil, "snaps to the centre line and shows its guide")
+        s.dx = 0.05; s.dy = -0.2
+        r = MV.TransformMath.resolve(s)
+        near(r.transforms[a]!.x, 0.55); near(r.transforms[a]!.y, 0.3); precondition(r.guides.isEmpty)
+        s.dx = 0; s.dy = 0
+        r = MV.TransformMath.resolve(s)
+        precondition(r.transforms[a]! == s.originals[a]! && r.guides.isEmpty, "no gesture, no change")
+        s.dx = .nan; s.dy = .infinity; s.scale = .nan; s.rotation = .nan
+        r = MV.TransformMath.resolve(s)
+        precondition(r.transforms[a]! == s.originals[a]!, "non-finite input is ignored")
+
+        // Several layers move as one; only the anchor snaps.
+        var (m, mids) = session([("a", 0.3, 0.5), ("b", 0.7, 0.2)], anchor: "a")
+        m.dx = 0.19
+        let moved = MV.TransformMath.resolve(m)
+        near(moved.transforms[mids["a"]!]!.x, 0.5); near(moved.transforms[mids["b"]!]!.x, 0.9, 1e-9, "b keeps its offset from a")
+        near(moved.transforms[mids["b"]!]!.y, 0.2)
+        precondition(moved.guides.x == 0.5)
+        precondition(MV.TransformMath.resolve(MV.TransformSession(originals: [:], anchor: UUID(), targetsX: [], targetsY: [], thresholdX: 0.01, thresholdY: 0.01)).transforms.isEmpty)
+
+        // Other layers' centres are snap targets too (hidden ones are not).
+        var other = MV.LayerCore(name: "o", track: .text, start: .zero, duration: MV.ProjectTime(seconds: 1), zIndex: 0)
+        other.transform.x = 0.2; other.transform.y = 0.8
+        var hidden = other; hidden.isVisible = false; hidden.transform.x = 0.33
+        let withOther = MV.TransformMath.targets(from: [other, hidden])
+        precondition(withOther.x.contains(0.2) && withOther.y.contains(0.8) && !withOther.x.contains(0.33))
+
+        // Scale clamps, rotation snaps to 45 degrees.
+        var (z, zids) = session([("a", 0.5, 0.5)], anchor: "a")
+        z.scale = 5; near(MV.TransformMath.resolve(z).transforms[zids["a"]!]!.scale, 4)
+        z.scale = 0.01; near(MV.TransformMath.resolve(z).transforms[zids["a"]!]!.scale, 0.1)
+        z.scale = 1.5; near(MV.TransformMath.resolve(z).transforms[zids["a"]!]!.scale, 1.5)
+        z.scale = 1
+        z.rotation = 44
+        var rot = MV.TransformMath.resolve(z)
+        near(rot.transforms[zids["a"]!]!.rotation, 45); precondition(rot.guides.rotationSnapped)
+        z.rotation = 40
+        rot = MV.TransformMath.resolve(z)
+        near(rot.transforms[zids["a"]!]!.rotation, 40); precondition(!rot.guides.rotationSnapped)
+        z.rotation = -88
+        near(MV.TransformMath.resolve(z).transforms[zids["a"]!]!.rotation, -90)
+        z.rotation = 358
+        near(MV.TransformMath.resolve(z).transforms[zids["a"]!]!.rotation, 0, 1e-9, "a full turn is no turn")
+        precondition(MV.TransformMath.snapRotation(.nan).value == 0 && !MV.TransformMath.snapRotation(.nan).snapped)
+        near(MV.TransformMath.snapRotation(92).value, 90); precondition(!MV.TransformMath.snapRotation(100).snapped)
+    }
+
+    static func layerHitTest() {
+        let canvas = CGSize(width: 400, height: 300)
+        var p = MV.VideoProject()
+        MV.TimelineEngine.appendPhotos(photos(1), to: &p)
+        let textID = MV.TimelineEngine.addText("HELLO", at: .zero, to: &p)!
+        p.texts[0].fontSize = 0.1
+        p.texts[0].core.transform.x = 0.5; p.texts[0].core.transform.y = 0.25
+        let items = MV.TimelineEngine.renderItems(in: p, at: sec(1))
+        precondition(items.count == 2)
+
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 200, y: 75), items: items, canvas: canvas) == textID, "text is above the photo")
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 200, y: 250), items: items, canvas: canvas) == p.photos[0].core.id, "empty canvas picks the photo")
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: .nan, y: 0), items: items, canvas: canvas) == nil)
+        precondition(MV.LayerHitTest.topmost(at: CGPoint(x: 5, y: 5), items: [], canvas: canvas) == nil)
+
+        // Scale and rotation move the box.
+        p.photos[0].core.transform.scale = 0.5
+        p.texts[0].core.isVisible = false
+        let small = MV.TimelineEngine.renderItems(in: p, at: sec(1))
+        precondition(small.count == 1, "hidden layers are not drawn")
+        precondition(MV.LayerHitTest.contains(CGPoint(x: 200, y: 150), item: small[0], canvas: canvas))
+        precondition(!MV.LayerHitTest.contains(CGPoint(x: 20, y: 20), item: small[0], canvas: canvas), "outside the shrunken photo")
+        precondition(MV.LayerHitTest.contains(CGPoint(x: 120, y: 80), item: small[0], canvas: canvas))
+
+        var q = MV.VideoProject()
+        q.audios.append(audioLayer(start: 0, duration: 5))
+        MV.TimelineEngine.addVisualizer(audioID: q.audios[0].core.id, to: &q)
+        q.visualizers[0].core.transform.x = 0.5; q.visualizers[0].core.transform.y = 0.5
+        q.visualizers[0].width = 0.8; q.visualizers[0].height = 0.1                  // 320 x 30 box
+        var items2 = MV.TimelineEngine.renderItems(in: q, at: sec(1))
+        precondition(MV.LayerHitTest.contains(CGPoint(x: 330, y: 150), item: items2[0], canvas: canvas))
+        precondition(!MV.LayerHitTest.contains(CGPoint(x: 200, y: 200), item: items2[0], canvas: canvas), "wide and short")
+        q.visualizers[0].core.transform.rotation = 90
+        items2 = MV.TimelineEngine.renderItems(in: q, at: sec(1))
+        precondition(MV.LayerHitTest.contains(CGPoint(x: 200, y: 290), item: items2[0], canvas: canvas), "rotated: now tall")
+        precondition(!MV.LayerHitTest.contains(CGPoint(x: 330, y: 150), item: items2[0], canvas: canvas))
     }
 }

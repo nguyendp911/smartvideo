@@ -21,6 +21,8 @@ extension MusicVideoStudio {
                                             selected: model.selection.contains(item.id),
                                             model: model)
                         }
+                        TransformGuidesView(guides: model.transformGuides, showSafeArea: model.showSafeArea, canvas: canvas)
+                        TransformOverlay(model: model, canvas: canvas, items: items)
                         if model.project.layerCount == 0 {
                             VStack(spacing: 6) {
                                 Image(systemName: "photo.badge.plus").font(.title)

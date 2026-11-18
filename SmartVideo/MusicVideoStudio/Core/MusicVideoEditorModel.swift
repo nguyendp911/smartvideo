@@ -20,6 +20,11 @@ extension MusicVideoStudio {
         /// The lyrics layer whose editor sheet is open.
         @Published var lyricsEditorLayerID: UUID?
         @Published private(set) var lyricsBusy = ""
+        /// Snap lines shown while dragging on the canvas.
+        @Published var transformGuides = TransformGuides()
+        /// Permanent centre cross + safe-area frame on the canvas.
+        @Published var showSafeArea = false
+        var transformSession: TransformSession?
         /// Bumped whenever a spectrum finishes loading, so the preview redraws.
         @Published private(set) var spectrumVersion = 0
         private var spectra: [String: SpectrumData] = [:]
@@ -130,6 +135,8 @@ extension MusicVideoStudio {
         }
 
         func clearSelection() { selection.removeAll() }
+
+        func setStatus(_ message: String?) { statusMessage = message }
 
         // MARK: Layer actions
 

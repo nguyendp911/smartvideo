@@ -49,6 +49,9 @@ extension MusicVideoStudio {
                         .disabled(!hasSelection)
                     Button { model.resetTransformOfSelection() } label: { item("Đặt lại", "arrow.counterclockwise") }
                         .disabled(!hasSelection)
+                    Button { model.showSafeArea.toggle() } label: {
+                        item("Lưới", "grid", highlight: model.showSafeArea)
+                    }
                     Button(role: .destructive) { model.deleteSelection() } label: { item("Xóa", "trash") }
                         .disabled(model.editableSelection.isEmpty)
                     Divider().frame(height: 28)

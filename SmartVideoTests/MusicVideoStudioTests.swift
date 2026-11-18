@@ -966,4 +966,83 @@ final class MusicVideoStudioTests: XCTestCase {
         model.undo()
         XCTAssertEqual(model.project.photos[1].core.start.seconds, 3, accuracy: 1e-9, "one undo step restores the old timing")
     }
+
+    // MARK: Phase 7 - transforms on the canvas
+
+    @MainActor
+    private func textModel() throws -> (MV.MusicVideoEditorModel, UUID, [MV.RenderItem], CGSize) {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("p"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+        model.mutate { _ = MV.TimelineEngine.addText("HELLO", at: .zero, to: &$0) }
+        model.mutate { $0.texts[0].fontSize = 0.1; $0.texts[0].core.transform.x = 0.3; $0.texts[0].core.transform.y = 0.3 }
+        let canvas = CGSize(width: 400, height: 225)
+        let items = MV.TimelineEngine.renderItems(in: model.project, at: .zero)
+        return (model, model.project.texts[0].core.id, items, canvas)
+    }
+
+    @MainActor
+    func testDraggingPinchingAndTwistingOnTheCanvasIsOneUndoStep() throws {
+        let (model, id, items, canvas) = try textModel()
+        let start = CGPoint(x: canvas.width * 0.3, y: canvas.height * 0.3)
+        XCTAssertTrue(model.selection.isEmpty)
+
+        model.transformDrag(translation: CGSize(width: 40, height: 22.5), start: start, canvas: canvas, items: items)
+        XCTAssertEqual(model.selection, [id], "dragging an unselected layer selects it")
+        XCTAssertEqual(model.project.texts[0].core.transform.x, 0.4, accuracy: 1e-9)
+        model.transformDrag(translation: CGSize(width: 80, height: 45), start: start, canvas: canvas, items: items)
+        XCTAssertEqual(model.project.texts[0].core.transform.x, 0.5, accuracy: 1e-9, "relative to where the gesture began, and snapped to the centre")
+        XCTAssertEqual(model.transformGuides.x, 0.5)
+        model.transformPinch(scale: 2, canvas: canvas, items: items)
+        model.transformRotate(degrees: 30, canvas: canvas, items: items)
+        XCTAssertEqual(model.project.texts[0].core.transform.scale, 2, accuracy: 1e-9)
+        XCTAssertEqual(model.project.texts[0].core.transform.rotation, 30, accuracy: 1e-9)
+        model.endTransform()
+        XCTAssertTrue(model.transformGuides.isEmpty && model.transformSession == nil)
+
+        model.undo()
+        let back = model.project.texts[0].core.transform
+        XCTAssertEqual(back.x, 0.3, accuracy: 1e-9); XCTAssertEqual(back.scale, 1, accuracy: 1e-9); XCTAssertEqual(back.rotation, 0, accuracy: 1e-9)
+        model.redo()
+        XCTAssertEqual(model.project.texts[0].core.transform.scale, 2, accuracy: 1e-9, "the whole gesture redoes as one step")
+    }
+
+    @MainActor
+    func testLockedLayersAndEmptyCanvasIgnoreGestures() throws {
+        let (model, id, items, canvas) = try textModel()
+        model.selection = [id]
+        model.mutate { $0.texts[0].core.isLocked = true }
+        model.transformDrag(translation: CGSize(width: 80, height: 0), start: CGPoint(x: 120, y: 67), canvas: canvas, items: items)
+        model.transformPinch(scale: 3, canvas: canvas, items: items)
+        model.endTransform()
+        XCTAssertEqual(model.project.texts[0].core.transform.x, 0.3, accuracy: 1e-9)
+        XCTAssertEqual(model.project.texts[0].core.transform.scale, 1)
+        XCTAssertNotNil(model.statusMessage, "the user is told why nothing moved")
+        model.undo()                                                         // nothing was recorded for the ignored gesture
+        XCTAssertTrue(model.project.texts[0].core.isLocked || !model.canUndo)
+
+        let (empty, _, items2, canvas2) = try textModel()
+        empty.transformDrag(translation: CGSize(width: 50, height: 50), start: CGPoint(x: 390, y: 220), canvas: canvas2, items: items2)
+        XCTAssertEqual(empty.project.texts[0].core.transform.x, 0.3, accuracy: 1e-9, "a drag that starts on nothing moves nothing")
+        XCTAssertTrue(empty.selection.isEmpty)
+    }
+
+    @MainActor
+    func testTapSelectsTheFrontLayerAndTheGridDrawsGuides() throws {
+        let (model, id, items, canvas) = try textModel()
+        model.selectLayer(at: CGPoint(x: 120, y: 67), canvas: canvas, items: items)
+        XCTAssertEqual(model.selection, [id])
+        model.selectLayer(at: CGPoint(x: 390, y: 220), canvas: canvas, items: items)
+        XCTAssertTrue(model.selection.isEmpty, "a tap on empty canvas clears the selection")
+
+        // The guide line is really drawn on the preview (magenta at x = 50 %).
+        model.transformGuides = MV.TransformGuides(x: 0.5, y: nil)
+        let image = try render(model, at: 0.5)
+        let line = try pixel(image, 0.5, 0.6)
+        XCTAssertGreaterThan(line.r, 150); XCTAssertLessThan(line.g, 120); XCTAssertGreaterThan(line.b, 100)
+        model.transformGuides = MV.TransformGuides()
+        let plain = try pixel(try render(model, at: 0.5), 0.5, 0.6)
+        XCTAssertLessThan(plain.r, 60, "no guide, no line")
+    }
 }
