@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import ImageIO
 import UIKit
 
 /// Lazy source-media thumbnail for the editor timeline. The user sees an
@@ -44,7 +45,8 @@ struct TimelineThumbnail: View {
             let moment = clip.startTime
             let loaded: UIImage? = await Task.detached(priority: .utility) {
                 if kind == .image {
-                    return UIImage(contentsOfFile: url.path)
+                    return Self.downsampledImage(at: url, maxPixelSize: 240)
+                        ?? UIImage(contentsOfFile: url.path)
                 }
                 let asset = AVURLAsset(url: url)
                 let generator = AVAssetImageGenerator(asset: asset)
@@ -64,5 +66,22 @@ struct TimelineThumbnail: View {
                                      cost: Int(loaded.size.width * loaded.size.height * 4))
             }
         }
+    }
+
+    private static func downsampledImage(at url: URL, maxPixelSize: CGFloat) -> UIImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, sourceOptions as CFDictionary) else {
+            return nil
+        }
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 }

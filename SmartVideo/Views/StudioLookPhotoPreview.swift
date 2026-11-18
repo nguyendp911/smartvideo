@@ -55,38 +55,59 @@ struct StudioLookPhotoPreview: View {
               String(describing: portraitFocus)) {
             gradedImage = nil
             cutoutError = nil
-            guard let input = CIImage(
-                contentsOf: fileURL,
-                options: [.applyOrientationProperty: true]
-            ) else { return }
-            let width = max(1, input.extent.width)
-            let height = max(1, input.extent.height)
-            let previewScale = min(1, 900 / max(width, height))
-            let prepared = input.transformed(by: CGAffineTransform(
-                scaleX: previewScale, y: previewScale
-            ))
-            let graded = StudioColorGrader.apply(
-                prepared, look: look, intensity: intensity,
-                adjustments: adjustments,
-                autoEnhance: autoEnhance,
-                photoPreset: photoPreset,
-                photoPresetIntensity: photoPresetIntensity
-            )
-            let filtered: CIImage
-            do {
-                filtered = try PersonCutoutProcessor.apply(
-                    prepared, mode: personBackground, foreground: graded,
-                    portraitFocus: portraitFocus
+            let url = fileURL
+            let targetLook = look
+            let targetIntensity = intensity
+            let targetAdjustments = adjustments
+            let targetAutoEnhance = autoEnhance
+            let targetPhotoPreset = photoPreset
+            let targetPhotoPresetIntensity = photoPresetIntensity
+            let targetPortraitFocus = portraitFocus
+            let targetPersonBackground = personBackground
+
+            let result: Result<UIImage?, Error> = await Task.detached(priority: .userInitiated) {
+                guard !Task.isCancelled else { return .success(nil) }
+                guard let input = CIImage(
+                    contentsOf: url,
+                    options: [.applyOrientationProperty: true]
+                ) else { return .success(nil) }
+                let width = max(1, input.extent.width)
+                let height = max(1, input.extent.height)
+                let previewScale = min(1, 900 / max(width, height))
+                let prepared = input.transformed(by: CGAffineTransform(
+                    scaleX: previewScale, y: previewScale
+                ))
+                let graded = StudioColorGrader.apply(
+                    prepared, look: targetLook, intensity: targetIntensity,
+                    adjustments: targetAdjustments,
+                    autoEnhance: targetAutoEnhance,
+                    photoPreset: targetPhotoPreset,
+                    photoPresetIntensity: targetPhotoPresetIntensity
                 )
-            } catch {
+                let filtered: CIImage
+                do {
+                    filtered = try PersonCutoutProcessor.apply(
+                        prepared, mode: targetPersonBackground, foreground: graded,
+                        portraitFocus: targetPortraitFocus
+                    )
+                } catch {
+                    return .failure(error)
+                }
+                guard !Task.isCancelled else { return .success(nil) }
+                let context = CIContext(options: [.cacheIntermediates: false])
+                guard let cgImage = context.createCGImage(
+                    filtered, from: filtered.extent.integral
+                ) else { return .success(nil) }
+                return .success(UIImage(cgImage: cgImage))
+            }.value
+
+            guard !Task.isCancelled else { return }
+            switch result {
+            case .success(let image):
+                gradedImage = image
+            case .failure(let error):
                 cutoutError = "Không thể tách nền: " + error.localizedDescription
-                return
             }
-            let context = CIContext(options: [.cacheIntermediates: false])
-            guard let result = context.createCGImage(
-                filtered, from: filtered.extent.integral
-            ) else { return }
-            gradedImage = UIImage(cgImage: result)
         }
     }
 }

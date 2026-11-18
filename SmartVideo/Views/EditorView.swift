@@ -177,11 +177,22 @@ struct EditorView: View {
                 pickedOverlay = nil
             }
         }
+        .onAppear {
+            if !model.clips.contains(where: { $0.id == selectedClipID }),
+               let firstID = model.clips.first?.id {
+                selectedClipID = firstID
+                updatePreview()
+            }
+        }
         .onChange(of: pickerItems) { items in
             guard !items.isEmpty else { return }
+            let previousCount = model.clips.count
             Task {
                 await model.importSelections(items)
                 pickerItems = []
+                if model.clips.count > previousCount {
+                    scrubTimeline(to: model.timelineStart(of: previousCount))
+                }
             }
         }
         .onChange(of: model.clips.count) { _ in
@@ -396,6 +407,7 @@ struct EditorView: View {
                             personBackground: compareOriginalFootage ? .original : clip.personBackground,
                             contentMode: model.contentMode
                         )
+                            .id(clip.id)
                             .frame(width: canvasWidth, height: canvasHeight)
                             .scaleEffect(photoMotionScale(clip))
                             .offset(x: photoMotionShift(clip,
@@ -917,18 +929,24 @@ struct EditorView: View {
                             selectClip(clip, at: index)
                             activeTool = .clip
                         } label: {
-                            Text("\(index + 1) · " +
-                                 String(format: "%.1fs", clip.renderedDuration))
-                                .font(.system(size: 10, weight: .semibold))
-                                .foregroundStyle(selectedClipID == clip.id ?
-                                                 .black : .white)
-                                .padding(.horizontal, 9)
-                                .frame(height: 26)
-                                .background(
-                                    selectedClipID == clip.id ?
-                                        accent : Color.white.opacity(0.09),
-                                    in: RoundedRectangle(cornerRadius: 6)
-                                )
+                            HStack(spacing: 5) {
+                                TimelineThumbnail(clip: clip)
+                                    .frame(width: 28, height: 22)
+                                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                                Text("\(index + 1) · " +
+                                     String(format: "%.1fs", clip.renderedDuration))
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundStyle(selectedClipID == clip.id ?
+                                                     .black : .white)
+                            }
+                            .padding(.leading, 3)
+                            .padding(.trailing, 8)
+                            .frame(height: 28)
+                            .background(
+                                selectedClipID == clip.id ?
+                                    accent : Color.white.opacity(0.09),
+                                in: RoundedRectangle(cornerRadius: 6)
+                            )
                         }
                         .buttonStyle(.plain)
                     }
