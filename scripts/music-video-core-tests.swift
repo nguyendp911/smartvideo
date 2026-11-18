@@ -945,7 +945,8 @@ struct MusicVideoCoreTests {
         let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(q))
         precondition(back.lyrics == q.lyrics)
 
-        precondition(try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8)).lyrics.isEmpty)
+        let bareLyrics = try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8))
+        precondition(bareLyrics.lyrics.isEmpty)
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(q)) as! [String: Any]
         var layers = json["lyrics"] as! [[String: Any]]
         for key in ["animation", "fontSize", "weight", "alignment", "highlightColorHex", "normalColorHex", "showNextLine", "hasShadow", "lines"] { layers[0].removeValue(forKey: key) }
@@ -1001,7 +1002,7 @@ struct MusicVideoCoreTests {
         precondition(beats.count == 20, "got \(beats.count)")
         for (k, beat) in beats.enumerated() { near(beat, Double(10 + 15 * k) / 30, 1e-9) }
         precondition(MV.BeatDetector.detect(flux: [Float](repeating: 0.01, count: 300), frameRate: 30).isEmpty, "flat = no beats")
-        precondition(MV.BeatDetector.detect(flux: [Float](repeating: 0.015, count: 300).enumerated().map { $0.offset % 7 == 0 ? 0.03 : 0.015 }, frameRate: 30).isEmpty, "noise under the floor")
+        precondition(MV.BeatDetector.detect(flux: [Float](repeating: 0.015, count: 300).enumerated().map { $0.offset % 7 == 0 ? Float(0.03) : Float(0.015) }, frameRate: 30).isEmpty, "noise under the floor")
         var close = [Float](repeating: 0.01, count: 100); close[40] = 1; close[43] = 0.9
         precondition(MV.BeatDetector.detect(flux: close, frameRate: 30).count == 1, "0.1 s apart is one beat")
         precondition(MV.BeatDetector.detect(flux: [], frameRate: 30).isEmpty && MV.BeatDetector.detect(flux: [1, 1], frameRate: 30).isEmpty)
@@ -1133,7 +1134,8 @@ struct MusicVideoCoreTests {
         let back = try JSONDecoder().decode(MV.VideoProject.self, from: JSONEncoder().encode(q))
         precondition(back.visualizers == q.visualizers)
 
-        precondition(try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8)).visualizers.isEmpty)
+        let bareVisualizers = try JSONDecoder().decode(MV.VideoProject.self, from: Data(#"{"name":"x"}"#.utf8))
+        precondition(bareVisualizers.visualizers.isEmpty)
         var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(q)) as! [String: Any]
         var layers = json["visualizers"] as! [[String: Any]]
         for key in ["style", "colorHex", "secondColorHex", "thickness", "rounded", "sensitivity", "smoothing", "width", "height", "glow", "beatPulse"] { layers[0].removeValue(forKey: key) }
