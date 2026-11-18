@@ -1505,4 +1505,72 @@ final class MusicVideoStudioTests: XCTestCase {
             XCTFail("photo not visible in the live window: centre \(last), cached at scales \(cached) (screen scale \(UIScreen.main.scale)), direct render centre \(direct), live window outside-canvas pixel \(outside) (about 8 if the window is captured at all), scene attached \(scene != nil), file exists \(FileManager.default.fileExists(atPath: url.path)), items \(MV.TimelineEngine.renderItems(in: model.project, at: .zero).count)")
         }
     }
+
+    // MARK: Which live-loading pattern fails? (diagnostic)
+
+    private struct ProbeTaskView: View {
+        let url: URL
+        @State private var image: UIImage?
+        var body: some View {
+            ZStack { Color.black; if let image { Image(uiImage: image).resizable().scaledToFill() } }
+                .frame(width: 400, height: 300).clipped()
+                .task(id: url) { image = await MV.PhotoImageCache.shared.load(url, maxPixel: 512) }
+        }
+    }
+
+    private struct ProbeAppearView: View {
+        let url: URL
+        @State private var image: UIImage?
+        var body: some View {
+            ZStack { Color.black; if let image { Image(uiImage: image).resizable().scaledToFill() } }
+                .frame(width: 400, height: 300).clipped()
+                .onAppear { Task { image = await MV.PhotoImageCache.shared.load(url, maxPixel: 512) } }
+        }
+    }
+
+    /// Hosts the view in a real window and reports whether its centre turns red, plus the last centre colour.
+    @MainActor
+    private func liveRed<V: View>(_ view: V) throws -> (red: Bool, centre: (r: Int, g: Int, b: Int)) {
+        let host = UIHostingController(rootView: view)
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow()
+        window.frame = CGRect(x: 0, y: 0, width: 400, height: 300)
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true }
+        var last = (r: 0, g: 0, b: 0)
+        for _ in 0..<100 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+            let image = UIGraphicsImageRenderer(bounds: window.bounds).image { _ in window.drawHierarchy(in: window.bounds, afterScreenUpdates: true) }
+            last = try pixel(image, 0.5, 0.5)
+            if last.r > 150 && last.g < 90 && last.b < 90 { return (true, last) }
+        }
+        return (false, last)
+    }
+
+    @MainActor
+    func testLiveLoadingPatternsDiagnostic() async throws {
+        let manager = MV.ProjectManager(root: root.appendingPathComponent("probe"))
+        var project = MV.VideoProject()
+        project.aspect = .landscape16x9
+        func fresh() throws -> (MV.MusicVideoEditorModel, URL) {
+            let model = MV.MusicVideoEditorModel(manager: manager, project: project)
+            let stored = try manager.storeImage(data: try solidPNG(.red), projectID: model.project.id)
+            model.edit { _ = MV.TimelineEngine.appendPhotos([stored], to: &$0) }
+            return (model, model.mediaURL(for: model.project.photos[0]))
+        }
+        let (m1, u1) = try fresh()
+        let (m2, _) = try fresh()
+        let (m3, _) = try fresh()
+        let probeTask = try liveRed(ProbeTaskView(url: u1))
+        let (_, u4) = try fresh()
+        let probeAppear = try liveRed(ProbeAppearView(url: u4))
+        let layer = m1.project.photos[0]
+        let photoOnly = try liveRed(ZStack { Color.black; MV.PhotoLayerView(layer: layer, url: m2.mediaURL(for: m2.project.photos[0]), canvas: CGSize(width: 400, height: 300), time: .zero, selected: false) }.frame(width: 400, height: 300))
+        let frame = try liveRed(MV.ProjectFrameView(resources: m3.resources, canvas: CGSize(width: 400, height: 300), time: .zero))
+        let (m5, _) = try fresh()
+        let preview = try liveRed(MV.VideoPreviewView(model: m5, playback: m5.playback).frame(width: 400, height: 300))
+        let summary = "task probe \(probeTask), onAppear probe \(probeAppear), PhotoLayerView \(photoOnly), ProjectFrameView \(frame), VideoPreviewView \(preview)"
+        XCTAssertTrue(probeTask.red && probeAppear.red && photoOnly.red && frame.red && preview.red, summary)
+    }
 }
