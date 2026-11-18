@@ -146,6 +146,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             -only-testing:SmartVideoTests/TextExportSmokeTests \
             -only-testing:SmartVideoTests/MockupStudioTests \
+            -only-testing:SmartVideoTests/MusicVideoStudioTests \
             -only-testing:SmartVideoTests/PhotoPresetStudioTests \
             -only-testing:SmartVideoTests/PhotoReferenceMatcherTests \
             -only-testing:SmartVideoTests/PhotoAutoPresetTests \
