@@ -1,6 +1,7 @@
 import SwiftUI
 
-enum LifePathMode:String,CaseIterable{
+enum LifePathMode:String,CaseIterable,Identifiable{
+    var id:String{rawValue}
     case journey="Life Journey",river="Memory River"
 }
 struct LifePathView:View{
