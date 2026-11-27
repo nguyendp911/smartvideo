@@ -10,6 +10,12 @@ struct Timeline: View {
     @ObservedObject var model: LibraryModel
     @Environment(\.dismiss) private var dismiss
     @AppStorage("timeline.layout") private var layoutValue = GalleryLayout.editorial.rawValue
+    @State private var collection=""
+    @State private var look:Look?
+    @State private var anniversary=""
+    @State private var showCalendar=false
+    @State private var slideshow=false
+    @State private var slideShots=[Shot]()
     @State private var search = ""
     @State private var session = ""
     @State private var period = ""
@@ -36,11 +42,11 @@ struct Timeline: View {
     @State private var batchText = ""
     @State private var batchKind = "album"
     private var active: [Shot] { model.shots.filter { $0.deleted == nil } }
-    private var filtered: [Shot] { TimelineIndex.filter(model.shots,scope:scope,query:search,session:session,period:period,light:light,minimumRating:minimumRating,newest:newest) }
+    private var filtered: [Shot] { TimelineIndex.filter(model.shots,scope:scope,query:search,session:session,period:period,light:light,minimumRating:minimumRating,newest:newest,collection:collection,look:look,anniversary:anniversary) }
     private var groups: [TimelineGroup] { TimelineIndex.group(filtered,period:scale,newest:newest) }
     private var selectedShots: [Shot] { model.shots.filter { chosen.contains($0.id) } }
     private var layout: GalleryLayout { GalleryLayout(rawValue:layoutValue) ?? .editorial }
-    private var hasFilters: Bool { scope != .all || !session.isEmpty || !period.isEmpty || light != nil || minimumRating > 0 || !search.isEmpty }
+    private var hasFilters: Bool { scope != .all || !session.isEmpty || !period.isEmpty || light != nil || minimumRating > 0 || !search.isEmpty || !collection.isEmpty || look != nil || !anniversary.isEmpty }
     private var columns: [GridItem] { Array(repeating:GridItem(.flexible(),spacing:5),count:3) }
     private var coverColumns: [GridItem] { Array(repeating:GridItem(.flexible(),spacing:10),count:2) }
 
@@ -68,6 +74,12 @@ struct Timeline: View {
             CompareView(shots:selectedShots,vault:model.vault)
         }
         .sheet(isPresented:$showFilters) { filterSheet }
+        .sheet(isPresented:$showCalendar){
+            ArchiveCalendar(shots:active,vault:model.vault){key in
+                resetFilters();period=key;scale = .day;showAlbums=false;showCalendar=false
+            }
+        }
+        .fullScreenCover(isPresented:$slideshow){ArchiveSlideshow(shots:slideShots,vault:model.vault)}
         .sheet(isPresented:$batchEdit) { batchSheet }
         .photosPicker(isPresented:$importing,selection:$imported,maxSelectionCount:20,matching:.images)
         .onChange(of:imported) { _,items in
@@ -120,6 +132,9 @@ struct Timeline: View {
             Spacer(minLength:4)
             Menu {
                 Button("Nhập ảnh",systemImage:"photo.badge.plus") { importing=true }
+                Button("Lịch ảnh",systemImage:"calendar") {showCalendar=true}
+                Button("Ngày này qua các năm",systemImage:"clock.arrow.circlepath"){resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false}
+                Button("Trình chiếu",systemImage:"play.rectangle"){slideShots=filtered;slideshow=true}.disabled(filtered.isEmpty || scope == .trash)
                 Button("So sánh hai ảnh",systemImage:"rectangle.split.2x1") { showAlbums=false;clearSelection();compare=true }
                 Button("Sao lưu vào Tệp",systemImage:"square.and.arrow.up") { transfer = .backup;pickFolder=true }
                 Button("Phục hồi từ thư mục",systemImage:"arrow.counterclockwise") { transfer = .restore;pickFolder=true }
@@ -156,7 +171,7 @@ struct Timeline: View {
                 }.font(.subheadline).foregroundStyle(.secondary).padding(11).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12))
                 if hasFilters {
                     HStack {
-                        Text([scope != .all ? scope.rawValue : "",session,period.isEmpty ? "" : TimelineIndex.label(period),light?.rawValue ?? "",minimumRating > 0 ? "\(minimumRating)+ sao" : ""].filter{ !$0.isEmpty }.joined(separator:" · ")).lineLimit(1)
+                        Text([scope != .all ? scope.rawValue : "",session,collection,look?.rawValue ?? "",anniversary.isEmpty ? "" : "Ngày này",period.isEmpty ? "" : TimelineIndex.label(period),light?.rawValue ?? "",minimumRating > 0 ? "\(minimumRating)+ sao" : ""].filter{ !$0.isEmpty }.joined(separator:" · ")).lineLimit(1)
                         Spacer()
                         Text("\(filtered.count) ảnh")
                         Button("Xóa lọc") { resetFilters() }
@@ -277,6 +292,27 @@ struct Timeline: View {
         ScrollView {
             let albums=TimelineIndex.albums(active)
             VStack(alignment:.leading,spacing:12) {
+                Text("Bộ sưu tập cá nhân").font(.system(.title2,design:.serif)).padding(.horizontal,16)
+                let collections=TimelineIndex.collections(active)
+                if collections.isEmpty {
+                    Text("Chọn nhiều ảnh → Thao tác → Thêm vào bộ sưu tập. Một ảnh có thể nằm trong nhiều bộ sưu tập.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,16)
+                } else {
+                    LazyVGrid(columns:coverColumns,spacing:12){
+                        ForEach(collections){group in
+                            Button {resetFilters();collection=group.key;scale = .day;showAlbums=false} label:{collectionCard(group,title:group.key,icon:"heart.text.square")}.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal,14)
+                }
+                Text("Khám phá").font(.system(.title2,design:.serif)).padding(.horizontal,16)
+                HStack {
+                    Button {showCalendar=true} label:{Label("Lịch ảnh",systemImage:"calendar").frame(maxWidth:.infinity)}
+                    Button {resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false} label:{Label("Ngày này",systemImage:"clock.arrow.circlepath").frame(maxWidth:.infinity)}
+                }.buttonStyle(.bordered).padding(.horizontal,14)
+                ForEach([TimelineScope.unorganized,.portraits,.imported],id:\.self){kind in
+                    Button {resetFilters();scope=kind;scale = .day;showAlbums=false} label:{
+                        HStack {Label(kind.rawValue,systemImage:"photo.on.rectangle");Spacer();Text("\(TimelineIndex.filter(active,scope:kind).count)");Image(systemName:"chevron.right")}.padding(12)
+                    }.background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12)).padding(.horizontal,14)
+                }
                 Text("Theo phiên chụp").font(.system(.title2,design:.serif)).padding(.horizontal,16)
                 Text("Gom ảnh vào album bằng cách chọn nhiều ảnh và đặt tên phiên. Ảnh gốc vẫn được giữ nguyên.").font(.caption).foregroundStyle(.secondary).padding(.horizontal,16)
                 if albums.isEmpty { ContentUnavailableView("Chưa có album",systemImage:"rectangle.stack.badge.plus",description:Text("Chọn ảnh trong dòng thời gian để tạo album.")) }
@@ -309,6 +345,10 @@ struct Timeline: View {
                     }
                 }
                 Section("Thông tin ảnh") {
+                    Picker("Chất màu",selection:$look){
+                        Text("Tất cả").tag(nil as Look?)
+                        ForEach(Look.allCases){Text($0.rawValue).tag(Optional($0))}
+                    }
                     Picker("Ánh sáng",selection:$light) {
                         Text("Tất cả").tag(nil as Light?)
                         ForEach(Light.allCases,id:\.self) { Text($0.rawValue).tag(Optional($0)) }
@@ -332,6 +372,9 @@ struct Timeline: View {
                 Button("Tất cả") { chosen.formUnion(filtered.map(\.id)) }.font(.caption)
                 Menu {
                     if scope != .trash {
+                        Button("Thêm vào bộ sưu tập",systemImage:"heart.text.square"){batchKind="collection";batchText="";batchEdit=true}
+                        if !collection.isEmpty {Button("Bỏ khỏi bộ sưu tập",systemImage:"minus.circle"){runBatch(removeCollection:collection)}}
+                        Button("Trình chiếu ảnh đã chọn",systemImage:"play.rectangle"){slideShots=selectedShots;slideshow=true}
                         Button("Đưa vào album",systemImage:"rectangle.stack.badge.plus") { batchKind="album";batchText="";batchEdit=true }
                         Button("Gắn nhãn",systemImage:"tag") { batchKind="tags";batchText="";batchEdit=true }
                         Button("Đánh dấu 5 sao",systemImage:"star") { runBatch(rating:5) }
@@ -349,36 +392,36 @@ struct Timeline: View {
     private var batchSheet: some View {
         NavigationStack {
             Form {
-                TextField(batchKind == "album" ? "Tên album" : "Nhãn ảnh",text:$batchText)
-                Text("Áp dụng cho \(chosen.count) ảnh. Giá trị cũ sẽ được thay thế.").font(.caption).foregroundStyle(.secondary)
-            }.navigationTitle(batchKind == "album" ? "Đưa vào album" : "Gắn nhãn")
+                TextField(batchKind == "tags" ? "Nhãn ảnh" : "Tên bộ sưu tập",text:$batchText)
+                Text(batchKind == "collection" ? "Thêm vào \(chosen.count) ảnh, không thay thế bộ sưu tập cũ." : "Áp dụng cho \(chosen.count) ảnh. Giá trị cũ sẽ được thay thế.").font(.caption).foregroundStyle(.secondary)
+            }.navigationTitle(batchKind == "tags" ? "Gắn nhãn" : "Bộ sưu tập")
                 .toolbar {
                     ToolbarItem(placement:.cancellationAction) { Button("Hủy") { batchEdit=false } }
                     ToolbarItem(placement:.confirmationAction) {
                         Button("Lưu") {
                             let value=batchText.trimmingCharacters(in:.whitespacesAndNewlines)
                             batchEdit=false
-                            if batchKind == "album" { runBatch(session:value) } else { runBatch(tags:value) }
+                            if batchKind == "collection" {runBatch(addCollection:value)} else if batchKind == "album" { runBatch(session:value) } else { runBatch(tags:value) }
                         }.disabled(batchText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                     }
                 }
         }.presentationDetents([.medium])
     }
-    private func runBatch(rating: Int?=nil,tags: String?=nil,session: String?=nil,trash: Bool?=nil) {
+    private func runBatch(rating: Int?=nil,tags: String?=nil,session: String?=nil,trash: Bool?=nil,addCollection:String?=nil,removeCollection:String?=nil) {
         let ids=Array(chosen)
         working=true
         Task {
             defer { working=false;clearSelection() }
             var failures=0
             for id in ids {
-                do { try await model.vault.edit(id,rating:rating,tags:tags,session:session,trash:trash) } catch { failures+=1 }
+                do { try await model.vault.edit(id,rating:rating,tags:tags,session:session,trash:trash,addCollection:addCollection,removeCollection:removeCollection) } catch { failures+=1 }
             }
             await model.reload()
             if failures>0 { model.message="Đã xử lý \(ids.count-failures)/\(ids.count) ảnh." }
         }
     }
     private func clearSelection() { selecting=false;compare=false;chosen=[] }
-    private func resetFilters() { scope = .all;session="";period="";search="";light=nil;minimumRating=0;clearSelection() }
+    private func resetFilters() { scope = .all;session="";period="";search="";light=nil;minimumRating=0;collection="";look=nil;anniversary="";clearSelection() }
 }
 
 private struct CompareView: View {
@@ -424,6 +467,7 @@ private struct ShotDetail:View {
     @Environment(\.dismiss) private var dismiss
     @State private var original=false
     @State private var tags=""
+    @State private var note=""
     @State private var session=""
     @State private var editing=false
     @State private var confirm=false
@@ -459,18 +503,19 @@ private struct ShotDetail:View {
                 VStack(spacing:6){
                     Text([current.light.rawValue,current.look.rawValue,current.lens].filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline)
                     if !current.session.isEmpty || !current.tags.isEmpty {Text([current.session,current.tags].filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
+                    if let note=current.note,!note.isEmpty {Text(note).font(.caption).lineLimit(2)}
                     HStack(spacing:2){ForEach(1...5,id:\.self){n in Button {Task{await model.edit(shot.id,rating:current.rating==n ? 0 : n)}} label:{Image(systemName:n<=current.rating ? "star.fill":"star").foregroundStyle(gold).frame(width:35,height:40)}.accessibilityLabel("\(n) sao")}}
                 }
                 HStack(spacing:22) {
                     Button {showMetadata=true} label:{Image(systemName:"info.circle")}.accessibilityLabel("Thông tin EXIF")
                     ShareLink(item:model.vault.picture(current,original:original)){Image(systemName:"square.and.arrow.up")}.accessibilityLabel("Chia sẻ ảnh")
                     Button {saveToPhotos()} label:{Image(systemName:"square.and.arrow.down")}.accessibilityLabel("Lưu vào Ảnh Apple")
-                    Button {tags=current.tags;session=current.session;editing=true} label:{Image(systemName:"tag")}.accessibilityLabel("Đổi nhãn và phiên")
+                    Button {tags=current.tags;session=current.session;note=current.note ?? "";editing=true} label:{Image(systemName:"tag")}.accessibilityLabel("Đổi nhãn và phiên")
                     Button {if current.deleted != nil {Task{await model.edit(shot.id,trash:false);dismiss()}} else {confirm=true}} label:{Image(systemName:current.deleted==nil ? "trash":"arrow.uturn.backward")}.accessibilityLabel(current.deleted==nil ? "Chuyển vào thùng rác":"Phục hồi")
                 }.font(.title3).padding(.bottom,18)
             }.navigationTitle(shot.day).navigationBarTitleDisplayMode(.inline).toolbar{Button("Xong"){dismiss()}}
         }.sheet(isPresented:$showMetadata){PhotoMetadataView(shot:current,url:model.vault.picture(current,original:true))}
-        .sheet(isPresented:$editing){NavigationStack{Form{TextField("Phiên chụp",text:$session);TextField("Nhãn ảnh",text:$tags)}.navigationTitle("Thông tin ảnh").toolbar{Button("Lưu"){Task{await model.edit(shot.id,tags:tags,session:session);editing=false}}}}.presentationDetents([.medium])}
+        .sheet(isPresented:$editing){NavigationStack{Form{TextField("Phiên chụp",text:$session);TextField("Nhãn ảnh",text:$tags);TextField("Nhật ký khoảnh khắc",text:$note,axis:.vertical)}.navigationTitle("Thông tin ảnh").toolbar{Button("Lưu"){Task{do{try await model.vault.edit(shot.id,tags:tags,session:session,note:note);await model.reload();editing=false}catch{notice=error.localizedDescription}}}}}.presentationDetents([.medium])}
         .confirmationDialog("Chuyển ảnh vào thùng rác trong 30 ngày?",isPresented:$confirm){Button("Chuyển vào thùng rác",role:.destructive){Task{await model.edit(shot.id,trash:true);dismiss()}}}
         .alert("VieLens",isPresented:Binding(get:{notice != nil || model.message != nil},set:{if !$0{notice=nil;model.message=nil}})){Button("Đóng"){notice=nil;model.message=nil}} message:{Text(notice ?? model.message ?? "")}
     }

@@ -65,4 +65,24 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(grouped.last?.cover.rating,5)
         XCTAssertEqual(TimelineIndex.albums(shots).first?.items.count,3)
     }
+    func testIndependentCollectionsAndNotesRoundTrip() async throws {
+        let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:temp)}
+        let vault=Vault(root:temp),bytes=try patch()
+        let shot=try await vault.add(bytes,look:.mono,session:"Original session")
+        try await vault.edit(shot.id,addCollection:"Travel",note:"Đêm đẹp")
+        try await vault.edit(shot.id,addCollection:"Favorite")
+        try await vault.edit(shot.id,addCollection:"Travel")
+        let shots=try await vault.all()
+        XCTAssertEqual(shots.first?.session,"Original session")
+        XCTAssertEqual(shots.first?.collections,["Favorite","Travel"])
+        XCTAssertEqual(TimelineIndex.filter(shots,scope:.all,query:"dem dep",collection:"Travel",look:.mono).count,1)
+        XCTAssertEqual(TimelineIndex.collections(shots).count,2)
+        try await vault.edit(shot.id,removeCollection:"Travel")
+        let reopened=Vault(root:temp)
+        let restored=try await reopened.all()
+        XCTAssertEqual(restored.first?.collections,["Favorite"])
+        XCTAssertEqual(restored.first?.note,"Đêm đẹp")
+        XCTAssertEqual(try Data(contentsOf:reopened.picture(shot,original:true)),bytes)
+    }
 }

@@ -16,6 +16,8 @@ struct Shot: Identifiable, Codable, Equatable {
     var sourceFile: String
     var enhanced: Bool
     var lens: String
+    var collections: [String]? = nil
+    var note: String? = nil
 }
 actor Vault {
     static let shared = Vault(root: FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("VieLens",isDirectory:true))
@@ -99,13 +101,19 @@ actor Vault {
         }
         return shot
     }
-    func edit(_ id:UUID, rating:Int?=nil, tags:String?=nil, session:String?=nil, trash:Bool?=nil) throws {
+    func edit(_ id:UUID, rating:Int?=nil, tags:String?=nil, session:String?=nil, trash:Bool?=nil, addCollection:String?=nil, removeCollection:String?=nil, note:String?=nil) throws {
         try load()
         guard var item=records[id] else { throw CameraError.unreadable }
         if let rating { item.rating=min(5,max(0,rating)) }
         if let tags { item.tags=tags }
         if let session { item.session=session }
         if let trash { item.deleted=trash ? Date() : nil }
+        if let addCollection {
+            let name=String(addCollection.trimmingCharacters(in:.whitespacesAndNewlines).prefix(100))
+            if !name.isEmpty {item.collections=Array(Set((item.collections ?? [])+[name])).sorted()}
+        }
+        if let removeCollection {item.collections=(item.collections ?? []).filter{$0 != removeCollection}}
+        if let note {item.note=note}
         try persist(item,in:directory(id)); records[id]=item
     }
     struct BackupItem: Codable { let id:UUID; let files:[String:String] }

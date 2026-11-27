@@ -10,3 +10,6 @@ Trên Mac có Xcode và XcodeGen, chạy `xcodegen generate` rồi mở `VieLens
 
 ## Timeline Pro
 Dòng thời gian dạng nhật ký có ảnh lớn và lưới ảnh, thẻ tháng/năm mở sâu vào thời gian, album trực quan từ phiên chụp, tìm kiếm kết hợp và bộ lọc ánh sáng/xếp hạng. Chọn nhiều ảnh để đưa vào album, gắn nhãn, đánh sao, chia sẻ hoặc phục hồi/xóa mềm. Trình xem toàn màn hình có vuốt, filmstrip, phóng to và thông tin EXIF từ bản gốc. Giữ định dạng Vault, ảnh gốc và Bundle ID hiện có. Album là phiên chụp, mỗi ảnh thuộc tối đa một phiên.
+
+## Camera Pro / Timeline Studio 9
+Zoom pinch và slider, EV, AE/AF lock, ISO/shutter nếu thiết bị hỗ trợ, histogram luma, flash, hẹn giờ, chuỗi chụp tuần tự và 9 chất màu hậu kỳ. Timeline có lịch ảnh, kỷ niệm cùng ngày, trình chiếu, nhật ký và bộ sưu tập đa thành viên lưu trong metadata từng ảnh, tương thích bản sao lưu cũ. Không phải RAW, HDR bracket hay burst tốc độ cao.
