@@ -201,7 +201,7 @@ enum MovieTransition:String,CaseIterable {
     case cut="Cắt thẳng",fade="Mờ dần",dissolve="Hòa ảnh"
 }
 enum MemoryMovie {
-    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String,motion:MovieMotion = .still,transition:MovieTransition = .cut) async throws->URL{
+    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String,motion:MovieMotion = .still,transition:MovieTransition = .cut,captions:[UUID:String]=[:]) async throws->URL{
         guard !shots.isEmpty else{throw CameraError.unreadable}
         let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString+".mp4")
         let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
@@ -223,10 +223,11 @@ enum MemoryMovie {
                     let im=UIImage(cgImage:image),factor=min(size.width/im.size.width,size.height/im.size.height)
                     let w=im.size.width*factor,h=im.size.height*factor
                     im.draw(in:CGRect(x:(size.width-w)/2,y:(size.height-h)/2,width:w,height:h))
-                    let line=i==0 && !title.isEmpty ? title:TimelineIndex.label(shot.day)
+                    let caption=captions[shot.id] ?? TimelineIndex.label(shot.day)
+                    let line=i==0 && !title.isEmpty ? (captions.isEmpty ? title:title+"\n"+caption):caption
                     let font=UIFont.systemFont(ofSize:CGFloat(width)*0.033,weight:.semibold)
                     let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.white,.backgroundColor:UIColor.black.withAlphaComponent(0.6)]
-                    (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.1),withAttributes:attrs)
+                    (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.13),withAttributes:attrs)
                 }
                 guard let cg=still.cgImage else{throw CameraError.writeFailed}
                 let frames=max(1,seconds*24)

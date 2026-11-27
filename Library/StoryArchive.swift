@@ -27,6 +27,7 @@ struct StoryEntry:Codable,Equatable,Identifiable{
     var textFont:CanvasFont?=nil
     var textColor:String?=nil
     var chapters:[String]?=nil
+    var soundscape:StorySoundscape?=nil
     var createdAt=Date()
     var updatedAt=Date()
     var hasContent:Bool{![title,body,location,people,quote,tags].allSatisfy{$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} || mood != nil || audio != nil || !captions.isEmpty || canvas != nil || !(chapters ?? []).isEmpty}
@@ -181,6 +182,7 @@ struct StoryComposer:View{
     @State private var deleting=false
     @State private var confirmClose=false
     @State private var chapterText=""
+    @State private var showWriter=false
     init(target:StoryTarget,vault:Vault,archive:StoryArchive){
         self.target=target;self.vault=vault;self.archive=archive
         let initial=archive.draft(target)
@@ -199,6 +201,7 @@ struct StoryComposer:View{
                         Button("Tình yêu"){insert("Có nhau","Khoảnh khắc mình muốn kể về hai đứa là…",.romantic)}
                         Button("Chuyến đi"){insert("Những bước chân","Nơi mình đã đến, điều mình học được…",.adventure)}
                     }.disabled(!value.title.isEmpty || !value.body.isEmpty)
+                    Button("Story Writer · hỗ trợ viết",systemImage:"sparkles"){showWriter=true}
                     TextField("Tiêu đề",text:$value.title)
                     TextEditor(text:$value.body).frame(minHeight:145).accessibilityLabel("Nội dung story")
                     Picker("Hiệu ứng chữ",selection:Binding(get:{value.textEffect ?? .normal},set:{value.textEffect=$0})){ForEach(StoryTextEffect.allCases,id:\.self){Text($0.rawValue).tag($0)}}
@@ -230,6 +233,10 @@ struct StoryComposer:View{
                         }
                     }
                 }
+                Section("Âm thanh môi trường"){
+                    Picker("Soundscape",selection:Binding(get:{value.soundscape ?? .none},set:{value.soundscape=$0})){ForEach(StorySoundscape.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+                    Button("Nghe thử"){if let data=(value.soundscape ?? .none).generate(){voice.play(data,volume:0.5)}}.disabled(voice.recording || (value.soundscape ?? .none) == .none)
+                }
                 Section("Giọng kể · tối đa 2 phút"){
                     Button(voice.recording ? "Dừng thu âm":"Thu âm lời kể",systemImage:voice.recording ? "stop.circle.fill":"mic.fill"){
                         if voice.recording{if let data=voice.finish(){value.audio=data}}
@@ -253,7 +260,8 @@ struct StoryComposer:View{
                 }
                 .confirmationDialog("Đóng story chưa lưu?",isPresented:$confirmClose){Button("Lưu bản nháp"){save(draft:true)};Button("Bỏ thay đổi",role:.destructive){dismiss()}}
                 .confirmationDialog("Xóa story?",isPresented:$deleting){Button("Xóa",role:.destructive){do{try archive.remove(target.id);dismiss()}catch{notice=error.localizedDescription}}}
-        }.interactiveDismissDisabled()
+        }.sheet(isPresented:$showWriter){StoryWriterSheet(mood:value.mood?.rawValue ?? ""){draft in value.body=draft}}
+        .interactiveDismissDisabled()
         .onChange(of:phase){_,p in if p == .background{if voice.recording,let data=voice.finish(){value.audio=data};voice.stopPlayback();if value.hasContent && value != baseline{try? archive.save(value,draft:true)}}}
         .onDisappear{voice.cancel()}
     }
@@ -320,7 +328,7 @@ struct StoryReader:View{
             }
         }.sheet(isPresented:$editing){StoryComposer(target:target,vault:vault,archive:archive)}
         .sheet(isPresented:$canvasEditor){StoryCanvasStudio(target:target,vault:vault,archive:archive)}
-        .sheet(isPresented:$showVideo){NavigationStack{MemoryCinema(shots:target.shots,vault:vault).toolbar{Button("Đóng"){showVideo=false}}}}
+        .sheet(isPresented:$showVideo){if let story=archive.entry(target.id){StoryFilmView(story:story,shots:target.shots,vault:vault)}}
         .onChange(of:phase){_,p in if p != .active{voice.stopPlayback()}}.onDisappear{voice.cancel()}
     }
 }

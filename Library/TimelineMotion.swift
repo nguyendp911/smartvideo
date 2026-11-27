@@ -302,6 +302,8 @@ struct TimelineSlideStage:View{
     @State private var music:AVAudioPlayer?
     @State private var musicVolume=0.25
     @State private var soundIssue=""
+    @State private var ambiance:AVAudioPlayer?
+    @State private var ambianceKey=""
     private func storyKeys(_ shot:Shot)->[String]{
         ["photo:"+shot.id.uuidString,"period:"+shot.day,"period:"+String(shot.day.prefix(7)),"period:"+String(shot.day.prefix(4))]
     }
@@ -374,10 +376,10 @@ struct TimelineSlideStage:View{
                 do{try await Task.sleep(for:.milliseconds(80))}catch{return}
                 if !Task.isCancelled{animateMotion()}
             }
-            .onChange(of:scenePhase){_,p in if p != .active{playing=false;voice.stopPlayback();music?.pause()}}
+            .onChange(of:scenePhase){_,p in if p != .active{playing=false;voice.stopPlayback();music?.pause();ambiance?.pause()}}
             .onChange(of:musicVolume){_,v in music?.volume=Float(v)}
             .onChange(of:playing){_,p in if p{startMusic()}else{voice.stopPlayback();music?.pause()}}
-            .onDisappear{voice.cancel();music?.stop();music=nil}
+            .onDisappear{voice.cancel();music?.stop();music=nil;ambiance?.stop();ambiance=nil}
             .sheet(item:$storyTarget){target in StoryReader(target:target,vault:vault,archive:archive)}
             .fileImporter(isPresented:$musicPicker,allowedContentTypes:[.audio]){result in
                 do{let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=(try url.resourceValues(forKeys:[.fileSizeKey])).fileSize ?? 0;guard size<=30_000_000 else{throw CameraError.unreadable};let data=try Data(contentsOf:url);_ = try AVAudioPlayer(data:data);music?.stop();music=nil;musicData=data;musicName=url.lastPathComponent;soundIssue=""}catch{soundIssue=error.localizedDescription}
@@ -386,6 +388,7 @@ struct TimelineSlideStage:View{
                 voice.stopPlayback()
                 guard playing,let shot else{return}
                 startMusic()
+                playAmbiance(entry(shot)?.soundscape ?? .none)
                 var duration=Double(max(1,interval))
                 if narration,let data=narrationData(shot){duration=max(duration,voice.play(data))}
                 let steps=max(1,Int(duration*20))
@@ -464,6 +467,12 @@ struct TimelineSlideStage:View{
         let target=(index+delta+shots.count)%shots.count
         forward=delta>0;progress=0;motion=false
         withAnimation(reduceMotion ? .easeOut(duration:0.15):.easeInOut(duration:0.48)){index=target}
+    }
+    private func playAmbiance(_ style:StorySoundscape){
+        if style == .none{ambiance?.stop();ambiance=nil;ambianceKey="";return}
+        if ambianceKey==style.rawValue,let ambiance{ambiance.play();return}
+        ambiance?.stop();ambiance=nil
+        if let data=style.generate(),let player=try? AVAudioPlayer(data:data){player.numberOfLoops = -1;player.volume=0.18;ambiance=player;ambianceKey=style.rawValue;try? AVAudioSession.sharedInstance().setCategory(.playback,mode:.default,options:[.mixWithOthers]);try? AVAudioSession.sharedInstance().setActive(true);player.play()}
     }
     private func startMusic(){
         guard let data=musicData else{return}

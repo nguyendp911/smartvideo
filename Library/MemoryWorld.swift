@@ -126,7 +126,8 @@ struct MemoryWorld:View{
         GeometryReader{g in
             ZStack{
                 Color(red:0.18,green:0.13,blue:0.10)
-                ForEach(Array(shots.prefix(18).enumerated()),id:\.element.id){i,shot in
+                ForEach(Array(shots.prefix(18))){shot in
+                    let i=shots.firstIndex(where:{$0.id==shot.id}) ?? 0
                     let key=shot.id.uuidString,p=positions[key] ?? WallPosition(x:Double(i%3+1)/4,y:Double(i/3+1)/7)
                     DiskImage(url:vault.thumbnail(shot.id),limit:300).scaledToFill().frame(width:82,height:94).clipped().padding(5).padding(.bottom,12).background(.white)
                         .rotationEffect(.degrees(Double(i%3-1)*5)).shadow(radius:5)

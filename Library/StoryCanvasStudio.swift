@@ -19,6 +19,7 @@ struct MemoryCanvasLayer:Codable,Identifiable,Equatable{
     var rotation=0.0
     var color="FFFFFF"
     var font:CanvasFont = .serif
+    var cutout:Data?=nil
 }
 struct MemoryCanvasDesign:Codable,Equatable{
     var background="18251F"
@@ -33,6 +34,7 @@ struct StoryCanvasStudio:View{
     @State private var selected:UUID?
     @State private var output:URL?
     @State private var notice=""
+    @State private var cutting=false
     private var selection:Int?{design.layers.firstIndex{$0.id==selected}}
     var body:some View{
         NavigationStack{
@@ -62,6 +64,9 @@ struct StoryCanvasStudio:View{
                     if let i=selection{
                         GroupBox("Layer đang chọn"){
                             VStack(alignment:.leading,spacing:9){
+                                if design.layers[i].kind == .photo{
+                                    Button(cutting ? "Đang tách chủ thể…" : "Thêm lớp chủ thể trong suốt"){cutout(i)}.disabled(cutting)
+                                }
                                 if design.layers[i].kind != .photo{
                                     TextField("Nội dung",text:$design.layers[i].text,axis:.vertical)
                                     Picker("Font",selection:$design.layers[i].font){ForEach(CanvasFont.allCases,id:\.self){Text($0.rawValue).tag($0)}}
@@ -100,6 +105,16 @@ struct StoryCanvasStudio:View{
             }
         }
     }
+    private func cutout(_ index:Int){
+        guard design.layers.indices.contains(index),let photo=design.layers[index].photo,let shot=target.shots.first(where:{$0.id==photo}) else{return}
+        let url=vault.picture(shot),original=design.layers[index]
+        cutting=true;notice=""
+        Task{
+            let png=await Task.detached(priority:.userInitiated){StorySubjectCutout.make(url:url)}.value
+            if let png,png.count<=8_000_000{var layer=original;layer.id=UUID();layer.cutout=png;design.layers.append(layer);selected=layer.id;notice="Đã thêm lớp chủ thể. Đặt chữ giữa ảnh gốc và lớp chủ thể để tạo chữ phía sau."}else{notice="Không tách được chủ thể hoặc ảnh quá lớn."}
+            cutting=false
+        }
+    }
     private func append(_ kind:CanvasLayerKind,_ text:String){let l=MemoryCanvasLayer(kind:kind,text:text);design.layers.append(l);selected=l.id}
     private func save(){
         var value=archive.entry(target.id) ?? archive.draft(target)
@@ -127,7 +142,8 @@ private struct CanvasLayerView:View{
     let height:CGFloat
     var body:some View{
         if layer.kind == .photo,let shot=shots.first(where:{$0.id==layer.photo}){
-            if let bytes=try? Data(contentsOf:vault.thumbnail(shot.id)),let image=UIImage(data:bytes){
+            if let bytes=layer.cutout ?? (try? Data(contentsOf:vault.picture(shot))),let cg=PhotoEngine.thumb(bytes,limit:1500){
+                let image=layer.cutout.flatMap{UIImage(data:$0)} ?? UIImage(cgImage:cg)
                 Image(uiImage:image).resizable().scaledToFill().frame(width:width*layer.size,height:width*layer.size*0.8).clipped()
             }
         }else{
@@ -189,7 +205,7 @@ enum StoryPDF{
         let pdf=UIGraphicsPDFRenderer(bounds:bounds)
         let data=pdf.pdfData{ctx in
             let title=entry.title.isEmpty ? "Miền ký ức":entry.title
-            let text=[entry.body,entry.quote,entry.location,entry.people,entry.tags].filter{!$0.isEmpty}.joined(separator:"\n\n")
+            let text=([entry.body,entry.quote,entry.location,entry.people,entry.tags]+(entry.chapters ?? [])).filter{!$0.isEmpty}.joined(separator:"\n\n")
             let style=NSMutableParagraphStyle();style.lineSpacing=6
             let attributes:[NSAttributedString.Key:Any]=[.font:UIFont.systemFont(ofSize:14),.paragraphStyle:style,.foregroundColor:UIColor.darkGray]
             let string=NSAttributedString(string:text,attributes:attributes)
