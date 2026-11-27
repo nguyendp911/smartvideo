@@ -147,8 +147,8 @@ struct VineCollectionView:View{
                                     HStack{
                                         VineRail(level:2,theme:item,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,growth:VineGrowth(days:life.gardenDays)).frame(width:75,height:112)
                                         VStack(alignment:.leading,spacing:5){
-                                            RoundedRectangle(cornerRadius:5).fill(item.leaf.opacity(0.18)).frame(height:27).overlay{Image(systemName:"leaf.fill").foregroundStyle(item.leaf)}
-                                            RoundedRectangle(cornerRadius:5).fill(item.bloom.opacity(0.14)).frame(height:35).overlay{Image(systemName:"photo").foregroundStyle(item.bloom)}
+                                            Image("botanical_leaf").resizable().scaledToFit().hueRotation(.degrees(BotanicalAssets.hue(item,young:true))).frame(height:30)
+                                            Image("botanical_flower").resizable().scaledToFit().hueRotation(.degrees(BotanicalAssets.hue(item,young:false))).frame(height:36)
                                         }
                                     }
                                     Text(item.rawValue).font(.system(.headline,design:.serif)).lineLimit(2)
@@ -225,12 +225,17 @@ struct GardenDesigner:View{
     @AppStorage("garden.paper") private var paper="Đêm"
     @AppStorage("garden.haptics") private var haptics=true
     @AppStorage("garden.saved") private var saved=Data()
+    @AppStorage("garden.quality") private var renderQuality=GardenRenderQuality.automatic.rawValue
+    @AppStorage("garden.weather.speed") private var weatherSpeed=0.8
+    @AppStorage("garden.weather.wind") private var weatherWind=0.0
+    @AppStorage("garden.weather.foreground") private var weatherForeground=false
+    @AppStorage("garden.daylight") private var daylight=false
     @AppStorage("timeline.vine.density") private var density=1.0
     @AppStorage("timeline.vine.curvature") private var curvature=1.0
     @AppStorage("timeline.vine.node") private var node=VineNode.natural.rawValue
     @Environment(\.dismiss) private var dismiss
     struct Preset:Codable,Identifiable{
-        var id=UUID();var name:String;var theme:String;var custom:Bool;var stem:String;var leaf:String;var bloom:String;var live:Bool;var speed:Double;var glow:Double;var seasonal:Bool;var weather:String;var intensity:Double;var paper:String;var density:Double?=nil;var curvature:Double?=nil;var node:String?=nil;var haptics:Bool?=nil
+        var id=UUID();var name:String;var theme:String;var custom:Bool;var stem:String;var leaf:String;var bloom:String;var live:Bool;var speed:Double;var glow:Double;var seasonal:Bool;var weather:String;var intensity:Double;var paper:String;var density:Double?=nil;var curvature:Double?=nil;var node:String?=nil;var haptics:Bool?=nil;var renderQuality:String?=nil;var weatherSpeed:Double?=nil;var weatherWind:Double?=nil;var weatherForeground:Bool?=nil;var daylight:Bool?=nil
     }
     @State private var name=""
     @State private var presets=[Preset]()
@@ -239,7 +244,7 @@ struct GardenDesigner:View{
             Form{
                 Section("Xem trước"){
                     HStack{VineRail(level:2,theme:VineTheme(rawValue:theme) ?? .emerald,density:density,curvature:curvature,node:VineNode(rawValue:node) ?? .natural,useCustom:true,growth:VineGrowth(days:life.gardenDays)).frame(width:78,height:150);VStack(alignment:.leading){Text("Một ngày đáng nhớ").font(.system(.title2,design:.serif));Text("Ký ức nở hoa").font(.caption);RoundedRectangle(cornerRadius:12).fill(GardenColor.decode(leaf).opacity(0.2)).frame(height:65)}}
-                        .padding().background(GardenBackground.color(paper)).overlay{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}
+                        .padding().background{if !weatherForeground{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}}.background{GardenSceneBackground(paper:paper)}.overlay{if weatherForeground{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}}
                 }
                 Section("Dây leo sống"){
                     Toggle("Chuyển động lá & hạt sáng",isOn:$live)
@@ -265,8 +270,8 @@ struct GardenDesigner:View{
                 GardenAtmosphereSettings()
                 Section("Bộ phối cá nhân"){
                     TextField("Tên bộ phối",text:$name)
-                    Button("Lưu bộ phối"){presets.append(Preset(name:name,theme:theme,custom:custom,stem:stem,leaf:leaf,bloom:bloom,live:live,speed:speed,glow:glow,seasonal:seasonal,weather:weather,intensity:intensity,paper:paper,density:density,curvature:curvature,node:node,haptics:haptics));persist();name=""}.disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
-                    ForEach(presets){p in Button(p.name){theme=p.theme;custom=p.custom;stem=p.stem;leaf=p.leaf;bloom=p.bloom;live=p.live;speed=p.speed;glow=p.glow;seasonal=p.seasonal;weather=p.weather;intensity=p.intensity;paper=p.paper;density=p.density ?? 1;curvature=p.curvature ?? 1;node=p.node ?? VineNode.natural.rawValue;haptics=p.haptics ?? true}}
+                    Button("Lưu bộ phối"){presets.append(Preset(name:name,theme:theme,custom:custom,stem:stem,leaf:leaf,bloom:bloom,live:live,speed:speed,glow:glow,seasonal:seasonal,weather:weather,intensity:intensity,paper:paper,density:density,curvature:curvature,node:node,haptics:haptics,renderQuality:renderQuality,weatherSpeed:weatherSpeed,weatherWind:weatherWind,weatherForeground:weatherForeground,daylight:daylight));persist();name=""}.disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                    ForEach(presets){p in Button(p.name){theme=p.theme;custom=p.custom;stem=p.stem;leaf=p.leaf;bloom=p.bloom;live=p.live;speed=p.speed;glow=p.glow;seasonal=p.seasonal;weather=p.weather;intensity=p.intensity;paper=p.paper;density=p.density ?? 1;curvature=p.curvature ?? 1;node=p.node ?? VineNode.natural.rawValue;haptics=p.haptics ?? true;renderQuality=p.renderQuality ?? GardenRenderQuality.automatic.rawValue;weatherSpeed=p.weatherSpeed ?? 0.8;weatherWind=p.weatherWind ?? 0;weatherForeground=p.weatherForeground ?? false;daylight=p.daylight ?? false}}
                         .onDelete{presets.remove(atOffsets:$0);persist()}
                 }
             }.navigationTitle("Vine Designer").toolbar{Button("Xong"){dismiss()}}

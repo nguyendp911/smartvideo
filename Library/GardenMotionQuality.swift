@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Combine
 
 enum GardenRenderQuality:String,CaseIterable,Identifiable{
     case automatic="Tự động",economy="Tiết kiệm pin",detail="Chi tiết cao"

@@ -72,8 +72,12 @@ struct BotanicalAssetVine:View{
                 var layer=context;layer.translateBy(x:center.x,y:center.y);layer.rotate(by:.degrees(angle));layer.opacity=opacity
                 layer.draw(image,in:CGRect(x:-width/2,y:-hh/2,width:width,height:hh))
             }
-            func tint(_ context:GraphicsContext,_ color:Color?)->GraphicsContext{
+            func tint(_ context:GraphicsContext,_ color:Color?,seasonal:Bool=false)->GraphicsContext{
                 var layer=context
+                if seasonal,let trunkTheme,theme != trunkTheme{
+                    let delta=BotanicalAssets.hue(theme,young:!age.hasFlowers)-BotanicalAssets.hue(trunkTheme,young:!age.hasFlowers)
+                    layer.addFilter(.hueRotation(.degrees(delta)))
+                }
                 if let color{
                     // Modulate a copy of the texture, preserving its photographic luminance.
                     layer.addFilter(.colorMultiply(color))
@@ -128,15 +132,15 @@ struct BotanicalAssetVine:View{
                     let sway=animate ? sin(time*speed*0.8+Double(i%97))*5:0
                     let x=centerX(y,root,w,source,railOffset,rail)
                     let angle=Double(side)*(-24-NaturalSample.value(key,18)*23)+sway
-                    var layer=tint(ctx,customLeaf)
+                    var layer=tint(ctx,customLeaf,seasonal:true)
                     layer.translateBy(x:x+side*leafWidth*0.30,y:y-2)
                     if side<0{layer.scaleBy(x:-1,y:1)}
                     sprite(layer,leaf,.zero,leafWidth,angle,0.95)
                     if age.hasBuds && i%5==0{
-                        sprite(tint(ctx,customBloom),bud,CGPoint(x:x+side*4,y:y+4),6+stage*4,angle,0.96)
+                        sprite(tint(ctx,customBloom,seasonal:true),bud,CGPoint(x:x+side*4,y:y+4),6+stage*4,angle,0.96)
                     }
-                    if age.hasFlowers && i%age.bloomEvery==0{
-                        sprite(tint(ctx,customBloom),bloom,CGPoint(x:x-side*4,y:y-2),13+stage*6,angle*0.4,0.98)
+                    if age.hasFlowers && i%age.bloomEvery==0 && (age.stage == .mature || special){
+                        sprite(tint(ctx,customBloom,seasonal:true),bloom,CGPoint(x:x-side*4,y:y-2),13+stage*6,angle*0.4,0.98)
                     }
                 }
             }
@@ -145,20 +149,20 @@ struct BotanicalAssetVine:View{
             let anchor=centerX(y,origin,origin==root ? w:w*0.66,origin==root ? source:young,origin==root ? railOffset:railOffset+24,origin==root ? rail:"botanical_young")
             let arm=max(9,size.width-anchor+3)
             if age.hasFlowers && node == .natural && theme != .minimal{
-                sprite(tint(ctx,customBloom),corner,CGPoint(x:anchor+arm*0.43,y:y-4),arm*1.12,0,0.96,arm*0.51)
+                sprite(tint(ctx,customBloom,seasonal:true),corner,CGPoint(x:anchor+arm*0.43,y:y-4),arm*1.12,0,0.96,arm*0.51)
             }else{
                 // Keep the texture aspect and rotate a smaller crop-like connector.
-                sprite(tint(ctx,customStem),young,CGPoint(x:anchor+arm*0.42,y:y),max(4,arm*0.145),-90,0.96,arm)
+                sprite(tint(ctx,customStem,seasonal:true),young,CGPoint(x:anchor+arm*0.42,y:y),max(4,arm*0.145),-90,0.96,arm)
             }
             let c=CGPoint(x:level==0 ? root:size.width-9,y:y)
             if age.hasFlowers && node == .natural && theme != .minimal && (special || level==0){
-                sprite(tint(ctx,customBloom),bloom,c,special ? 22:17,-8,1)
+                sprite(tint(ctx,customBloom,seasonal:true),bloom,c,special ? 22:17,-8,1)
             }else if age.hasBuds && node == .pearl{
                 sprite(ctx,dew,c,6+stage*4)
             }else if age.hasBuds && node == .natural{
-                sprite(tint(ctx,customBloom),bud,c,7+stage*3,-12)
+                sprite(tint(ctx,customBloom,seasonal:true),bud,c,7+stage*3,-12)
             }else{
-                sprite(tint(ctx,customLeaf),leaf,c,5+stage*5,level==0 ? -25:16)
+                sprite(tint(ctx,customLeaf,seasonal:true),leaf,c,5+stage*5,level==0 ? -25:16)
             }
             if animate && age.hasBuds && special && glow>0{
                 let p=0.32+0.25*sin(time*speed+Double(seed%17))
@@ -223,7 +227,7 @@ struct BotanicalAssetWeather:View{
                 }else if effect == .petals{
                     draw(petal,x,y,CGFloat(4+8*d),clock*(12+d*14)+p*52,alpha,CGFloat(0.60+0.40*abs(sin(clock*0.65+p))))
                 }else if effect == .leaves{
-                    draw(leaf,x,y,CGFloat(6+9*d),clock*(10+d*12)+p*48,alpha,CGFloat(0.65+0.35*abs(cos(time*0.55+p))))
+                    draw(leaf,x,y,CGFloat(6+9*d),clock*(10+d*12)+p*48,alpha,CGFloat(0.65+0.35*abs(cos(clock*0.55+p))))
                 }
             }
         }.clipped().accessibilityHidden(true)
