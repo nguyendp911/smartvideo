@@ -1,4 +1,0 @@
-name = "viepns-smartvideo-gemini"
-main = "src/index.ts"
-compatibility_date = "2026-10-01"
-# Set GEMINI_API_KEY and GATEWAY_ACCESS_TOKEN as encrypted Cloudflare Worker secrets.

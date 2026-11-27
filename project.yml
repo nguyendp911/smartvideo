@@ -1,68 +1,48 @@
-name: SmartVideo
+name: VieLens
 options:
-  bundleIdPrefix: com.nguyendp911
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
     TARGETED_DEVICE_FAMILY: "1"
 targets:
-  SmartVideo:
-    type: application
+  VieLens:
     platform: iOS
-    sources:
-      - path: SmartVideo
+    type: application
+    sources: [App, Camera, Imaging, Library, Assets.xcassets]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
-        MARKETING_VERSION: "6.2.0"
-        CURRENT_PROJECT_VERSION: "49"
+        MARKETING_VERSION: "7.0.0"
+        CURRENT_PROJECT_VERSION: "50"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
-        ENABLE_USER_SCRIPT_SANDBOXING: YES
     info:
-      path: SmartVideo/Info.plist
+      path: App/Info.plist
       properties:
-        CFBundleDisplayName: ViePN Smart Video
+        CFBundleDisplayName: VieLens
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
-        CFBundleName: ViePNSmartVideo
-        UILaunchStoryboardName: LaunchScreen
-        LSRequiresIPhoneOS: true
-        NSMicrophoneUsageDescription: "SmartVideo cần quyền dùng micro để ghi thuyết minh."
-        NSSpeechRecognitionUsageDescription: "ViePN Smart Video sử dụng nhận diện giọng nói để tạo phụ đề từ tệp âm thanh và video mà bạn chọn. Mặc định xử lý trên iPhone; chỉ dùng dịch vụ Apple khi bạn chủ động cho phép."
-        NSPhotoLibraryAddUsageDescription: "SmartVideo cần quyền thêm video đã xuất vào thư viện Ảnh."
-        UISupportedInterfaceOrientations:
-          - UIInterfaceOrientationPortrait
-        UIRequiresFullScreen: true
-        CFBundleURLTypes:
-          - CFBundleURLName: com.nguyendp911.smartvideo.link
-            CFBundleURLSchemes:
-              - smartvideo
-  SmartVideoTests:
-    type: bundle.unit-test
+        UILaunchScreen: {}
+        NSCameraUsageDescription: "VieLens dùng camera để chụp ảnh trên iPhone."
+        NSPhotoLibraryAddUsageDescription: "Lưu ảnh bạn chọn từ Timeline vào ứng dụng Ảnh."
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+  VieLensTests:
     platform: iOS
-    sources:
-      - path: SmartVideoTests
+    type: bundle.unit-test
+    sources: [Tests]
     dependencies:
-      - target: SmartVideo
+      - target: VieLens
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo.tests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SmartVideo.app/SmartVideo"
-        BUNDLE_LOADER: "$(TEST_HOST)"
 schemes:
-  SmartVideo:
+  VieLens:
     build:
       targets:
-        SmartVideo: all
+        VieLens: all
     test:
-      targets:
-        - SmartVideoTests
-    run:
-      config: Debug
-    archive:
-      config: Release
+      targets: [VieLensTests]

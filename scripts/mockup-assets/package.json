@@ -1,8 +1,0 @@
-{
-  "name": "mockup-assets",
-  "private": true,
-  "type": "module",
-  "description": "Procedurally draws the Mockup Studio PNG/WebP assets (original artwork, no third-party imagery).",
-  "scripts": { "generate": "node generate.mjs" },
-  "devDependencies": { "sharp": "^0.33.5" }
-}

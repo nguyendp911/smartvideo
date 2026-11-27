@@ -1,220 +1,59 @@
-name: iOS Build
-
-# New commits supersede old PR runs; keep the newest build only.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+name: VieLens iPhone
 on:
   push:
     branches: [main]
-  pull_request:
   workflow_dispatch:
-
+permissions:
+  contents: read
 jobs:
-  simulator:
-    name: Build for iOS Simulator
+  device:
+    name: Build and verify unsigned iPhone IPA
     runs-on: macos-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Validate optional Python video downloader
-        run: python3 -m py_compile backend/video_resolver/main.py
-
-      - name: Validate nonlinear retime math
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/SpeedCurve.swift scripts/speed-curve-tests.swift -o /tmp/speed-curve-tests
-          /tmp/speed-curve-tests
-
-      - name: Validate continuous project preview timing
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/ProjectPreviewTiming.swift scripts/project-preview-tests.swift -o /tmp/project-preview-tests
-          /tmp/project-preview-tests
-
-      - name: Validate live audio timing and envelopes
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/LiveAudioPreviewMath.swift scripts/live-audio-preview-tests.swift -o /tmp/live-audio-tests
-          /tmp/live-audio-tests
-
-      - name: Validate per-clip audio envelopes
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/ClipAudioEnvelope.swift scripts/clip-audio-envelope-tests.swift -o /tmp/clip-audio-tests
-          /tmp/clip-audio-tests
-
-      - name: Validate SFX audio keyframes and project compatibility
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/SoundEffectClip.swift scripts/audio-automation-tests.swift -o /tmp/audio-automation-tests
-          /tmp/audio-automation-tests
-
-      - name: Validate shared audio-video timeline drag geometry
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/AudioTimelineMath.swift scripts/multitrack-audio-tests.swift -o /tmp/multitrack-audio-tests
-          /tmp/multitrack-audio-tests
-
-      - name: Validate movable music and narration gain automation
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/project-audio-track-tests.swift -o /tmp/project-audio-track-tests
-          /tmp/project-audio-track-tests
-
-      - name: Validate Music Video Studio time model, timeline, transport and undo
-        run: |
-          swiftc -swift-version 5 SmartVideo/MusicVideoStudio/Core/MusicVideoStudio.swift SmartVideo/MusicVideoStudio/Core/ProjectTime.swift SmartVideo/MusicVideoStudio/Core/VideoProject.swift SmartVideo/MusicVideoStudio/Core/TimelineEngine.swift SmartVideo/MusicVideoStudio/Core/TimelineScale.swift SmartVideo/MusicVideoStudio/Core/UndoHistory.swift SmartVideo/MusicVideoStudio/Core/TransportState.swift SmartVideo/MusicVideoStudio/Core/TimelineEditing.swift SmartVideo/MusicVideoStudio/Core/TransformMath.swift SmartVideo/MusicVideoStudio/Core/FrameResources.swift SmartVideo/MusicVideoStudio/Core/ProjectManager.swift SmartVideo/MusicVideoStudio/Models/AudioLayer.swift SmartVideo/MusicVideoStudio/Models/VinylLayer.swift SmartVideo/MusicVideoStudio/Models/LyricsLayer.swift SmartVideo/MusicVideoStudio/Models/VisualizerLayer.swift SmartVideo/MusicVideoStudio/Models/EffectLayer.swift SmartVideo/MusicVideoStudio/Effects/EffectMath.swift SmartVideo/MusicVideoStudio/Export/ExportSettings.swift SmartVideo/MusicVideoStudio/Visualizer/SpectrumData.swift SmartVideo/MusicVideoStudio/Visualizer/SpectrumAnalyzer.swift SmartVideo/MusicVideoStudio/Lyrics/LRCParser.swift SmartVideo/MusicVideoStudio/Lyrics/LyricsSynchronizer.swift SmartVideo/MusicVideoStudio/Lyrics/KaraokeRenderer.swift SmartVideo/MusicVideoStudio/Audio/AudioEnvelope.swift SmartVideo/MusicVideoStudio/Audio/AudioScheduling.swift SmartVideo/MusicVideoStudio/Audio/WaveformMath.swift SmartVideo/MusicVideoStudio/Vinyl/VinylMath.swift SmartVideo/MusicVideoStudio/Photo/KenBurnsEffect.swift SmartVideo/MusicVideoStudio/Photo/PhotoTransitionEngine.swift SmartVideo/MusicVideoStudio/Models/Layer.swift SmartVideo/MusicVideoStudio/Models/PhotoLayer.swift SmartVideo/MusicVideoStudio/Models/TextLayer.swift SmartVideo/MusicVideoStudio/Models/TimelineClipBlock.swift scripts/music-video-core-tests.swift -o /tmp/music-video-core-tests
-          /tmp/music-video-core-tests
-
-      - name: Validate Mockup Studio catalog, search, masks and geometry
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift SmartVideo/Models/MockupStudioGeometry.swift scripts/mockup-studio-tests.swift -o /tmp/mockup-studio-tests
-          /tmp/mockup-studio-tests
-
-      - name: Validate incoming shared-link parsing
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/IncomingLink.swift scripts/incoming-link-tests.swift -o /tmp/incoming-link-tests
-          /tmp/incoming-link-tests
-
-      - name: Validate storage cleanup policy
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/StoragePolicy.swift scripts/storage-policy-tests.swift -o /tmp/storage-policy-tests
-          /tmp/storage-policy-tests
-
-      - name: Validate .cube LUT parser
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/CubeLUT.swift scripts/cube-lut-tests.swift -o /tmp/cube-lut-tests
-          /tmp/cube-lut-tests
-
-      - name: Validate ripple delete timing math
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/RippleMath.swift scripts/ripple-edit-tests.swift -o /tmp/ripple-edit-tests
-          /tmp/ripple-edit-tests
-
-      - name: Validate speech-aware music auto-ducking
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/VoiceActivityDucking.swift SmartVideo/Models/ProjectAudioTrackMath.swift scripts/voice-ducking-tests.swift -o /tmp/voice-ducking-tests
-          /tmp/voice-ducking-tests
-
-      - name: Validate independent multi-music editing
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/AudioGainKeyframe.swift SmartVideo/Models/SoundEffectClip.swift SmartVideo/Models/AudioTimelineMath.swift SmartVideo/Models/MusicRegionEditMath.swift scripts/multi-music-region-tests.swift -o /tmp/multi-music-region-tests
-          /tmp/multi-music-region-tests
-
-      - name: Validate Text Layer Pro project compatibility and presets
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/TextOverlayClip.swift SmartVideo/Models/TextTitlePreset.swift SmartVideo/Models/TextTitleRenderTime.swift scripts/text-title-pro-tests.swift -o /tmp/text-title-pro-tests
-          /tmp/text-title-pro-tests
-
-      - name: Validate 42 mockup assets, motion and saved settings
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
-          /tmp/mockup-tests
-
-      - name: Prepare ViePN app icon
-        run: bash scripts/make-icon.sh
-
+      - uses: actions/checkout@v4
       - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Compile SwiftUI app
         run: |
-          xcodebuild \
-            -project SmartVideo.xcodeproj \
-            -scheme SmartVideo \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/DerivedData \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Verify visible front and behind-person title pixels on Simulator
-        timeout-minutes: 12
+          command -v xcodegen || brew install xcodegen
+          xcodegen generate
+      - name: Build for iPhone
         run: |
           set -euo pipefail
-          xcrun simctl list devices available
-          DEVICE=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; data=json.load(sys.stdin)["devices"]; uuids=[d["udid"] for ds in data.values() for d in ds if d["state"] in ("Shutdown","Booted") and d["name"].startswith("iPhone") and d.get("isAvailable",True)]; print(uuids[0] if uuids else "")')
-          test -n "$DEVICE"
-          echo "Using iOS Simulator: $DEVICE"
-          xcodebuild \
-            -project SmartVideo.xcodeproj \
-            -scheme SmartVideo \
-            -configuration Debug \
-            -destination "platform=iOS Simulator,id=$DEVICE" \
-            -destination-timeout 60 \
-            -derivedDataPath build/DerivedData \
-            -parallel-testing-enabled NO \
-            CODE_SIGNING_ALLOWED=NO \
-            -only-testing:SmartVideoTests/TextExportSmokeTests \
-            -only-testing:SmartVideoTests/MockupStudioTests \
-            -only-testing:SmartVideoTests/MusicVideoStudioTests \
-            -only-testing:SmartVideoTests/PhotoPresetStudioTests \
-            -only-testing:SmartVideoTests/PhotoReferenceMatcherTests \
-            -only-testing:SmartVideoTests/PhotoAutoPresetTests \
-            -only-testing:SmartVideoTests/PhotoPortraitFocusTests \
-            -only-testing:SmartVideoTests/AIAutoVideoCreatorTests \
-            -only-testing:SmartVideoTests/PhotoExportTests \
-            test
-
-      - name: Package simulator app for inspection
-        if: success()
-        run: |
-          cd build/DerivedData/Build/Products/Debug-iphonesimulator
-          zip -r "$GITHUB_WORKSPACE/SmartVideo-Simulator.zip" SmartVideo.app
-
-      - name: Upload simulator build
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: SmartVideo-Simulator
-          path: SmartVideo-Simulator.zip
-          retention-days: 7
-
-  device_ipa:
-    name: Build iPhone IPA (unsigned)
-    runs-on: macos-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install XcodeGen
-        run: brew install xcodegen
-
-      - name: Validate 42 mockup assets, motion and saved settings
-        run: |
-          swiftc -swift-version 5 SmartVideo/Models/MockupOverlayClip.swift SmartVideo/Models/MockupMask.swift SmartVideo/Models/MockupStudioCatalog.swift SmartVideo/Models/MockupStudioCatalogData.swift scripts/mockup-light-shadow-tests.swift -o /tmp/mockup-tests
-          /tmp/mockup-tests
-
-      - name: Prepare ViePN app icon
-        run: bash scripts/make-icon.sh
-
-      - name: Generate Xcode project
-        run: xcodegen generate
-
-      - name: Compile for physical iPhone
-        run: |
-          xcodebuild \
-            -project SmartVideo.xcodeproj \
-            -scheme SmartVideo \
-            -configuration Release \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath build/DeviceDerived \
-            CODE_SIGNING_ALLOWED=NO \
-            build
-
-      - name: Package unsigned IPA
+          xcodebuild -project VieLens.xcodeproj -scheme VieLens -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+      - name: Verify bundle and package IPA
         run: |
           set -euo pipefail
-          APP="build/DeviceDerived/Build/Products/Release-iphoneos/SmartVideo.app"
-          test -d "$APP"
-          test -f "$APP/SmartVideo"
-          mkdir -p Payload
-          cp -R "$APP" Payload/
-          zip -qry ViePN-Smart-Video-unsigned.ipa Payload
-          unzip -t ViePN-Smart-Video-unsigned.ipa | tail -n 1
-
-      - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
+          APP=build/Build/Products/Release-iphoneos/VieLens.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = com.nguyendp911.smartvideo
+          test "$(/usr/libexec/PlistBuddy -c 'Print DTPlatformName' "$APP/Info.plist")" = iphoneos
+          lipo -verify_arch arm64 "$APP/VieLens"
+          test ! -e "$APP/embedded.mobileprovision"
+          test ! -e "$APP/_CodeSignature"
+          if codesign -d "$APP" >/dev/null 2>&1; then codesign --remove-signature "$APP/VieLens"; fi
+          if codesign -d "$APP/VieLens" >/dev/null 2>&1; then exit 1; fi
+          mkdir Payload
+          ditto "$APP" Payload/VieLens.app
+          zip -qyr VieLens-unsigned.ipa Payload
+          unzip -tq VieLens-unsigned.ipa
+          shasum -a 256 VieLens-unsigned.ipa | tee VieLens-unsigned.sha256
+      - uses: actions/upload-artifact@v4
         with:
-          name: ViePN-Smart-Video-iPhone-Unsigned-IPA
-          path: ViePN-Smart-Video-unsigned.ipa
-          retention-days: 14
+          name: VieLens-iPhone-Unsigned
+          path: |
+            VieLens-unsigned.ipa
+            VieLens-unsigned.sha256
+          if-no-files-found: error
+          retention-days: 30
+  tests:
+    name: Photo and Timeline tests
+    runs-on: macos-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate and test
+        run: |
+          set -euo pipefail
+          command -v xcodegen || brew install xcodegen
+          xcodegen generate
+          DEVICE=$(xcrun simctl list devices available --json | python3 -c 'import json,sys;ds=json.load(sys.stdin)["devices"];print(next(d["udid"] for devices in ds.values() for d in devices if d["name"].startswith("iPhone") and d["isAvailable"]))')
+          xcodebuild -project VieLens.xcodeproj -scheme VieLens -configuration Debug -destination "platform=iOS Simulator,id=$DEVICE" -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test

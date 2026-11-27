@@ -1,11 +1,7 @@
-# Generated project / build products
-SmartVideo.xcodeproj/
 build/
 DerivedData/
-*.xcuserstate
-*.xcuserdatad/
+Payload/
+*.ipa
+*.xcodeproj/
+App/Info.plist
 .DS_Store
-.swiftpm/
-
-scripts/mockup-assets/node_modules/
-scripts/mockup-assets/out/
