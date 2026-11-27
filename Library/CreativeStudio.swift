@@ -10,6 +10,7 @@ struct CreativeVersion:Codable,Identifiable {
     let date:Date
     let recipe:CreativeRecipe
     let photoIDs:[UUID]
+    var original:Bool?=nil
 }
 struct CreativeRecipe:Codable,Equatable {
     var exposure=0.0
@@ -100,7 +101,7 @@ struct CreativeStudio:View {
                         if !history.isEmpty{
                             Menu("Lịch sử chỉnh sửa · \(history.count)"){
                                 ForEach(history.reversed()){v in
-                                    Button("\(v.name) · \(v.date.formatted(date:.abbreviated,time:.shortened))"){recipe=v.recipe}
+                                    Button("\(v.name) · \(v.date.formatted(date:.abbreviated,time:.shortened))"){recipe=v.recipe;useOriginal=v.original ?? false}
                                 }
                                 Button("Xóa lịch sử preset",role:.destructive){history=[];persistVersions()}
                             }
@@ -122,7 +123,7 @@ struct CreativeStudio:View {
             }.padding()
         }.navigationTitle("Creative Studio")
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
-        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id)));persistVersions()};Button("Hủy",role:.cancel){}}
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions()};Button("Hủy",role:.cancel){}}
         .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
             guard let current else{return}
             let r=recipe,url=vault.picture(current,original:useOriginal)

@@ -419,7 +419,15 @@ struct Timeline: View {
                 Menu {
                     if scope != .trash {
                         Button("Thêm vào bộ sưu tập",systemImage:"heart.text.square"){batchKind="collection";batchText="";batchEdit=true}
-                        if !collection.isEmpty {Button("Bỏ khỏi bộ sưu tập",systemImage:"minus.circle"){runBatch(removeCollection:collection)}}
+                        if !collection.isEmpty {
+                            Button("Đặt làm ảnh bìa",systemImage:"photo.artframe"){
+                                if let id=selectedShots.first?.id{
+                                    let name=collection
+                                    Task{do{try await model.vault.setCollectionCover(name,id:id);await model.reload();clearSelection()}catch{model.message=error.localizedDescription}}
+                                }
+                            }.disabled(chosen.count != 1)
+                            Button("Bỏ khỏi bộ sưu tập",systemImage:"minus.circle"){runBatch(removeCollection:collection)}
+                        }
                         Button("Trình chiếu ảnh đã chọn",systemImage:"play.rectangle"){slideShots=selectedShots;slideshow=true}
                         Button("Đưa vào album",systemImage:"rectangle.stack.badge.plus") { batchKind="album";batchText="";batchEdit=true }
                         Button("Gắn nhãn",systemImage:"tag") { batchKind="tags";batchText="";batchEdit=true }
@@ -504,6 +512,8 @@ private struct ShotDetail:View {
     let shots:[Shot]
     @State private var selectedID:UUID
     @State private var showMetadata=false
+    @State private var immersive=false
+    @State private var showEditor=false
     init(model:LibraryModel,shot:Shot,shots:[Shot]) {
         self.model=model
         self.shots=shots.isEmpty ? [shot] : shots
@@ -522,7 +532,7 @@ private struct ShotDetail:View {
     var body:some View {
         NavigationStack {
             VStack(spacing:12) {
-                if current.enhanced {Picker("Phiên bản",selection:$original){Text("Ảnh hoàn thiện").tag(false);Text("Bản gốc").tag(true)}.pickerStyle(.segmented).padding(.horizontal)}
+                if !immersive && current.enhanced {Picker("Phiên bản",selection:$original){Text("Ảnh hoàn thiện").tag(false);Text("Bản gốc").tag(true)}.pickerStyle(.segmented).padding(.horizontal)}
                 TabView(selection:$selectedID) {
                     ForEach(shots) { item in
                         ZoomPhoto(url:model.vault.picture(model.shots.first{$0.id==item.id} ?? item,original:original)).tag(item.id)
@@ -530,6 +540,7 @@ private struct ShotDetail:View {
                 }.tabViewStyle(.page(indexDisplayMode:.never))
                 .frame(maxHeight:.infinity)
                 .onChange(of:selectedID){_,_ in original=false}
+                if !immersive {
                 Text("\((shots.firstIndex{$0.id==selectedID} ?? 0)+1) / \(shots.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal,showsIndicators:false) {
@@ -552,15 +563,18 @@ private struct ShotDetail:View {
                     if let note=current.note,!note.isEmpty {Text(note).font(.caption).lineLimit(2)}
                     HStack(spacing:2){ForEach(1...5,id:\.self){n in Button {Task{await model.edit(shot.id,rating:current.rating==n ? 0 : n)}} label:{Image(systemName:n<=current.rating ? "star.fill":"star").foregroundStyle(gold).frame(width:35,height:40)}.accessibilityLabel("\(n) sao")}}
                 }
-                HStack(spacing:22) {
+                HStack(spacing:18) {
+                    Button {showEditor=true} label:{Image(systemName:"slider.horizontal.3")}.accessibilityLabel("Chỉnh màu ảnh").disabled(current.deleted != nil)
                     Button {showMetadata=true} label:{Image(systemName:"info.circle")}.accessibilityLabel("Thông tin EXIF")
                     ShareLink(item:model.vault.picture(current,original:original)){Image(systemName:"square.and.arrow.up")}.accessibilityLabel("Chia sẻ ảnh")
                     Button {saveToPhotos()} label:{Image(systemName:"square.and.arrow.down")}.accessibilityLabel("Lưu vào Ảnh Apple")
                     Button {tags=current.tags;session=current.session;note=current.note ?? "";editing=true} label:{Image(systemName:"tag")}.accessibilityLabel("Đổi nhãn và phiên")
                     Button {if current.deleted != nil {Task{await model.edit(shot.id,trash:false);dismiss()}} else {confirm=true}} label:{Image(systemName:current.deleted==nil ? "trash":"arrow.uturn.backward")}.accessibilityLabel(current.deleted==nil ? "Chuyển vào thùng rác":"Phục hồi")
                 }.font(.title3).padding(.bottom,18)
-            }.navigationTitle(shot.day).navigationBarTitleDisplayMode(.inline).toolbar{Button("Xong"){dismiss()}}
-        }.sheet(isPresented:$showMetadata){PhotoMetadataView(shot:current,url:model.vault.picture(current,original:true))}
+                }
+            }.navigationTitle(shot.day).navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.topBarLeading){Button{withAnimation(.easeInOut(duration:0.22)){immersive.toggle()}}label:{Image(systemName:immersive ? "rectangle.compress.vertical":"rectangle.expand.vertical")}.accessibilityLabel("Chế độ thưởng thức ảnh")};ToolbarItem(placement:.confirmationAction){Button("Xong"){dismiss()}}}
+        }.sheet(isPresented:$showEditor){NavigationStack{CreativeStudio(shots:[current],vault:model.vault).toolbar{Button("Xong"){showEditor=false}}}}
+        .sheet(isPresented:$showMetadata){PhotoMetadataView(shot:current,url:model.vault.picture(current,original:true))}
         .sheet(isPresented:$editing){NavigationStack{Form{TextField("Phiên chụp",text:$session);TextField("Nhãn ảnh",text:$tags);TextField("Nhật ký khoảnh khắc",text:$note,axis:.vertical)}.navigationTitle("Thông tin ảnh").toolbar{Button("Lưu"){Task{do{try await model.vault.edit(shot.id,tags:tags,session:session,note:note);await model.reload();editing=false}catch{notice=error.localizedDescription}}}}}.presentationDetents([.medium])}
         .confirmationDialog("Chuyển ảnh vào thùng rác trong 30 ngày?",isPresented:$confirm){Button("Chuyển vào thùng rác",role:.destructive){Task{await model.edit(shot.id,trash:true);dismiss()}}}
         .alert("VieLens",isPresented:Binding(get:{notice != nil || model.message != nil},set:{if !$0{notice=nil;model.message=nil}})){Button("Đóng"){notice=nil;model.message=nil}} message:{Text(notice ?? model.message ?? "")}

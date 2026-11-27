@@ -18,6 +18,7 @@ struct Shot: Identifiable, Codable, Equatable {
     var lens: String
     var collections: [String]? = nil
     var note: String? = nil
+    var coverCollections: [String]? = nil
 }
 actor Vault {
     static let shared = Vault(root: FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("VieLens",isDirectory:true))
@@ -112,9 +113,21 @@ actor Vault {
             let name=String(addCollection.trimmingCharacters(in:.whitespacesAndNewlines).prefix(100))
             if !name.isEmpty {item.collections=Array(Set((item.collections ?? [])+[name])).sorted()}
         }
-        if let removeCollection {item.collections=(item.collections ?? []).filter{$0 != removeCollection}}
+        if let removeCollection {item.collections=(item.collections ?? []).filter{$0 != removeCollection};item.coverCollections=(item.coverCollections ?? []).filter{$0 != removeCollection}}
         if let note {item.note=note}
         try persist(item,in:directory(id)); records[id]=item
+    }
+    func setCollectionCover(_ name:String,id:UUID) throws {
+        try load()
+        guard var shot=records[id],shot.deleted==nil,(shot.collections ?? []).contains(name) else{throw CameraError.unreadable}
+        // Set the new cover before removing old flags; existing images remain intact.
+        shot.coverCollections=Array(Set((shot.coverCollections ?? [])+[name])).sorted()
+        try persist(shot,in:directory(id));records[id]=shot
+        for item in Array(records.values) where item.id != id && (item.coverCollections ?? []).contains(name){
+            var changed=item
+            changed.coverCollections=(item.coverCollections ?? []).filter{$0 != name}
+            try persist(changed,in:directory(item.id));records[item.id]=changed
+        }
     }
     struct BackupItem: Codable { let id:UUID; let files:[String:String] }
     struct Backup: Codable { let version:Int; let items:[BackupItem] }

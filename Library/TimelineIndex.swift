@@ -11,7 +11,8 @@ struct TimelineGroup: Identifiable {
     let key: String
     let items: [Shot]
     var id: String { key }
-    var cover: Shot { items.max { a,b in a.rating == b.rating ? a.date < b.date : a.rating < b.rating } ?? items[0] }
+    var preferredCover:UUID?=nil
+    var cover: Shot { if let preferredCover,let shot=items.first(where:{$0.id==preferredCover}){return shot};return items.max { a,b in a.rating == b.rating ? a.date < b.date : a.rating < b.rating } ?? items[0] }
 }
 enum TimelineIndex {
     private static func normalized(_ value: String) -> String {
@@ -57,7 +58,7 @@ enum TimelineIndex {
         for shot in shots where shot.deleted == nil {
             for name in Set(shot.collections ?? []) {groups[name,default:[]].append(shot)}
         }
-        return groups.map{TimelineGroup(key:$0.key,items:$0.value)}.sorted{$0.key.localizedStandardCompare($1.key) == .orderedAscending}
+        return groups.map{group in TimelineGroup(key:group.key,items:group.value,preferredCover:group.value.first(where:{($0.coverCollections ?? []).contains(group.key)})?.id)}.sorted{$0.key.localizedStandardCompare($1.key) == .orderedAscending}
     }
     static func todaySuffix(_ date:Date=Date()) -> String {
         let f=DateFormatter();f.locale=Locale(identifier:"en_US_POSIX");f.calendar=Calendar(identifier:.gregorian);f.dateFormat="MM-dd"
