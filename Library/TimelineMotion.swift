@@ -47,10 +47,17 @@ struct TimelineTreeMonth:Identifiable{
     var id:String{group.key}
 }
 enum TimelineTreeIndex{
-    static func build(_ shots:[Shot],newest:Bool)->[TimelineTreeYear]{
-        TimelineIndex.group(shots,period:.year,newest:newest).map{year in
-            TimelineTreeYear(group:year,months:TimelineIndex.group(year.items,period:.month,newest:newest).map{month in
-                TimelineTreeMonth(group:month,days:TimelineIndex.group(month.items,period:.day,newest:newest))
+    static func build(_ shots:[Shot],newest:Bool,extraDays:Set<String>=[])->[TimelineTreeYear]{
+        let allDays=Set(shots.map(\.day)).union(extraDays.filter{$0.count==10})
+        let sort:(String,String)->Bool={newest ? $0>$1:$0<$1}
+        let byDay=Dictionary(grouping:shots,by:\.day)
+        let byMonth=Dictionary(grouping:shots){String($0.day.prefix(7))}
+        let byYear=Dictionary(grouping:shots){String($0.day.prefix(4))}
+        let monthsByYear=Dictionary(grouping:Set(allDays.map{String($0.prefix(7))})){String($0.prefix(4))}
+        let daysByMonth=Dictionary(grouping:allDays){String($0.prefix(7))}
+        return monthsByYear.keys.sorted(by:sort).map{year in
+            TimelineTreeYear(group:TimelineGroup(key:year,items:byYear[year] ?? []),months:(monthsByYear[year] ?? []).sorted(by:sort).map{month in
+                TimelineTreeMonth(group:TimelineGroup(key:month,items:byMonth[month] ?? []),days:(daysByMonth[month] ?? []).sorted(by:sort).map{TimelineGroup(key:$0,items:byDay[$0] ?? [])})
             })
         }
     }
@@ -62,6 +69,8 @@ struct TimelineStoryTree:View{
     let accent:Color
     let open:(Shot)->Void
     let play:([Shot])->Void
+    var extraDays:Set<String>=[]
+    @ObservedObject private var life=LifeArchive.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @ObservedObject private var archive=StoryArchive.shared
     @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
@@ -78,7 +87,7 @@ struct TimelineStoryTree:View{
     @AppStorage("garden.haptics") private var haptics=true
     @State private var expanded=Set<String>()
     @State private var initialized=false
-    private var years:[TimelineTreeYear]{TimelineTreeIndex.build(shots,newest:newest)}
+    private var years:[TimelineTreeYear]{TimelineTreeIndex.build(shots,newest:newest,extraDays:extraDays)}
     var body:some View{
         ScrollViewReader{proxy in
             ScrollView{
@@ -110,7 +119,7 @@ struct TimelineStoryTree:View{
             if archive.entry(target.id) != nil{StoryReader(target:target,vault:vault,archive:archive)}else{StoryComposer(target:target,vault:vault,archive:archive)}
         }.onAppear{
             if !initialized{initialized=true;openFirst()}
-        }.onChange(of:shots.first?.id){_,_ in if expanded.isEmpty || !years.contains(where:{expanded.contains($0.id)}){openFirst()}}
+        }.onChange(of:years.map(\.id)){_,_ in if expanded.isEmpty || !years.contains(where:{expanded.contains($0.id)}){openFirst()}}
     }
     private func openFirst(){
         if let year=years.first{expanded.insert(year.id);if let month=year.months.first{expanded.insert(month.id)}}
@@ -138,7 +147,7 @@ struct TimelineStoryTree:View{
                     }
                 }label:{Image(systemName:"calendar.badge.clock").font(.title3).padding(10).background(.white.opacity(0.08),in:Circle())}
             }
-            Text("\(years.count) năm · \(Set(shots.map(\.day)).count) ngày · \(shots.count) khoảnh khắc").font(.caption).foregroundStyle(.secondary)
+            Text("\(years.count) năm · \(Set(shots.map(\.day)).union(extraDays).count) ngày · \(shots.count) khoảnh khắc").font(.caption).foregroundStyle(.secondary)
         }.padding(.horizontal,8).padding(.vertical,14)
     }
     private func yearRow(_ year:TimelineTreeYear)->some View{
@@ -167,7 +176,7 @@ struct TimelineStoryTree:View{
             VStack(alignment:.leading,spacing:5){
             Button{toggle(month.id)}label:{
                 HStack(spacing:10){
-                    DiskImage(url:vault.thumbnail(month.group.cover.id),limit:180).scaledToFill().frame(width:56,height:56).clipped().clipShape(RoundedRectangle(cornerRadius:8))
+                    if let cover=MemorySync.cover(month.group.items,entry:archive.entry("period:"+month.id)){DiskImage(url:vault.thumbnail(cover.id),limit:180).scaledToFill().frame(width:56,height:56).clipped().clipShape(RoundedRectangle(cornerRadius:8))}else{Image(systemName:"book.closed").foregroundStyle(vine.bloom).frame(width:56,height:56)}
                     VStack(alignment:.leading,spacing:4){
                         Text(TimelineIndex.label(month.id)).font(.system(.headline,design:.serif))
                         Text("\(month.days.count) ngày · \(month.group.items.count) ảnh").font(.caption2).foregroundStyle(.secondary)
@@ -183,7 +192,7 @@ struct TimelineStoryTree:View{
     }
     private func chapterPlay(_ group:TimelineGroup)->some View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
-            .buttonStyle(.plain)
+            .buttonStyle(.plain).disabled(group.items.isEmpty)
     }
     private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal)}
     private func storyButton(_ target:StoryTarget)->some View{
@@ -216,11 +225,12 @@ struct TimelineStoryTree:View{
                     Spacer()
                     Button{play(day.items)}label:{
                         Image(systemName:"play.fill").font(.caption).foregroundStyle(.black).frame(width:34,height:34).background(accent,in:Circle())
-                    }.accessibilityLabel("Trình diễn ảnh ngày này")
+                    }.accessibilityLabel("Trình diễn ảnh ngày này").disabled(day.items.isEmpty)
                 }
                 storyButton(.group(day))
-                StoryStrip(shots:day.items,vault:vault,accent:vine.bloom,archive:archive,open:open,story:{storyTarget = .photo($0)})
-                if let note=day.cover.note,!note.isEmpty{Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3)}
+                ForEach(life.milestones(day.key)){milestone in VStack(alignment:.leading,spacing:3){Label(milestone.title,systemImage:milestone.icon).font(.caption.weight(.semibold)).foregroundStyle(vine.bloom);if !milestone.note.isEmpty{Text(milestone.note).font(.caption2).foregroundStyle(.secondary)}}.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(vine.bloom.opacity(0.12),in:RoundedRectangle(cornerRadius:8))}
+                if !day.items.isEmpty{StoryStrip(shots:day.items,vault:vault,accent:vine.bloom,archive:archive,open:open,story:{storyTarget = .photo($0)})}
+                if let note=MemorySync.cover(day.items,entry:archive.entry("period:"+day.key))?.note,!note.isEmpty{Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3)}
             }.padding(.vertical,12)
         }.scrollTransition(.interactive,axis:.vertical){content,phase in
             content.opacity(reduceMotion || phase.isIdentity ? 1:0.72).scaleEffect(reduceMotion || phase.isIdentity ? 1:0.96,anchor:.leading)

@@ -24,6 +24,11 @@ enum GalleryLayout: String, CaseIterable {
 struct Timeline: View {
     @ObservedObject var model: LibraryModel
     @ObservedObject private var stories=StoryArchive.shared
+    @ObservedObject private var life=LifeArchive.shared
+    @State private var showToday=false
+    @State private var showChapters=false
+    @State private var showIntelligence=false
+    @State private var showLetters=false
     @State private var showVines=false
     @State private var showWorld=false
     @State private var showDiscovery=false
@@ -81,6 +86,16 @@ struct Timeline: View {
         let hits=Set(TimelineIndex.filter(base,scope:scope,query:search,newest:newest).map(\.id))
         return base.filter{hits.contains($0.id) || stories.matching(search,shot:$0)}
     }
+    private var journalDays:Set<String>{
+        guard scope == .all,session.isEmpty,collection.isEmpty,light==nil,look==nil,minimumRating==0 else{return []}
+        let days=MemorySync.activeDays(shots:[],stories:stories,life:life)
+        return Set(days.filter{day in
+            guard period.isEmpty || day.hasPrefix(period),anniversary.isEmpty || day.hasSuffix(anniversary) else{return false}
+            if search.isEmpty{return true}
+            let e=stories.entry("period:"+day)
+            return ([day,e?.title ?? "",e?.body ?? "",e?.mood?.rawValue ?? ""]+life.milestones(day).map{$0.title+" "+$0.note}).joined(separator:" ").localizedStandardContains(search)
+        })
+    }
     private var groups: [TimelineGroup] { TimelineIndex.group(filtered,period:scale,newest:newest) }
     private var selectedShots: [Shot] { model.shots.filter { chosen.contains($0.id) } }
     private var layout: GalleryLayout { GalleryLayout(rawValue:layoutValue) ?? .editorial }
@@ -96,10 +111,10 @@ struct Timeline: View {
                 if working { ProgressView(importStatus.isEmpty ? "Đang xử lý…" : importStatus).padding(8).frame(maxWidth:.infinity) }
                 if selecting || compare { selectionBar }
                 if showAlbums { albumPage }
-                else if filtered.isEmpty { emptyPage }
+                else if filtered.isEmpty && (presentation != .tree || journalDays.isEmpty || selecting || compare) { emptyPage }
                 else if selecting || compare || scope == .trash || presentation == .gallery {gallery}
                 else if presentation == .tree{
-                    TimelineStoryTree(shots:filtered,vault:model.vault,newest:newest,accent:layout.accent,open:{selection=$0},play:{slideShots=$0;slideshow=true})
+                    TimelineStoryTree(shots:filtered,vault:model.vault,newest:newest,accent:layout.accent,open:{selection=$0},play:{slideShots=$0;slideshow=true},extraDays:journalDays)
                 }else{
                     ScrollView {TimelineSlideStage(shots:filtered,vault:model.vault,open:{selection=$0})}.scrollIndicators(.hidden)
                 }
@@ -119,6 +134,10 @@ struct Timeline: View {
         }
         .sheet(isPresented:$showFilters) { filterSheet }
         .sheet(isPresented:$showVines){VineCollectionView()}
+        .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{showToday=false})}
+        .sheet(isPresented:$showChapters){LifeChapterStudio(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showIntelligence){LifeIntelligence(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showLetters){FutureLetterStudio(life:life)}
         .fullScreenCover(isPresented:$showWorld){MemoryWorld(shots:active,vault:model.vault)}
         .sheet(isPresented:$showDiscovery){MemoryDiscover(shots:active,vault:model.vault)}
         .sheet(isPresented:$showPodcast){MemoryPodcast()}
@@ -137,8 +156,8 @@ struct Timeline: View {
             }
         }
         .sheet(isPresented:$showCalendar){
-            ArchiveCalendar(shots:active,vault:model.vault){key in
-                resetFilters();period=key;scale = .day;showAlbums=false;showCalendar=false
+            LifeCalendar(shots:active,vault:model.vault){key in
+                resetFilters();period=key;scale = .day;showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue;showCalendar=false
             }
         }
         .fullScreenCover(isPresented:$slideshow){ArchiveSlideshow(shots:slideShots,vault:model.vault)}
@@ -193,6 +212,10 @@ struct Timeline: View {
             }
             Spacer(minLength:4)
             Menu {
+                Button("Hôm nay của tôi",systemImage:"sun.max"){showToday=true}
+                Button("Life Chapters",systemImage:"book.pages"){showChapters=true}
+                Button("Memory Intelligence",systemImage:"sparkles"){showIntelligence=true}
+                Button("Thư tương lai",systemImage:"envelope"){showLetters=true}
                 Button("Memory World",systemImage:"sparkles.rectangle.stack"){showWorld=true}
                 Button("Khám phá ký ức",systemImage:"clock.arrow.circlepath"){showDiscovery=true}
                 Button("Memory Podcast",systemImage:"waveform"){showPodcast=true}
@@ -225,6 +248,7 @@ struct Timeline: View {
                 tab("Dòng thời gian",icon:"calendar",selected: !showAlbums) { showAlbums=false }
                 tab("Album",icon:"rectangle.stack",selected:showAlbums) { clearSelection();showAlbums=true }
                 Spacer(minLength:0)
+                Button{showCalendar=true}label:{circleIcon("calendar")}.accessibilityLabel("Lịch ký ức")
                 Button { showFilters=true } label: { circleIcon(hasFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease") }.accessibilityLabel("Bộ lọc")
                 Button { if selecting || compare {clearSelection()} else {showAlbums=false;selecting=true} } label: { circleIcon(selecting || compare ? "xmark" : "checkmark.circle") }.accessibilityLabel("Chọn ảnh")
             }

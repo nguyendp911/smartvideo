@@ -223,4 +223,33 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(player.duration,8,accuracy:0.1)
         XCTAssertTrue(StoryWritingAssistant.template(facts:"Đi Đà Lạt",mood:"Bình yên").contains("Đi Đà Lạt"))
     }
+    @MainActor func testLifeSyncEmptyDayAndMood()throws{
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let story=StoryArchive(root:root.appendingPathComponent("story"))
+        let life=LifeArchive(root:root.appendingPathComponent("life"))
+        let day="2026-11-27"
+        let target=MemorySync.target(day:day,shots:[])
+        XCTAssertEqual(target.id,"period:"+day)
+        var draft=StoryEntry(id:target.id);draft.body="Bản nháp"
+        try story.save(draft,draft:true)
+        try MemorySync.setMood(.peaceful,day:day,shots:[],archive:story)
+        XCTAssertEqual(story.entry(target.id)?.mood,.peaceful)
+        XCTAssertEqual(story.drafts[target.id]?.body,"Bản nháp")
+        try life.update{$0.milestones.append(LifeMilestone(title:"Cột mốc",date:"2025-01-02"))}
+        let days=MemorySync.activeDays(shots:[],stories:story,life:life)
+        XCTAssertEqual(days,Set([day,"2025-01-02"]))
+        let tree=TimelineTreeIndex.build([],newest:true,extraDays:days)
+        XCTAssertEqual(tree.map(\.id),["2026","2025"])
+        XCTAssertEqual(tree.first?.months.first?.days.first?.key,day)
+        XCTAssertTrue(tree.first?.group.items.isEmpty ?? false)
+    }
+    func testLifeCalendarAndRanges(){
+        let date=LifeDate.date("2026-11-27")!
+        XCTAssertEqual(LifeDate.monthCells(date).compactMap{$0}.count,30)
+        XCTAssertEqual(LifeReflectionRange.month(date).storyID,"period:2026-11")
+        XCTAssertTrue(LifeReflectionRange.month(date).contains("2026-11-30"))
+        XCTAssertFalse(LifeReflectionRange.month(date).contains("2026-12-01"))
+        XCTAssertFalse(FutureMemoryLetter(title:"A",content:"B",opens:date).isOpen(at:date.addingTimeInterval(-1)))
+    }
 }

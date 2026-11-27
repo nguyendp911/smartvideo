@@ -344,7 +344,10 @@ struct StoryLibrary:View{
     @State private var notice=""
     @State private var query=""
     private var rows:[StoryEntry]{archive.entries.values.filter{query.isEmpty || [$0.title,$0.body,$0.tags,$0.people,$0.location,$0.quote,$0.mood?.rawValue ?? ""].joined(separator:" ").localizedStandardContains(query)}.sorted{$0.updatedAt>$1.updatedAt}}
-    private func makeTarget(_ entry:StoryEntry)->StoryTarget{StoryTarget(id:entry.id,label:entry.title.isEmpty ? entry.id:entry.title,shots:shots.filter{entry.photoIDs.contains($0.id)})}
+    private func makeTarget(_ entry:StoryEntry)->StoryTarget{
+        if entry.id.hasPrefix("period:"){let key=String(entry.id.dropFirst(7));return MemorySync.target(period:key,shots:shots)}
+        return StoryTarget(id:entry.id,label:entry.title.isEmpty ? entry.id:entry.title,shots:shots.filter{entry.photoIDs.contains($0.id)})
+    }
     var body:some View{
         NavigationStack{
             List{

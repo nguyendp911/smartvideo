@@ -64,6 +64,8 @@ struct CameraHome:View {
     @AppStorage("look") private var lookValue=Look.neutral.rawValue
     @AppStorage("session") private var session=""
     @State private var showTimeline=false
+    @State private var showToday=false
+    @State private var pendingTimeline=false
     @State private var options=false
     @State private var flash=FlashChoice.off
     @AppStorage("camera.quality") private var qualityValue=CaptureQuality.smart.rawValue
@@ -92,6 +94,7 @@ struct CameraHome:View {
                         Text(session.isEmpty ? "MÁY ẢNH" : session.uppercased()).font(.caption2.weight(.semibold)).tracking(1.6).foregroundStyle(gold).lineLimit(1)
                     }
                     Spacer()
+                    Button{showToday=true}label:{Image(systemName:"sun.max").frame(width:36,height:44)}.accessibilityLabel("Hôm nay của tôi").disabled(shooting)
                     Menu {ForEach(FlashChoice.allCases,id:\.self){choice in Button(choice.rawValue,systemImage:choice.icon){flash=choice}}} label:{Image(systemName:flash.icon).frame(width:42,height:44)}.accessibilityLabel("Flash").disabled(!camera.controls.hasFlash || shooting)
                     Button {showPro=true} label:{Image(systemName:"dial.medium").frame(width:40,height:44)}.accessibilityLabel("Camera Pro").disabled(shooting)
                     Button {draft=session;options=true} label:{Image(systemName:"slider.horizontal.3").frame(width:42,height:44)}.accessibilityLabel("Cấu hình chụp").disabled(shooting)
@@ -166,12 +169,14 @@ struct CameraHome:View {
                 if !progress.isEmpty {Text(progress).font(.caption2).foregroundStyle(.secondary)}
 
             }.frame(maxWidth:.infinity,maxHeight:.infinity).background(night)
-        }.task {UIDevice.current.beginGeneratingDeviceOrientationNotifications();await model.reload();if !showTimeline {camera.start()}}
+        }.task {UIDevice.current.beginGeneratingDeviceOrientationNotifications();await model.reload();if !showTimeline && !showToday {camera.start()}}
         .onReceive(NotificationCenter.default.publisher(for:UIDevice.orientationDidChangeNotification)){ _ in
             let o=UIDevice.current.orientation;if o.isLandscape || o.isPortrait {facing=o}
         }
-        .onChange(of:phase) { _,p in if p == .active && !showTimeline {camera.start()} else {sequence?.cancel();camera.stop()} }
-        .onChange(of:showTimeline){_,shown in if shown {camera.stop()} else if phase == .active {camera.start()} }
+        .onChange(of:phase) { _,p in if p == .active && !showTimeline && !showToday {camera.start()} else {sequence?.cancel();camera.stop()} }
+        .onChange(of:showTimeline){_,shown in if shown {camera.stop()} else if phase == .active && !showToday {camera.start()} }
+        .onChange(of:showToday){_,shown in if shown{camera.stop()}else if phase == .active && !showTimeline{camera.start()}}
+        .fullScreenCover(isPresented:$showToday,onDismiss:{if pendingTimeline{pendingTimeline=false;showTimeline=true}}){LifeToday(model:model,camera:{showToday=false},timeline:{pendingTimeline=true;showToday=false})}
         .fullScreenCover(isPresented:$showTimeline){Timeline(model:model)}
         .sheet(isPresented:$showPro){
             NavigationStack{
