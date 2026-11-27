@@ -289,4 +289,18 @@ final class VieLensTests:XCTestCase {
         }
         XCTAssertEqual(NaturalSample.fraction(-0.2),0.8,accuracy:0.000001)
     }
+    @MainActor func testBotanicalAssetsAreBundledAndGrowthUsesYoungTexture() {
+        for name in BotanicalAssets.names {
+            let image=UIImage(named:name)
+            XCTAssertNotNil(image,"Missing asset \(name)")
+            XCTAssertGreaterThan(image?.size.width ?? 0,0)
+            XCTAssertGreaterThan(image?.size.height ?? 0,0)
+        }
+        for theme in VineTheme.allCases{
+            XCTAssertEqual(BotanicalAssets.rail(theme:theme,age:VineGrowth(days:0)),"botanical_young")
+            XCTAssertEqual(BotanicalAssets.rail(theme:theme,age:VineGrowth(days:179)),"botanical_young")
+        }
+        XCTAssertEqual(BotanicalAssets.rail(theme:.emerald,age:VineGrowth(days:180)),"botanical_bloom")
+        XCTAssertEqual(BotanicalAssets.rail(theme:.autumn,age:VineGrowth(days:365)),"botanical_autumn")
+    }
 }

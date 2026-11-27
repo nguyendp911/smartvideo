@@ -100,16 +100,17 @@ struct VineRail:View {
     @AppStorage("garden.leaf") private var leafHex="81C68A"
     @AppStorage("garden.bloom") private var bloomHex="E5C78E"
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.scenePhase) private var scene
     private var stemColor:Color{useCustom && custom ? GardenColor.decode(stemHex):theme.stem}
     private var leafColor:Color{useCustom && custom ? GardenColor.decode(leafHex):theme.leaf}
     private var bloomColor:Color{useCustom && custom ? GardenColor.decode(bloomHex):theme.bloom}
     var body:some View{
-        TimelineView(.animation(minimumInterval:1/15,paused:!live || reduced)){clock in
-            drawing(time:live && !reduced ? clock.date.timeIntervalSinceReferenceDate:0)
+        TimelineView(.animation(minimumInterval:1/15,paused:!live || reduced || scene != .active)){clock in
+            drawing(time:live && !reduced && scene == .active ? clock.date.timeIntervalSinceReferenceDate:0)
         }.accessibilityHidden(true)
     }
     private func drawing(time:Double)->some View{
-        NaturalVineCanvas(level:level,theme:theme,stemColor:stemColor,leafColor:leafColor,bloomColor:bloomColor,density:density,curvature:curvature,age:growth ?? VineGrowth(days:365),node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:time,animate:live && !reduced,glow:glow)
+        BotanicalAssetVine(level:level,theme:theme,age:growth ?? VineGrowth(days:365),density:density,curvature:curvature,node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:time,animate:live && !reduced && scene == .active,speed:speed,glow:glow,customLeaf:useCustom && custom ? leafColor:nil,customStem:useCustom && custom ? stemColor:nil,customBloom:useCustom && custom ? bloomColor:nil)
     }
 }
 
@@ -127,7 +128,7 @@ struct VineCollectionView:View{
             ScrollView{
                 VStack(alignment:.leading,spacing:18){
                     Text("Khu vườn ký ức").font(.system(size:32,design:.serif))
-                    Text("Thân dây có bóng đổ, lá có gân và sắc độ tự nhiên, hoa có cánh riêng. Dây leo lớn dần theo tuổi cây.").font(.caption).foregroundStyle(.secondary)
+                    Text("Dây leo và hiệu ứng dùng ảnh thực vật PNG trong suốt. 15 bảng màu chia sẻ bộ texture xanh non, hoa trắng và mùa thu. Dây leo lớn dần theo tuổi cây.").font(.caption).foregroundStyle(.secondary)
                     VineGrowthCard(life:life)
                     LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:2),spacing:12){
                         ForEach(VineTheme.allCases){item in
@@ -188,7 +189,7 @@ struct GardenWeather:View{
     var body:some View{
         if effect != .none && !reduced && intensity>0 && phase == .active{
             TimelineView(.animation(minimumInterval:1/30)){clock in
-                NaturalWeatherCanvas(effect:effect,intensity:intensity,time:clock.date.timeIntervalSinceReferenceDate)
+                BotanicalAssetWeather(effect:effect,intensity:intensity,time:clock.date.timeIntervalSinceReferenceDate)
             }.allowsHitTesting(false).accessibilityHidden(true)
         }
     }
