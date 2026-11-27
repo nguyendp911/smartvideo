@@ -66,7 +66,7 @@ struct ArchiveSlideshow:View {
                     Button{dismiss()}label:{Image(systemName:"xmark.circle.fill").font(.title2).padding(8)}
                 }.padding(.horizontal,16)
                 Spacer(minLength:0)
-                TimelineSlideStage(shots:shots,vault:vault)
+                TimelineSlideStage(shots:shots,vault:vault,autoplay:true)
                 Spacer(minLength:0)
             }
         }

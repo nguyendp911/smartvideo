@@ -20,9 +20,10 @@ enum StoryEffect:String,CaseIterable {
         }
     }
 }
-private struct StoryCardFlip:ViewModifier{
-    let angle:Double
-    let opacity:Double
+private struct StoryCardFlip:AnimatableModifier{
+    var angle:Double
+    var opacity:Double
+    var animatableData:AnimatablePair<Double,Double>{get{AnimatablePair(angle,opacity)}set{angle=newValue.first;opacity=newValue.second}}
     func body(content:Content)->some View{content.rotation3DEffect(.degrees(angle),axis:(x:0,y:1,z:0),perspective:0.65).opacity(opacity)}
 }
 struct TimelineTreeYear:Identifiable{
@@ -220,7 +221,7 @@ private struct StoryStrip:View{
             }.scrollTargetBehavior(.viewAligned).scrollPosition(id:$current)
             if shots.count>1{
                 HStack(spacing:5){
-                    ForEach(Array(shots.prefix(12).enumerated()),id:\.element.id){i,s in
+                    ForEach(Array(shots.prefix(12))){s in
                         Capsule().fill((current ?? shots.first?.id)==s.id ? accent:Color.white.opacity(0.18)).frame(width:(current ?? shots.first?.id)==s.id ? 16:5,height:4)
                     }
                     Spacer()
@@ -234,6 +235,7 @@ struct TimelineSlideStage:View{
     let shots:[Shot]
     let vault:Vault
     var initial:UUID?=nil
+    var autoplay=false
     var open:((Shot)->Void)?=nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
@@ -278,8 +280,14 @@ struct TimelineSlideStage:View{
                 filmstrip
             }else{ContentUnavailableView("Chưa có ảnh",systemImage:"photo.stack")}
         }.padding(14)
-            .onAppear{if !initialized{index=shots.firstIndex{$0.id==initial} ?? 0;initialized=true;animateMotion()}}
-            .onChange(of:shots.map(\.id)){_,_ in index=0;progress=0;animateMotion()}
+            .onAppear{if !initialized{index=shots.firstIndex{$0.id==initial} ?? 0;initialized=true;playing=autoplay && shots.count>1}}
+            .onChange(of:shots.map(\.id)){_,_ in index=0;progress=0}
+            .task(id:shot?.id){
+                motion=false
+                guard !reduceMotion else{return}
+                do{try await Task.sleep(for:.milliseconds(80))}catch{return}
+                if !Task.isCancelled{animateMotion()}
+            }
             .onChange(of:scenePhase){_,p in if p != .active{playing=false}}
             .task(id:"\(playing)-\(interval)-\(index)"){
                 guard playing,shots.count>1 else{return}
@@ -348,14 +356,12 @@ struct TimelineSlideStage:View{
         forward=target>index;progress=0;motion=false
         UISelectionFeedbackGenerator().selectionChanged()
         withAnimation(reduceMotion ? .easeOut(duration:0.15):.easeInOut(duration:0.48)){index=target}
-        animateMotion()
     }
     private func move(_ delta:Int){
         guard shots.count>1 else{return}
         let target=(index+delta+shots.count)%shots.count
         forward=delta>0;progress=0;motion=false
         withAnimation(reduceMotion ? .easeOut(duration:0.15):.easeInOut(duration:0.48)){index=target}
-        animateMotion()
     }
     private func animateMotion(){
         guard !reduceMotion else{return}

@@ -241,7 +241,7 @@ enum MemoryMovie {
                     let fadeFrames=min(12,max(1,frames/3))
                     let pixel:CVPixelBuffer=try autoreleasepool{
                         var buffer:CVPixelBuffer?
-                        var status:kern_return_t = kCVReturnError
+                        var status:CVReturn = kCVReturnError
                         if let pool=adaptor.pixelBufferPool{status=CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)}
                         if status != kCVReturnSuccess || buffer == nil{
                             let attrs=[kCVPixelBufferCGImageCompatibilityKey:true,kCVPixelBufferCGBitmapContextCompatibilityKey:true] as CFDictionary

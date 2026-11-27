@@ -88,7 +88,7 @@ struct Timeline: View {
                 else if presentation == .tree{
                     TimelineStoryTree(shots:filtered,vault:model.vault,newest:newest,accent:layout.accent,open:{selection=$0},play:{slideShots=$0;slideshow=true})
                 }else{
-                    TimelineSlideStage(shots:filtered,vault:model.vault,open:{selection=$0})
+                    ScrollView {TimelineSlideStage(shots:filtered,vault:model.vault,open:{selection=$0})}.scrollIndicators(.hidden)
                 }
             }
             .background(layout.background)
