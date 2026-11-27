@@ -13,3 +13,6 @@ Dòng thời gian dạng nhật ký có ảnh lớn và lưới ảnh, thẻ th�
 
 ## Camera Pro / Timeline Studio 9
 Zoom pinch và slider, EV, AE/AF lock, ISO/shutter nếu thiết bị hỗ trợ, histogram luma, flash, hẹn giờ, chuỗi chụp tuần tự và 9 chất màu hậu kỳ. Timeline có lịch ảnh, kỷ niệm cùng ngày, trình chiếu, nhật ký và bộ sưu tập đa thành viên lưu trong metadata từng ảnh, tương thích bản sao lưu cũ. Không phải RAW, HDR bracket hay burst tốc độ cao.
+
+## Signature 10
+Timeline Designer (7 layout gồm grid, tùy chỉnh), pinch số cột, nhảy tháng; Signature Studio có hồ sơ câu chuyện, cột mốc, capsule theo ngày, nhóm người/cảm xúc thủ công, ảnh bìa, GPS MapKit, sự kiện theo thời gian, Vision tìm nhãn và số khuôn mặt, điểm kỹ thuật, hash gần giống, so sánh trượt, chỉnh màu/crop và xuất JPEG/PNG theo lô, collage, MP4 ảnh tĩnh 1080p/4K. Kho riêng tạo bản sao AES-GCM, Keychain userPresence trên thiết bị; không ẩn/xóa ảnh gốc. Câu chuyện/preset lưu cục bộ ngoài backup Vault; video chưa nhạc/chuyển cảnh; chưa nhóm danh tính mặt, RAW capture, lịch sử chỉnh sửa bền vững hay Spatial Gallery.

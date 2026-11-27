@@ -1,0 +1,251 @@
+import SwiftUI
+import AVFoundation
+import CoreImage
+import ImageIO
+import UniformTypeIdentifiers
+
+struct CreativeRecipe:Codable,Equatable {
+    var exposure=0.0
+    var contrast=1.0
+    var saturation=1.0
+    var warmth=0.0
+    var crop="Gốc"
+}
+enum CreativeEngine {
+    static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool)->Data?{
+        guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
+              let image=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]) else{return nil}
+        var result=image.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
+            .applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:recipe.contrast,kCIInputSaturationKey:recipe.saturation])
+        if recipe.warmth != 0 {result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+recipe.warmth*2000,y:0)])}
+        let rect=result.extent
+        if recipe.crop != "Gốc" {
+            let ratio:CGFloat=recipe.crop=="1:1" ? 1 : (recipe.crop=="4:5" ? 0.8:16/9)
+            let width=min(rect.width,rect.height*ratio),height=width/ratio
+            result=result.cropped(to:CGRect(x:rect.midX-width/2,y:rect.midY-height/2,width:width,height:height))
+        }
+        let scale=min(1,CGFloat(maxSize)/max(result.extent.width,result.extent.height))
+        result=result.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
+        guard let cg=CIContext(options:[.cacheIntermediates:false]).createCGImage(result,from:result.extent) else{return nil}
+        let data=NSMutableData(),type=format=="PNG" ? UTType.png:UTType.jpeg
+        guard let dest=CGImageDestinationCreateWithData(data,type.identifier as CFString,1,nil) else{return nil}
+        var tags:[String:Any]=[kCGImagePropertyOrientation as String:1,kCGImageDestinationLossyCompressionQuality as String:quality]
+        if metadata,format != "PNG",let props=CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [String:Any]{
+            if var exif=props[kCGImagePropertyExifDictionary as String] as? [String:Any]{
+                exif.removeValue(forKey:kCGImagePropertyExifMakerNote as String)
+                exif[kCGImagePropertyExifPixelXDimension as String]=cg.width
+                exif[kCGImagePropertyExifPixelYDimension as String]=cg.height
+                tags[kCGImagePropertyExifDictionary as String]=exif
+            }
+        }
+        CGImageDestinationAddImage(dest,cg,tags as CFDictionary)
+        return CGImageDestinationFinalize(dest) ? data as Data:nil
+    }
+    static func exportURL(_ data:Data,extension ext:String)throws->URL{
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString).appendingPathExtension(ext)
+        try data.write(to:url,options:[.atomic,.completeFileProtection])
+        return url
+    }
+}
+struct CreativeStudio:View {
+    let shots:[Shot]
+    let vault:Vault
+    @State private var recipe=CreativeRecipe()
+    @State private var preview:UIImage?
+    @State private var selected=0
+    @State private var format="JPEG"
+    @State private var maxSize=2048
+    @State private var quality=0.94
+    @State private var metadata=false
+    @State private var outputs=[URL]()
+    @State private var working=false
+    @State private var notice=""
+    @State private var history=[CreativeRecipe]()
+    @AppStorage("signature.colorPreset") private var savedPreset=Data()
+    private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
+    var body:some View{
+        ScrollView{
+            VStack(spacing:14){
+                if let preview{Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
+                else if let current{DiskImage(url:vault.picture(current),limit:1000).scaledToFit().frame(height:250)}
+                if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
+                GroupBox("Color Studio"){
+                    VStack(alignment:.leading){
+                        control("Phơi sáng",value:$recipe.exposure,range:-2...2)
+                        control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
+                        control("Bão hòa",value:$recipe.saturation,range:0...2)
+                        control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
+                        Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","16:9"],id:\.self){Text($0).tag($0)}}
+                        HStack{
+                            Button("Lưu preset"){if let data=try? JSONEncoder().encode(recipe){savedPreset=data};history.append(recipe)}
+                            Spacer()
+                            Button("Dùng preset"){if let r=try? JSONDecoder().decode(CreativeRecipe.self,from:savedPreset){recipe=r}}
+                            Button("Đặt lại"){recipe=CreativeRecipe()}
+                        }.font(.caption)
+                        if !history.isEmpty{Menu("Lịch sử preset phiên này"){ForEach(history.indices,id:\.self){i in Button("Phiên bản \(i+1)"){recipe=history[i]}}}}
+                    }
+                }
+                GroupBox("Export Studio"){
+                    VStack{
+                        Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
+                        Picker("Cạnh dài tối đa",selection:$maxSize){Text("1080 px").tag(1080);Text("2048 px").tag(2048);Text("4096 px").tag(4096);Text("Gốc").tag(100000)}
+                        if format=="JPEG"{control("Chất lượng JPEG",value:$quality,range:0.5...1);Toggle("Giữ thông số EXIF (không GPS)",isOn:$metadata)}
+                        Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty)
+                        if working{ProgressView()}
+                        if !outputs.isEmpty{ShareLink(items:outputs){Label("Chia sẻ / Lưu tệp",systemImage:"square.and.arrow.up")}}
+                        Text(notice).font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Lịch sử preset trong phiên không phải lịch sử phiên bản lưu vĩnh viễn.").font(.caption).foregroundStyle(.secondary)
+            }.padding()
+        }.navigationTitle("Creative Studio").task(id:PreviewKey(recipe:recipe,index:selected)){
+            guard let current else{return}
+            let r=recipe,url=vault.picture(current)
+            do{try await Task.sleep(for:.milliseconds(180))}catch{return}
+            let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:900,format:"JPEG",quality:0.8,metadata:false)}.value
+            if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)}}
+        }
+    }
+    private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int}
+    private func control(_ title:String,value:Binding<Double>,range:ClosedRange<Double>)->some View{
+        VStack(alignment:.leading){Text("\(title) · \(String(format:"%.2f",value.wrappedValue))").font(.caption);Slider(value:value,in:range)}
+    }
+    @MainActor private func export()async{
+        working=true;outputs=[];notice=""
+        defer{working=false}
+        let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault
+        for shot in shots{
+            if let url=await Task.detached(priority:.utility,operation:{()->URL? in
+                guard let d=CreativeEngine.render(v.picture(shot),recipe:r,maxSize:size,format:f,quality:q,metadata:m) else{return nil}
+                return try? CreativeEngine.exportURL(d,extension:f=="PNG" ? "png":"jpg")
+            }).value{outputs.append(url)}
+        }
+        notice="Đã xuất \(outputs.count)/\(shots.count) ảnh."
+    }
+}
+struct CollageStudio:View {
+    let shots:[Shot]
+    let vault:Vault
+    @State private var columns=2
+    @State private var gap=12.0
+    @State private var output:URL?
+    @State private var working=false
+    var body:some View{
+        VStack{
+            LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:gap/3),count:columns),spacing:gap/3){
+                ForEach(Array(shots.prefix(12))){s in DiskImage(url:vault.thumbnail(s.id),limit:400).scaledToFill().frame(height:100).clipped()}
+            }.padding()
+            Stepper("Số cột: \(columns)",value:$columns,in:1...4).padding(.horizontal)
+            Slider(value:$gap,in:0...40).padding(.horizontal)
+            Button("Xuất collage JPEG"){working=true;Task{
+                let items=Array(shots.prefix(12)),v=vault,c=columns,g=gap
+                output=await Task.detached(priority:.utility){()->URL? in
+                    let tile=600.0,rows=Int(ceil(Double(items.count)/Double(c)))
+                    guard rows>0 else{return nil}
+                    let size=CGSize(width:Double(c)*tile+Double(c+1)*g,height:Double(rows)*tile+Double(rows+1)*g)
+                    let fmt=UIGraphicsImageRendererFormat();fmt.scale=1
+                    let image=UIGraphicsImageRenderer(size:size,format:fmt).image{ctx in
+                        UIColor.black.setFill();ctx.fill(CGRect(origin:.zero,size:size))
+                        for (i,s) in items.enumerated(){
+                            guard let data=try? Data(contentsOf:v.picture(s)),let cg=PhotoEngine.thumb(data,limit:1200) else{continue}
+                            let box=CGRect(x:g+Double(i%c)*(tile+g),y:g+Double(i/c)*(tile+g),width:tile,height:tile)
+                            let im=UIImage(cgImage:cg),scale=max(tile/im.size.width,tile/im.size.height)
+                            let w=im.size.width*scale,h=im.size.height*scale
+                            ctx.cgContext.saveGState();ctx.cgContext.clip(to:box)
+                            im.draw(in:CGRect(x:box.midX-w/2,y:box.midY-h/2,width:w,height:h));ctx.cgContext.restoreGState()
+                        }
+                    }
+                    guard let d=image.jpegData(compressionQuality:0.94) else{return nil}
+                    return try? CreativeEngine.exportURL(d,extension:"jpg")
+                }.value
+                working=false
+            }}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty)
+            if working{ProgressView()}
+            if let output{ShareLink(item:output){Label("Chia sẻ collage",systemImage:"square.and.arrow.up")}}
+            Text("Tối đa 12 ảnh, xuất bản sao JPEG.").font(.caption).foregroundStyle(.secondary)
+            Spacer()
+        }.navigationTitle("Photo Collage")
+    }
+}
+enum MemoryMovie {
+    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String) async throws->URL{
+        guard !shots.isEmpty else{throw CameraError.unreadable}
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString+".mp4")
+        let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
+        let input=AVAssetWriterInput(mediaType:.video,outputSettings:[AVVideoCodecKey:AVVideoCodecType.h264,AVVideoWidthKey:width,AVVideoHeightKey:height])
+        let adaptor=AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:input,sourcePixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32ARGB,kCVPixelBufferWidthKey as String:width,kCVPixelBufferHeightKey as String:height,kCVPixelBufferCGImageCompatibilityKey as String:true,kCVPixelBufferCGBitmapContextCompatibilityKey as String:true])
+        guard writer.canAdd(input) else{throw CameraError.writeFailed};writer.add(input)
+        guard writer.startWriting() else{throw writer.error ?? CameraError.writeFailed}
+        writer.startSession(atSourceTime:.zero)
+        do{
+            var frame:Int64=0
+            for (i,shot) in shots.enumerated(){
+                try Task.checkCancellation()
+                guard let data=try? Data(contentsOf:vault.picture(shot)),let image=PhotoEngine.thumb(data,limit:max(width,height)) else{throw CameraError.unreadable}
+                let fmt=UIGraphicsImageRendererFormat();fmt.scale=1
+                let size=CGSize(width:width,height:height)
+                let still=UIGraphicsImageRenderer(size:size,format:fmt).image{c in
+                    UIColor.black.setFill();c.fill(CGRect(origin:.zero,size:size))
+                    let im=UIImage(cgImage:image),factor=min(size.width/im.size.width,size.height/im.size.height)
+                    let w=im.size.width*factor,h=im.size.height*factor
+                    im.draw(in:CGRect(x:(size.width-w)/2,y:(size.height-h)/2,width:w,height:h))
+                    let line=i==0 && !title.isEmpty ? title:TimelineIndex.label(shot.day)
+                    let font=UIFont.systemFont(ofSize:CGFloat(width)*0.033,weight:.semibold)
+                    let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.white,.backgroundColor:UIColor.black.withAlphaComponent(0.6)]
+                    (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.1),withAttributes:attrs)
+                }
+                guard let cg=still.cgImage,let pool=adaptor.pixelBufferPool else{throw CameraError.writeFailed}
+                var buffer:CVPixelBuffer?
+                guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess,let pixel=buffer else{throw CameraError.writeFailed}
+                CVPixelBufferLockBaseAddress(pixel,[])
+                let context=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipFirst.rawValue)
+                context?.draw(cg,in:CGRect(x:0,y:0,width:width,height:height))
+                CVPixelBufferUnlockBaseAddress(pixel,[])
+                guard context != nil else{throw CameraError.writeFailed}
+                for _ in 0..<(seconds*24){
+                    var wait=0
+                    while !input.isReadyForMoreMediaData {
+                        guard writer.status == .writing,wait<1000 else{throw writer.error ?? CameraError.writeFailed}
+                        try await Task.sleep(for:.milliseconds(10));wait+=1
+                    }
+                    guard adaptor.append(pixel,withPresentationTime:CMTime(value:frame,timescale:24)) else{throw writer.error ?? CameraError.writeFailed}
+                    frame+=1
+                }
+            }
+            input.markAsFinished()
+            await writer.finishWriting()
+            guard writer.status == .completed else{throw writer.error ?? CameraError.writeFailed}
+            return url
+        }catch{writer.cancelWriting();try? FileManager.default.removeItem(at:url);throw error}
+    }
+}
+struct MemoryCinema:View {
+    let shots:[Shot]
+    let vault:Vault
+    @State private var title=""
+    @State private var resolution=1080
+    @State private var seconds=3
+    @State private var working=false
+    @State private var output:URL?
+    @State private var notice=""
+    var body:some View{
+        Form{
+            Section("Video ký ức"){
+                TextField("Tiêu đề",text:$title)
+                Picker("Độ phân giải",selection:$resolution){Text("1080p").tag(1080);Text("4K").tag(2160)}
+                Picker("Thời gian mỗi ảnh",selection:$seconds){ForEach([2,3,5],id:\.self){Text("\($0) giây").tag($0)}}
+                Text("\(min(60,shots.count)) ảnh · MP4 H.264 · 24 fps").font(.caption)
+                Text("Video ảnh tĩnh có tiêu đề và ngày chụp, chưa có nhạc hoặc hiệu ứng chuyển cảnh.").font(.caption).foregroundStyle(.secondary)
+            }
+            Button("Tạo video"){working=true;notice="";output=nil;Task{
+                let items=Array(shots.prefix(60)),v=vault,r=resolution,s=seconds,t=title
+                do{output=try await Task.detached(priority:.userInitiated){try await MemoryMovie.make(items,vault:v,width:r==2160 ? 3840:1920,height:r,seconds:s,title:t)}.value;notice="Đã xuất video."}
+                catch{notice=error.localizedDescription}
+                working=false
+            }}.disabled(working || shots.isEmpty)
+            if working{ProgressView("Đang mã hóa video…")}
+            if let output{ShareLink(item:output){Label("Lưu / Chia sẻ MP4",systemImage:"square.and.arrow.up")}}
+            Text(notice).font(.caption)
+        }.navigationTitle("Memory Cinema")
+    }
+}

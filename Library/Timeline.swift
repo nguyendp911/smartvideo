@@ -5,11 +5,34 @@ import UniformTypeIdentifiers
 import ImageIO
 
 private enum Transfer { case backup,restore }
-private enum GalleryLayout: String, CaseIterable { case editorial = "Nhật ký", grid = "Lưới ảnh" }
+enum GalleryLayout: String, CaseIterable {
+    case editorial = "Nhật ký", grid = "Lưới ảnh", cinema = "Cinema Gallery", vintage = "Vintage Diary", minimal = "Minimal Gallery", midnight = "Midnight Gold", zen = "Zen Collection"
+    var hero:Bool {self == .editorial || self == .cinema || self == .vintage || self == .midnight || self == .zen}
+    var background:Color {
+        switch self {
+        case .vintage:return Color(red:0.20,green:0.15,blue:0.12)
+        case .zen:return Color(red:0.17,green:0.20,blue:0.18)
+        case .midnight:return .black
+        case .minimal:return Color(red:0.18,green:0.18,blue:0.18)
+        default:return night
+        }
+    }
+    var accent:Color {self == .zen ? Color(red:0.69,green:0.82,blue:0.69) : self == .minimal ? .white : gold}
+    var ratio:CGFloat {self == .cinema ? 1.78 : (self == .vintage ? 0.88 : 1.46)}
+    var font:Font.Design {self == .minimal || self == .grid ? .default : (self == .cinema ? .monospaced : .serif)}
+}
 struct Timeline: View {
     @ObservedObject var model: LibraryModel
     @Environment(\.dismiss) private var dismiss
     @AppStorage("timeline.layout") private var layoutValue = GalleryLayout.editorial.rawValue
+    @AppStorage("timeline.spacing") private var photoSpacing=5.0
+    @AppStorage("timeline.radius") private var photoRadius=8.0
+    @AppStorage("timeline.columns") private var columnCount=3
+    @AppStorage("timeline.heroTitle") private var heroTitle=true
+    @AppStorage("timeline.dateSize") private var dateSize=21.0
+    @State private var showDesigner=false
+    @State private var showSignature=false
+    @State private var showJump=false
     @State private var collection=""
     @State private var look:Look?
     @State private var anniversary=""
@@ -47,7 +70,7 @@ struct Timeline: View {
     private var selectedShots: [Shot] { model.shots.filter { chosen.contains($0.id) } }
     private var layout: GalleryLayout { GalleryLayout(rawValue:layoutValue) ?? .editorial }
     private var hasFilters: Bool { scope != .all || !session.isEmpty || !period.isEmpty || light != nil || minimumRating > 0 || !search.isEmpty || !collection.isEmpty || look != nil || !anniversary.isEmpty }
-    private var columns: [GridItem] { Array(repeating:GridItem(.flexible(),spacing:5),count:3) }
+    private var columns: [GridItem] { Array(repeating:GridItem(.flexible(),spacing:CGFloat(photoSpacing)),count:max(2,min(5,columnCount))) }
     private var coverColumns: [GridItem] { Array(repeating:GridItem(.flexible(),spacing:10),count:2) }
 
     var body: some View {
@@ -61,7 +84,8 @@ struct Timeline: View {
                 else if filtered.isEmpty { emptyPage }
                 else { gallery }
             }
-            .background(night)
+            .background(layout.background)
+            .tint(layout.accent)
             .disabled(working)
             .toolbar(.hidden,for:.navigationBar)
         }
@@ -74,6 +98,17 @@ struct Timeline: View {
             CompareView(shots:selectedShots,vault:model.vault)
         }
         .sheet(isPresented:$showFilters) { filterSheet }
+        .sheet(isPresented:$showDesigner){TimelineDesigner(layout:$layoutValue,spacing:$photoSpacing,radius:$photoRadius,columns:$columnCount,caption:$heroTitle,dateSize:$dateSize)}
+        .fullScreenCover(isPresented:$showSignature){SignatureHub(model:model)}
+        .sheet(isPresented:$showJump){
+            NavigationStack {
+                List(TimelineIndex.group(active,period:.month,newest:true)){group in
+                    Button {resetFilters();period=group.key;scale = .day;showAlbums=false;showJump=false} label:{
+                        HStack{Text(TimelineIndex.label(group.key));Spacer();Text("\(group.items.count) ảnh").foregroundStyle(.secondary)}
+                    }
+                }.navigationTitle("Đi đến thời gian").toolbar{Button("Đóng"){showJump=false}}
+            }
+        }
         .sheet(isPresented:$showCalendar){
             ArchiveCalendar(shots:active,vault:model.vault){key in
                 resetFilters();period=key;scale = .day;showAlbums=false;showCalendar=false
@@ -125,12 +160,15 @@ struct Timeline: View {
     private var top: some View {
         HStack(alignment:.center,spacing:12) {
             VStack(alignment:.leading,spacing:3) {
-                Text("V I E L E N S   /   A R C H I V E").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
-                Text(showAlbums ? "Bộ sưu tập" : "Khoảnh khắc").font(.system(size:34,weight:.regular,design:.serif)).lineLimit(1).minimumScaleFactor(0.7)
+                Text("V I E L E N S   /   S I G N A T U R E").font(.system(size:9,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
+                Text(showAlbums ? "Bộ sưu tập" : "Miền ký ức").font(.system(size:34,weight:.regular,design:.serif)).lineLimit(1).minimumScaleFactor(0.7)
                 Text("\(active.count) ảnh  ·  \(Set(active.map(\.day)).count) ngày lưu giữ").font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength:4)
             Menu {
+                Button("Signature Studio",systemImage:"sparkles"){showSignature=true}
+                Button("Thiết kế Timeline",systemImage:"paintbrush.pointed"){showDesigner=true}
+                Button("Đi đến tháng/năm",systemImage:"calendar.badge.clock"){showJump=true}
                 Button("Nhập ảnh",systemImage:"photo.badge.plus") { importing=true }
                 Button("Lịch ảnh",systemImage:"calendar") {showCalendar=true}
                 Button("Ngày này qua các năm",systemImage:"clock.arrow.circlepath"){resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false}
@@ -155,14 +193,21 @@ struct Timeline: View {
                 Button { showFilters=true } label: { circleIcon(hasFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease") }.accessibilityLabel("Bộ lọc")
                 Button { if selecting || compare {clearSelection()} else {showAlbums=false;selecting=true} } label: { circleIcon(selecting || compare ? "xmark" : "checkmark.circle") }.accessibilityLabel("Chọn ảnh")
             }
+            Button {showSignature=true} label:{
+                HStack{
+                    Image(systemName:"sparkles").foregroundStyle(layout.accent)
+                    Text("Signature Studio").font(.subheadline.weight(.semibold))
+                    Spacer()
+                    Text("Ký ức · Sáng tạo").font(.caption).foregroundStyle(.secondary)
+                    Image(systemName:"chevron.right").font(.caption)
+                }.padding(10).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:11))
+            }.buttonStyle(.plain)
             if !showAlbums {
                 HStack(spacing:8) {
                     Picker("Khoảng thời gian",selection:Binding(get:{scale},set:{scale=$0;period="";clearSelection()})) {
                         ForEach(TimelinePeriod.allCases,id:\.self) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented)
-                    Button { layoutValue = layout == .editorial ? GalleryLayout.grid.rawValue : GalleryLayout.editorial.rawValue } label: {
-                        Image(systemName:layout == .editorial ? "square.grid.3x3" : "rectangle.grid.1x2").frame(width:40,height:36)
-                    }.accessibilityLabel("Đổi bố cục ảnh")
+                    Button {showDesigner=true} label:{Image(systemName:"paintbrush.pointed").frame(width:40,height:36)}.accessibilityLabel("Thiết kế Timeline")
                 }
                 HStack {
                     Image(systemName:"magnifyingglass")
@@ -206,10 +251,10 @@ struct Timeline: View {
                 LazyVStack(alignment:.leading,spacing:14,pinnedViews:[.sectionHeaders]) {
                     ForEach(groups) { group in
                         Section {
-                            if scale == .day && layout == .editorial && !selecting && !compare, let cover=group.items.first {
+                            if scale == .day && layout.hero && !selecting && !compare, let cover=group.items.first {
                                 tile(cover,hero:true)
                                 let rest=group.items.filter { $0.id != cover.id }
-                                LazyVGrid(columns:columns,spacing:5) { ForEach(rest) { tile($0) } }
+                                LazyVGrid(columns:columns,spacing:CGFloat(photoSpacing)) { ForEach(rest) { tile($0) } }
                             } else {
                                 LazyVGrid(columns:columns,spacing:5) { ForEach(group.items) { tile($0) } }
                             }
@@ -227,12 +272,13 @@ struct Timeline: View {
                 }.padding(.horizontal,14)
             }
         }.safeAreaPadding(.bottom,24)
+        .simultaneousGesture(MagnifyGesture().onEnded{v in if !selecting && !compare {if v.magnification>1.22{columnCount=max(2,columnCount-1)}else if v.magnification<0.8{columnCount=min(5,columnCount+1)}}})
     }
     private func dayHeader(_ group: TimelineGroup) -> some View {
         HStack(alignment:.center) {
             Circle().fill(gold).frame(width:7,height:7)
             VStack(alignment:.leading,spacing:2) {
-                Text(TimelineIndex.label(group.key)).font(.system(size:21,weight:.medium,design:.serif))
+                Text(TimelineIndex.label(group.key)).font(.system(size:dateSize,weight:.medium,design:layout.font))
                 let names=Set(group.items.map(\.session).filter{ !$0.isEmpty })
                 if names.count == 1, let name=names.first { Text(name).font(.caption).foregroundStyle(.secondary) }
             }
@@ -241,7 +287,7 @@ struct Timeline: View {
             if selecting {
                 Button("Chọn nhóm") { chosen.formUnion(group.items.map(\.id)) }.font(.caption)
             }
-        }.padding(.vertical,10).padding(.horizontal,6).background(night)
+        }.padding(.vertical,10).padding(.horizontal,6).background(layout.background)
     }
     private func tile(_ shot: Shot,hero: Bool = false) -> some View {
         Button {
@@ -249,13 +295,13 @@ struct Timeline: View {
                 if chosen.contains(shot.id) { chosen.remove(shot.id) }
                 else if !compare || chosen.count < 2 { chosen.insert(shot.id) }
                 if compare && chosen.count == 2 { pair=true }
-            } else { selection=shot }
+            } else { UISelectionFeedbackGenerator().selectionChanged();selection=shot }
         } label: {
-            Color.white.opacity(0.045).aspectRatio(hero ? 1.46 : 1,contentMode:.fit)
+            Color.white.opacity(0.045).aspectRatio(hero ? layout.ratio : 1,contentMode:.fit)
                 .overlay { DiskImage(url:hero ? model.vault.picture(shot) : model.vault.thumbnail(shot.id),limit:hero ? 1000 : 400).scaledToFill() }
                 .clipped()
                 .overlay(alignment:.bottomLeading) {
-                    if hero {
+                    if hero && heroTitle {
                         VStack(alignment:.leading,spacing:4) {
                             Text(shot.session.isEmpty ? "Khoảnh khắc" : shot.session).font(.system(.headline,design:.serif))
                             Text(shot.tags.isEmpty ? shot.light.rawValue : shot.tags).font(.caption).lineLimit(1)
@@ -269,7 +315,7 @@ struct Timeline: View {
                             .font(.title2).foregroundStyle(chosen.contains(shot.id) ? gold : .white).shadow(radius:3).padding(7)
                     } else if shot.rating >= 4 { Image(systemName:"star.fill").font(.caption).foregroundStyle(gold).padding(8).shadow(radius:3) }
                 }
-                .clipShape(RoundedRectangle(cornerRadius:hero ? 16 : 5))
+                .clipShape(RoundedRectangle(cornerRadius:CGFloat(photoRadius)+(hero ? 6 : 0)))
                 .overlay { if chosen.contains(shot.id) { RoundedRectangle(cornerRadius:5).strokeBorder(gold,lineWidth:2) } }
         }.buttonStyle(.plain).accessibilityLabel("Ảnh \(shot.day), \(shot.session), \(shot.rating) sao").accessibilityAddTraits(chosen.contains(shot.id) ? .isSelected : [])
     }
