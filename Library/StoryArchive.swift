@@ -171,12 +171,14 @@ struct StoryComposer:View{
     @Environment(\.scenePhase) private var phase
     @StateObject private var voice=StoryVoice()
     @State private var value:StoryEntry
+    @State private var baseline:StoryEntry
     @State private var notice=""
     @State private var deleting=false
     @State private var confirmClose=false
     init(target:StoryTarget,vault:Vault,archive:StoryArchive){
         self.target=target;self.vault=vault;self.archive=archive
-        _value=State(initialValue:archive.draft(target))
+        let initial=archive.draft(target)
+        _value=State(initialValue:initial);_baseline=State(initialValue:initial)
     }
     var body:some View{
         NavigationStack{
@@ -229,19 +231,21 @@ struct StoryComposer:View{
                 }
             }.navigationTitle(target.label).navigationBarTitleDisplayMode(.inline)
                 .toolbar{
-                    ToolbarItem(placement:.cancellationAction){Button("Đóng"){if value != archive.draft(target){confirmClose=true}else{dismiss()}}.disabled(voice.recording)}
+                    ToolbarItem(placement:.cancellationAction){Button("Đóng"){if value != baseline{confirmClose=true}else{dismiss()}}.disabled(voice.recording)}
                     ToolbarItem(placement:.confirmationAction){Button("Lưu"){save(draft:false)}.disabled(!value.hasContent || voice.recording)}
                 }
                 .confirmationDialog("Đóng story chưa lưu?",isPresented:$confirmClose){Button("Lưu bản nháp"){save(draft:true)};Button("Bỏ thay đổi",role:.destructive){dismiss()}}
                 .confirmationDialog("Xóa story?",isPresented:$deleting){Button("Xóa",role:.destructive){do{try archive.remove(target.id);dismiss()}catch{notice=error.localizedDescription}}}
         }.interactiveDismissDisabled()
-        .onChange(of:phase){_,p in if p == .background{if voice.recording,let data=voice.finish(){value.audio=data};voice.stopPlayback();if value.hasContent{try? archive.save(value,draft:true)}}}
+        .onChange(of:phase){_,p in if p == .background{if voice.recording,let data=voice.finish(){value.audio=data};voice.stopPlayback();if value.hasContent && value != baseline{try? archive.save(value,draft:true)}}}
         .onDisappear{voice.cancel()}
     }
     private func insert(_ title:String,_ body:String,_ mood:StoryMood){value.title=title;value.body=body;value.mood=mood}
     private func save(draft:Bool){
-        value.photoIDs=target.shots.map(\.id)
+        // Preserve references outside the current filtered view.
+        var seen=Set(value.photoIDs);value.photoIDs += target.shots.map(\.id).filter{seen.insert($0).inserted}
         if let cover=value.cover,!value.photoIDs.contains(cover){value.cover=value.photoIDs.first}
+        if value.cover==nil{value.cover=value.photoIDs.first}
         do{try archive.save(value,draft:draft);dismiss()}catch{notice=error.localizedDescription}
     }
 }
@@ -251,6 +255,7 @@ struct StoryReader:View{
     @ObservedObject var archive:StoryArchive
     @Environment(\.dismiss) private var dismiss
     @State private var editing=false
+    @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
     @StateObject private var voice=StoryVoice()
     @Environment(\.scenePhase) private var phase
     var body:some View{
@@ -270,11 +275,17 @@ struct StoryReader:View{
                         Text(story.body).font(.body).lineSpacing(6).textSelection(.enabled)
                         if !story.tags.isEmpty{Text(story.tags).font(.caption).foregroundStyle(.secondary)}
                         if let data=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể",systemImage:voice.playing ? "stop.fill":"waveform"){if voice.playing{voice.stopPlayback()}else{voice.play(data)}}.buttonStyle(.borderedProminent)}
-                        ForEach(target.shots.filter{story.captions[$0.id.uuidString] != nil}){shot in
-                            DiskImage(url:vault.picture(shot),limit:900).scaledToFit().clipShape(RoundedRectangle(cornerRadius:10))
-                            Text(story.captions[shot.id.uuidString] ?? "").font(.caption)
+                        if target.shots.count>1{
+                            HStack{Image(systemName:"leaf.fill");Text("NHỮNG KHOẢNH KHẮC").tracking(2);Spacer()}.font(.caption2).foregroundStyle(gold)
+                            ForEach(target.shots.filter{$0.id != story.cover || story.captions[$0.id.uuidString] != nil}){shot in
+                                VStack(alignment:.leading,spacing:7){
+                                    DiskImage(url:vault.picture(shot),limit:1200).scaledToFit().clipShape(RoundedRectangle(cornerRadius:11))
+                                    Text(story.captions[shot.id.uuidString] ?? TimelineIndex.label(shot.day)).font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
                         }
                     }.padding(18)
+                    .overlay(alignment:.topLeading){VineRail(level:0,theme:VineTheme(rawValue:vineValue) ?? .emerald,density:0.65,curvature:0.8).frame(width:22,height:120).opacity(0.8).allowsHitTesting(false)}
                 }else{ContentUnavailableView("Chưa có story",systemImage:"book.closed",description:Text("Viết câu chuyện cho khoảnh khắc này."))}
             }.navigationTitle("Story").navigationBarTitleDisplayMode(.inline).toolbar{
                 ToolbarItem(placement:.cancellationAction){Button("Đóng"){dismiss()}}
@@ -294,7 +305,7 @@ struct StoryLibrary:View{
     @State private var backup:URL?
     @State private var notice=""
     @State private var query=""
-    private var rows:[StoryEntry]{archive.entries.values.filter{query.isEmpty || [$0.title,$0.body,$0.tags].joined(separator:" ").localizedCaseInsensitiveContains(query)}.sorted{$0.updatedAt>$1.updatedAt}}
+    private var rows:[StoryEntry]{archive.entries.values.filter{query.isEmpty || [$0.title,$0.body,$0.tags,$0.people,$0.location,$0.quote,$0.mood?.rawValue ?? ""].joined(separator:" ").localizedStandardContains(query)}.sorted{$0.updatedAt>$1.updatedAt}}
     private func makeTarget(_ entry:StoryEntry)->StoryTarget{StoryTarget(id:entry.id,label:entry.title.isEmpty ? entry.id:entry.title,shots:shots.filter{entry.photoIDs.contains($0.id)})}
     var body:some View{
         NavigationStack{

@@ -142,6 +142,7 @@ struct TimelineStoryTree:View{
                     .background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:15))
             }.buttonStyle(.plain)
             storyButton(.group(year.group))
+            chapterPlay(year.group)
             }.padding(.vertical,5)
         }
     }
@@ -161,8 +162,13 @@ struct TimelineStoryTree:View{
                 }.padding(8).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
             }.buttonStyle(.plain)
             storyButton(.group(month.group))
+            chapterPlay(month.group)
             }.padding(.vertical,4)
         }
+    }
+    private func chapterPlay(_ group:TimelineGroup)->some View{
+        Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
+            .buttonStyle(.plain)
     }
     private func rail(_ level:Int)->some View{VineRail(level:level,theme:vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural)}
     private func storyButton(_ target:StoryTarget)->some View{
@@ -280,12 +286,24 @@ struct TimelineSlideStage:View{
     @State private var music:AVAudioPlayer?
     @State private var musicVolume=0.25
     @State private var soundIssue=""
-    private func entry(_ shot:Shot)->StoryEntry?{
-        archive.entry(StoryTarget.photo(shot).id) ?? archive.entry("period:"+shot.day)
+    private func storyKeys(_ shot:Shot)->[String]{
+        ["photo:"+shot.id.uuidString,"period:"+shot.day,"period:"+String(shot.day.prefix(7)),"period:"+String(shot.day.prefix(4))]
+    }
+    private func entry(_ shot:Shot)->StoryEntry?{storyKeys(shot).compactMap{archive.entry($0)}.first}
+    private func target(_ shot:Shot)->StoryTarget{
+        guard let e=entry(shot) else{return .photo(shot)}
+        if e.id.hasPrefix("photo:"){return .photo(shot)}
+        let key=String(e.id.dropFirst("period:".count))
+        return .group(TimelineGroup(key:key,items:shots.filter{$0.day.hasPrefix(key)}))
     }
     private func narrationData(_ shot:Shot)->Data?{
         if let own=archive.entry(StoryTarget.photo(shot).id)?.audio{return own}
-        if index==0 || shots[index-1].day != shot.day{return archive.entry("period:"+shot.day)?.audio}
+        for length in [10,7,4]{
+            let key=String(shot.day.prefix(length))
+            if index==0 || String(shots[index-1].day.prefix(length)) != key{
+                if let audio=archive.entry("period:"+key)?.audio{return audio}
+            }
+        }
         return nil
     }
     private var effect:StoryEffect{StoryEffect(rawValue:effectValue) ?? .zoom}
@@ -313,7 +331,7 @@ struct TimelineSlideStage:View{
                 }
                 stage(shot)
                 if let e=entry(shot),e.hasContent{
-                    Button{playing=false;storyTarget=archive.entry(StoryTarget.photo(shot).id) != nil ? .photo(shot):.group(TimelineGroup(key:shot.day,items:shots.filter{$0.day==shot.day}))}label:{
+                    Button{playing=false;storyTarget=target(shot)}label:{
                         HStack{Image(systemName:"book.closed.fill").foregroundStyle(gold);Text(e.title.isEmpty ? "Đọc story":e.title).lineLimit(1);Spacer();if e.audio != nil{Image(systemName:"waveform")};Image(systemName:"chevron.right").font(.caption)}
                     }.buttonStyle(.plain).font(.caption).padding(8)
                 }
@@ -332,7 +350,7 @@ struct TimelineSlideStage:View{
                 filmstrip
             }else{ContentUnavailableView("Chưa có ảnh",systemImage:"photo.stack")}
         }.padding(14)
-            .onAppear{if !initialized{index=shots.firstIndex{$0.id==initial} ?? 0;initialized=true;playing=autoplay && shots.count>1}}
+            .onAppear{if !initialized{index=shots.firstIndex{$0.id==initial} ?? 0;initialized=true;playing=autoplay && !shots.isEmpty}}
             .onChange(of:shots.map(\.id)){_,_ in index=0;progress=0}
             .task(id:shot?.id){
                 motion=false
