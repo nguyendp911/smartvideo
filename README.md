@@ -16,3 +16,6 @@ Zoom pinch và slider, EV, AE/AF lock, ISO/shutter nếu thiết bị hỗ trợ
 
 ## Signature 10
 Timeline Designer (7 layout gồm grid, tùy chỉnh), pinch số cột, nhảy tháng; Signature Studio có hồ sơ câu chuyện, cột mốc, capsule theo ngày, nhóm người/cảm xúc thủ công, ảnh bìa, GPS MapKit, sự kiện theo thời gian, Vision tìm nhãn và số khuôn mặt, điểm kỹ thuật, hash gần giống, so sánh trượt, chỉnh màu/crop và xuất JPEG/PNG theo lô, collage, MP4 ảnh tĩnh 1080p/4K. Kho riêng tạo bản sao AES-GCM, Keychain userPresence trên thiết bị; không ẩn/xóa ảnh gốc. Câu chuyện/preset lưu cục bộ ngoài backup Vault; video chưa nhạc/chuyển cảnh; chưa nhóm danh tính mặt, RAW capture, lịch sử chỉnh sửa bền vững hay Spatial Gallery.
+
+## Signature Evolution 11
+Memory Cinema thêm chuyển cảnh mờ/hòa ảnh, chuyển động zoom/lướt, ngang/dọc, nhạc từ Tệp với lặp và fade-out. Creative Studio lưu công thức chỉnh sửa đặt tên và ID ảnh qua các lần mở. Chỉnh sửa câu chuyện, ảnh bìa, thành viên. Sao lưu Signature JSON riêng, hợp nhất theo ID; phục hồi ảnh bằng backup Vault riêng. Duplicate Cleaner chỉ chọn bản trùng byte SHA-256, luôn giữ một ảnh mỗi nhóm và xóa mềm có xác nhận. Visual Collections nhóm chủ đề Vision và RAW gallery cho ảnh RAW đã nhập. Chưa tự động nhận diện danh tính người; không suy đoán cảm xúc thực tế; Private Vault vẫn là bản sao mã hóa.

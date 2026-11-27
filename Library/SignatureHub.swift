@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import LocalAuthentication
 import CryptoKit
 import Security
@@ -31,6 +32,13 @@ struct SignatureHub:View {
     @State private var selectedRecord:MemoryRecord?
     @State private var showDelete=false
     @State private var removeID:UUID?
+    @State private var editRecord:MemoryRecord?
+    @State private var showBackup=false
+    @State private var showRestore=false
+    @State private var backupURL:URL?
+    @State private var backupNotice=""
+    @AppStorage("signature.versions.v1") private var versionData=Data()
+    @AppStorage("signature.colorPreset") private var presetData=Data()
     private var active:[Shot]{model.shots.filter{$0.deleted==nil}}
     private var selected:[Shot]{active.filter{chosen.contains($0.id)}}
     private var input:[Shot]{chosen.isEmpty ? Array(active.prefix(60)):selected}
@@ -52,11 +60,16 @@ struct SignatureHub:View {
                     creative
                     section("Riêng tư")
                     NavigationLink{EncryptedMemoryVault(shots:input,vault:model.vault)}label:{module("Private Vault","Bản sao mã hóa, khóa xác thực thiết bị","lock.shield")}.buttonStyle(.plain)
+                    section("Dữ liệu cá nhân")
+                    Button{makeBackup()}label:{module("Sao lưu Signature","Câu chuyện, preset và lịch sử chỉnh sửa","square.and.arrow.up")}.buttonStyle(.plain)
+                    Button{showRestore=true}label:{module("Khôi phục Signature","Nhập JSON, hợp nhất không ghi đè câu chuyện cũ","arrow.clockwise")}.buttonStyle(.plain)
+                    if let backupURL{ShareLink(item:backupURL){Label("Lưu tệp sao lưu",systemImage:"square.and.arrow.up")}}
+                    if !backupNotice.isEmpty{Text(backupNotice).font(.caption).foregroundStyle(.secondary)}
                     section("Những câu chuyện đã lưu")
                     if records.isEmpty{Text("Tạo câu chuyện đầu tiên từ những ảnh đã chọn.").font(.caption).foregroundStyle(.secondary)}
                     ForEach(records.sorted{$0.date>$1.date}){record in
                         Button{selectedRecord=record}label:{recordRow(record)}.buttonStyle(.plain)
-                            .contextMenu{Button("Xóa câu chuyện",role:.destructive){removeID=record.id;showDelete=true}}
+                            .contextMenu{Button("Chỉnh sửa câu chuyện"){editRecord=record}.disabled(record.locked);Button("Xóa câu chuyện",role:.destructive){removeID=record.id;showDelete=true}}
                     }
                 }.padding(16)
             }.background(night).navigationTitle("Signature Studio").navigationBarTitleDisplayMode(.inline)
@@ -75,9 +88,37 @@ struct SignatureHub:View {
                     .toolbar{Button("Đóng"){selectedRecord=nil}}
             }
         }
+        .sheet(item:$editRecord){record in
+            MemoryEditView(record:record,shots:active,vault:model.vault){edited in
+                if let i=records.firstIndex(where:{$0.id==edited.id}){records[i]=edited;persist()}
+                editRecord=nil
+            }
+        }
+        .fileImporter(isPresented:$showRestore,allowedContentTypes:[.json]){result in
+            do{
+                let url=try result.get(),access=url.startAccessingSecurityScopedResource()
+                defer{if access{url.stopAccessingSecurityScopedResource()}}
+                let data=try Data(contentsOf:url)
+                guard data.count<=20_000_000 else{throw CameraError.unreadable}
+                let archive=try JSONDecoder().decode(SignatureBackup.self,from:data)
+                guard archive.version==1 else{throw CameraError.unreadable}
+                records=SignatureBackup.mergeRecords(records,archive.records);persist()
+                let existing=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []
+                versionData=try JSONEncoder().encode(SignatureBackup.mergeVersions(existing,archive.versions))
+                if presetData.isEmpty,let preset=archive.preset{presetData=try JSONEncoder().encode(preset)}
+                backupNotice="Đã hợp nhất dữ liệu. Ảnh cần được phục hồi riêng từ sao lưu Timeline."
+            }catch{backupNotice=error.localizedDescription}
+        }
         .confirmationDialog("Xóa câu chuyện? Ảnh gốc không bị xóa.",isPresented:$showDelete){
             Button("Xóa",role:.destructive){if let removeID{records.removeAll{$0.id==removeID};persist()}}
         }
+    }
+    private func makeBackup(){
+        do{
+            let archive=SignatureBackup(version:1,records:records,versions:(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? [],preset:try? JSONDecoder().decode(CreativeRecipe.self,from:presetData))
+            backupURL=try CreativeEngine.exportURL(JSONEncoder().encode(archive),extension:"json")
+            backupNotice="Tệp JSON chứa nội dung riêng tư và ID ảnh, không chứa ảnh hay khóa mã hóa. Lưu ở nơi an toàn."
+        }catch{backupNotice=error.localizedDescription}
     }
     private func persist(){if let data=try? JSONEncoder().encode(records){stored=data}}
     private var header:some View{
@@ -120,6 +161,8 @@ struct SignatureHub:View {
     private var discovery:some View{
         VStack(spacing:7){
             NavigationLink{SignatureIntelligence(shots:active,vault:model.vault)}label:{module("Photo Intelligence","Tìm nội dung, chất lượng, ảnh gần giống, dung lượng","viewfinder")}.buttonStyle(.plain)
+            NavigationLink{DuplicateReview(model:model)}label:{module("Duplicate Cleaner","Đối chiếu và đưa bản trùng đã chọn vào thùng rác","square.on.square")}.buttonStyle(.plain)
+            NavigationLink{VisualCollections(shots:active,vault:model.vault)}label:{module("Visual Collections","Nhóm chủ đề hình ảnh tự động, thư viện RAW","photo.stack")}.buttonStyle(.plain)
             NavigationLink{SignatureAtlas(shots:active,vault:model.vault)}label:{module("Memory Atlas","Bản đồ GPS từ ảnh gốc","map")}.buttonStyle(.plain)
             NavigationLink{SmartEventsView(shots:active,vault:model.vault)}label:{module("Smart Event","Nhóm ảnh theo thời điểm chụp","calendar.badge.clock")}.buttonStyle(.plain)
             NavigationLink{ThenNowView(shots:input,vault:model.vault)}label:{module("Then & Now","So sánh hai ảnh bằng thanh trượt","rectangle.split.2x1")}.buttonStyle(.plain).disabled(input.count<2)
@@ -269,5 +312,54 @@ private struct ThenNowView:View{
                 Slider(value:$fraction,in:0...1).padding()
             }
         }.navigationTitle("Then & Now")
+    }
+}
+
+struct SignatureBackup:Codable {
+    let version:Int
+    let records:[MemoryRecord]
+    let versions:[CreativeVersion]
+    let preset:CreativeRecipe?
+    static func mergeRecords(_ local:[MemoryRecord],_ imported:[MemoryRecord])->[MemoryRecord]{
+        var seen=Set(local.map(\.id));return local+imported.filter{seen.insert($0.id).inserted}
+    }
+    static func mergeVersions(_ local:[CreativeVersion],_ imported:[CreativeVersion])->[CreativeVersion]{
+        var seen=Set(local.map(\.id));return local+imported.filter{seen.insert($0.id).inserted}
+    }
+}
+private struct MemoryEditView:View{
+    @State var record:MemoryRecord
+    let shots:[Shot]
+    let vault:Vault
+    let save:(MemoryRecord)->Void
+    @Environment(\.dismiss) private var dismiss
+    var body:some View{
+        NavigationStack{
+            Form{
+                TextField("Tiêu đề",text:$record.title)
+                TextField("Nội dung",text:$record.note,axis:.vertical).lineLimit(3...10)
+                DatePicker("Ngày kỷ niệm",selection:$record.date,displayedComponents:.date)
+                Section("Ảnh bìa"){
+                    ScrollView(.horizontal){
+                        HStack{ForEach(shots.filter{record.photos.contains($0.id)}){s in
+                            Button{record.cover=s.id}label:{DiskImage(url:vault.thumbnail(s.id),limit:180).scaledToFill().frame(width:82,height:82).clipped().overlay{if record.cover==s.id{Rectangle().strokeBorder(gold,lineWidth:3)}}}.buttonStyle(.plain)
+                        }}
+                    }
+                }
+                Section("Ảnh trong câu chuyện"){
+                    ForEach(shots){s in
+                        Button{
+                            if record.photos.contains(s.id){record.photos.removeAll{$0==s.id};if record.cover==s.id{record.cover=record.photos.first}}
+                            else{record.photos.append(s.id)}
+                        }label:{
+                            HStack{DiskImage(url:vault.thumbnail(s.id),limit:100).scaledToFill().frame(width:44,height:44).clipped();Text(s.day);Spacer();Image(systemName:record.photos.contains(s.id) ? "checkmark.circle.fill":"circle")}
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }.navigationTitle("Chỉnh sửa câu chuyện").toolbar{
+                ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}}
+                ToolbarItem(placement:.confirmationAction){Button("Lưu"){save(record)}.disabled(record.title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty || record.photos.isEmpty)}
+            }
+        }
     }
 }

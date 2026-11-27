@@ -4,6 +4,13 @@ import CoreImage
 import ImageIO
 import UniformTypeIdentifiers
 
+struct CreativeVersion:Codable,Identifiable {
+    var id=UUID()
+    let name:String
+    let date:Date
+    let recipe:CreativeRecipe
+    let photoIDs:[UUID]
+}
 struct CreativeRecipe:Codable,Equatable {
     var exposure=0.0
     var contrast=1.0
@@ -60,14 +67,22 @@ struct CreativeStudio:View {
     @State private var outputs=[URL]()
     @State private var working=false
     @State private var notice=""
-    @State private var history=[CreativeRecipe]()
+    @AppStorage("signature.versions.v1") private var versionData=Data()
+    @State private var history=[CreativeVersion]()
+    @State private var versionName=""
+    @State private var showVersionName=false
+    @State private var useOriginal=false
+    @State private var originalPreview=false
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
     private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
     var body:some View{
         ScrollView{
             VStack(spacing:14){
-                if let preview{Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
+                if originalPreview,let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1400).scaledToFit().frame(maxHeight:330)}
+                else if let preview{Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
                 else if let current{DiskImage(url:vault.picture(current),limit:1000).scaledToFit().frame(height:250)}
+                Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
+                Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
                 GroupBox("Color Studio"){
                     VStack(alignment:.leading){
@@ -77,12 +92,19 @@ struct CreativeStudio:View {
                         control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
                         Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","16:9"],id:\.self){Text($0).tag($0)}}
                         HStack{
-                            Button("Lưu preset"){if let data=try? JSONEncoder().encode(recipe){savedPreset=data};history.append(recipe)}
+                            Button("Lưu preset"){if let data=try? JSONEncoder().encode(recipe){savedPreset=data};versionName="";showVersionName=true}
                             Spacer()
                             Button("Dùng preset"){if let r=try? JSONDecoder().decode(CreativeRecipe.self,from:savedPreset){recipe=r}}
                             Button("Đặt lại"){recipe=CreativeRecipe()}
                         }.font(.caption)
-                        if !history.isEmpty{Menu("Lịch sử preset phiên này"){ForEach(history.indices,id:\.self){i in Button("Phiên bản \(i+1)"){recipe=history[i]}}}}
+                        if !history.isEmpty{
+                            Menu("Lịch sử chỉnh sửa · \(history.count)"){
+                                ForEach(history.reversed()){v in
+                                    Button("\(v.name) · \(v.date.formatted(date:.abbreviated,time:.shortened))"){recipe=v.recipe}
+                                }
+                                Button("Xóa lịch sử preset",role:.destructive){history=[];persistVersions()}
+                            }
+                        }
                     }
                 }
                 GroupBox("Export Studio"){
@@ -96,27 +118,31 @@ struct CreativeStudio:View {
                         Text(notice).font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Lịch sử preset trong phiên không phải lịch sử phiên bản lưu vĩnh viễn.").font(.caption).foregroundStyle(.secondary)
+                Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Các phiên bản đã đặt tên lưu công thức chỉnh sửa và ID ảnh trên thiết bị.").font(.caption).foregroundStyle(.secondary)
             }.padding()
-        }.navigationTitle("Creative Studio").task(id:PreviewKey(recipe:recipe,index:selected)){
+        }.navigationTitle("Creative Studio")
+        .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id)));persistVersions()};Button("Hủy",role:.cancel){}}
+        .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
             guard let current else{return}
-            let r=recipe,url=vault.picture(current)
+            let r=recipe,url=vault.picture(current,original:useOriginal)
             do{try await Task.sleep(for:.milliseconds(180))}catch{return}
             let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:900,format:"JPEG",quality:0.8,metadata:false)}.value
             if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)}}
         }
     }
-    private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int}
+    private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int;let original:Bool}
+    private func persistVersions(){if let data=try? JSONEncoder().encode(history){versionData=data}}
     private func control(_ title:String,value:Binding<Double>,range:ClosedRange<Double>)->some View{
         VStack(alignment:.leading){Text("\(title) · \(String(format:"%.2f",value.wrappedValue))").font(.caption);Slider(value:value,in:range)}
     }
     @MainActor private func export()async{
         working=true;outputs=[];notice=""
         defer{working=false}
-        let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault
+        let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault,original=useOriginal
         for shot in shots{
             if let url=await Task.detached(priority:.utility,operation:{()->URL? in
-                guard let d=CreativeEngine.render(v.picture(shot),recipe:r,maxSize:size,format:f,quality:q,metadata:m) else{return nil}
+                guard let d=CreativeEngine.render(v.picture(shot,original:original),recipe:r,maxSize:size,format:f,quality:q,metadata:m) else{return nil}
                 return try? CreativeEngine.exportURL(d,extension:f=="PNG" ? "png":"jpg")
             }).value{outputs.append(url)}
         }
@@ -167,8 +193,14 @@ struct CollageStudio:View {
         }.navigationTitle("Photo Collage")
     }
 }
+enum MovieMotion:String,CaseIterable {
+    case still="Tĩnh",zoom="Zoom chậm",pan="Lướt ngang"
+}
+enum MovieTransition:String,CaseIterable {
+    case cut="Cắt thẳng",fade="Mờ dần",dissolve="Hòa ảnh"
+}
 enum MemoryMovie {
-    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String) async throws->URL{
+    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String,motion:MovieMotion = .still,transition:MovieTransition = .cut) async throws->URL{
         guard !shots.isEmpty else{throw CameraError.unreadable}
         let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString+".mp4")
         let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
@@ -179,6 +211,7 @@ enum MemoryMovie {
         writer.startSession(atSourceTime:.zero)
         do{
             var frame:Int64=0
+            var previous:CGImage?
             for (i,shot) in shots.enumerated(){
                 try Task.checkCancellation()
                 guard let data=try? Data(contentsOf:vault.picture(shot)),let image=PhotoEngine.thumb(data,limit:max(width,height)) else{throw CameraError.unreadable}
@@ -195,22 +228,41 @@ enum MemoryMovie {
                     (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.1),withAttributes:attrs)
                 }
                 guard let cg=still.cgImage,let pool=adaptor.pixelBufferPool else{throw CameraError.writeFailed}
-                var buffer:CVPixelBuffer?
-                guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess,let pixel=buffer else{throw CameraError.writeFailed}
-                CVPixelBufferLockBaseAddress(pixel,[])
-                let context=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipFirst.rawValue)
-                context?.draw(cg,in:CGRect(x:0,y:0,width:width,height:height))
-                CVPixelBufferUnlockBaseAddress(pixel,[])
-                guard context != nil else{throw CameraError.writeFailed}
-                for _ in 0..<(seconds*24){
+                let frames=max(1,seconds*24)
+                for j in 0..<frames{
+                    try Task.checkCancellation()
                     var wait=0
                     while !input.isReadyForMoreMediaData {
                         guard writer.status == .writing,wait<1000 else{throw writer.error ?? CameraError.writeFailed}
                         try await Task.sleep(for:.milliseconds(10));wait+=1
                     }
+                    let p=Double(j)/Double(max(1,frames-1))
+                    let fadeFrames=min(12,max(1,frames/3))
+                    let pixel:CVPixelBuffer=try autoreleasepool{
+                        var buffer:CVPixelBuffer?
+                        guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess,let pixel=buffer else{throw CameraError.writeFailed}
+                        CVPixelBufferLockBaseAddress(pixel,[])
+                        defer{CVPixelBufferUnlockBaseAddress(pixel,[])}
+                        guard let ctx=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipFirst.rawValue) else{throw CameraError.writeFailed}
+                        let w=CGFloat(width),h=CGFloat(height),full=CGRect(x:0,y:0,width:w,height:h)
+                        ctx.setFillColor(UIColor.black.cgColor);ctx.fill(full)
+                        let scale:CGFloat=motion == .zoom ? 1+0.075*CGFloat(p) : (motion == .pan ? 1.08:1)
+                        let shift:CGFloat=motion == .pan ? (CGFloat(p)-0.5)*w*0.07:0
+                        let rect=CGRect(x:(w-w*scale)/2+shift,y:(h-h*scale)/2,width:w*scale,height:h*scale)
+                        if transition == .dissolve,let previous,j<fadeFrames{
+                            ctx.draw(previous,in:full)
+                            ctx.setAlpha(CGFloat(j+1)/CGFloat(fadeFrames))
+                        }else if transition == .fade{
+                            let incoming=CGFloat(j+1)/CGFloat(fadeFrames),outgoing=CGFloat(frames-j)/CGFloat(fadeFrames)
+                            ctx.setAlpha(min(1,min(incoming,outgoing)))
+                        }
+                        ctx.draw(cg,in:rect)
+                        return pixel
+                    }
                     guard adaptor.append(pixel,withPresentationTime:CMTime(value:frame,timescale:24)) else{throw writer.error ?? CameraError.writeFailed}
                     frame+=1
                 }
+                previous=cg
             }
             input.markAsFinished()
             await writer.finishWriting()
@@ -219,11 +271,50 @@ enum MemoryMovie {
         }catch{writer.cancelWriting();try? FileManager.default.removeItem(at:url);throw error}
     }
 }
+enum MovieSoundtrack {
+    static func add(video:URL,audio:URL,volume:Float)async throws->URL{
+        let movie=AVURLAsset(url:video),music=AVURLAsset(url:audio)
+        let duration=try await movie.load(.duration),audioDuration=try await music.load(.duration)
+        guard CMTimeGetSeconds(duration)>0,CMTimeGetSeconds(audioDuration)>0,
+              let v=try await movie.loadTracks(withMediaType:.video).first,
+              let a=try await music.loadTracks(withMediaType:.audio).first else{throw CameraError.unreadable}
+        let comp=AVMutableComposition()
+        guard let videoTrack=comp.addMutableTrack(withMediaType:.video,preferredTrackID:kCMPersistentTrackID_Invalid),
+              let audioTrack=comp.addMutableTrack(withMediaType:.audio,preferredTrackID:kCMPersistentTrackID_Invalid) else{throw CameraError.writeFailed}
+        try videoTrack.insertTimeRange(CMTimeRange(start:.zero,duration:duration),of:v,at:.zero)
+        videoTrack.preferredTransform=try await v.load(.preferredTransform)
+        var position=CMTime.zero
+        while CMTimeCompare(position,duration)<0 {
+            let left=CMTimeSubtract(duration,position)
+            let length=CMTimeMinimum(left,audioDuration)
+            guard CMTimeGetSeconds(length)>0 else{break}
+            try audioTrack.insertTimeRange(CMTimeRange(start:.zero,duration:length),of:a,at:position)
+            position=CMTimeAdd(position,length)
+        }
+        let params=AVMutableAudioMixInputParameters(track:audioTrack)
+        params.setVolume(volume,at:.zero)
+        let fade=CMTimeMinimum(CMTime(seconds:1,preferredTimescale:600),duration)
+        params.setVolumeRamp(fromStartVolume:volume,toEndVolume:0,timeRange:CMTimeRange(start:CMTimeSubtract(duration,fade),duration:fade))
+        let mix=AVMutableAudioMix();mix.inputParameters=[params]
+        let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-Music-"+UUID().uuidString+".mp4")
+        guard let exporter=AVAssetExportSession(asset:comp,presetName:AVAssetExportPresetHighestQuality) else{throw CameraError.writeFailed}
+        exporter.outputURL=url;exporter.outputFileType = .mp4;exporter.audioMix=mix
+        await exporter.export()
+        guard exporter.status == .completed else{try? FileManager.default.removeItem(at:url);throw exporter.error ?? CameraError.writeFailed}
+        return url
+    }
+}
 struct MemoryCinema:View {
     let shots:[Shot]
     let vault:Vault
     @State private var title=""
     @State private var resolution=1080
+    @State private var motion=MovieMotion.zoom
+    @State private var transition=MovieTransition.dissolve
+    @State private var audio:URL?
+    @State private var chooseAudio=false
+    @State private var volume=0.65
+    @State private var vertical=false
     @State private var seconds=3
     @State private var working=false
     @State private var output:URL?
@@ -235,11 +326,25 @@ struct MemoryCinema:View {
                 Picker("Độ phân giải",selection:$resolution){Text("1080p").tag(1080);Text("4K").tag(2160)}
                 Picker("Thời gian mỗi ảnh",selection:$seconds){ForEach([2,3,5],id:\.self){Text("\($0) giây").tag($0)}}
                 Text("\(min(60,shots.count)) ảnh · MP4 H.264 · 24 fps").font(.caption)
-                Text("Video ảnh tĩnh có tiêu đề và ngày chụp, chưa có nhạc hoặc hiệu ứng chuyển cảnh.").font(.caption).foregroundStyle(.secondary)
+                Toggle("Video dọc 9:16",isOn:$vertical)
+                Picker("Chuyển động",selection:$motion){ForEach(MovieMotion.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+                Picker("Chuyển cảnh",selection:$transition){ForEach(MovieTransition.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+            }
+            Section("Nhạc nền"){
+                Button(audio?.lastPathComponent ?? "Chọn nhạc từ Tệp"){chooseAudio=true}.disabled(working)
+                if audio != nil{Slider(value:$volume,in:0...1);Button("Bỏ nhạc",role:.destructive){audio=nil}.disabled(working)}
+                Text("Nhạc được lặp theo thời lượng phim và giảm âm cuối.").font(.caption).foregroundStyle(.secondary)
             }
             Button("Tạo video"){working=true;notice="";output=nil;Task{
-                let items=Array(shots.prefix(60)),v=vault,r=resolution,s=seconds,t=title
-                do{output=try await Task.detached(priority:.userInitiated){try await MemoryMovie.make(items,vault:v,width:r==2160 ? 3840:1920,height:r,seconds:s,title:t)}.value;notice="Đã xuất video."}
+                let items=Array(shots.prefix(60)),v=vault,r=resolution,s=seconds,t=title,m=motion,tr=transition,a=audio,vol=Float(volume),isVertical=vertical
+                do{
+                    output=try await Task.detached(priority:.userInitiated){
+                        let long=r==2160 ? 3840:1920
+                        let video=try await MemoryMovie.make(items,vault:v,width:isVertical ? r:long,height:isVertical ? long:r,seconds:s,title:t,motion:m,transition:tr)
+                        if let a{do{let result=try await MovieSoundtrack.add(video:video,audio:a,volume:vol);try? FileManager.default.removeItem(at:video);return result}catch{try? FileManager.default.removeItem(at:video);throw error}}
+                        return video
+                    }.value;notice="Đã xuất video."
+                }
                 catch{notice=error.localizedDescription}
                 working=false
             }}.disabled(working || shots.isEmpty)
@@ -247,5 +352,8 @@ struct MemoryCinema:View {
             if let output{ShareLink(item:output){Label("Lưu / Chia sẻ MP4",systemImage:"square.and.arrow.up")}}
             Text(notice).font(.caption)
         }.navigationTitle("Memory Cinema")
+        .fileImporter(isPresented:$chooseAudio,allowedContentTypes:[.audio]){result in
+            do{let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let target=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString+"-"+url.lastPathComponent);try FileManager.default.copyItem(at:url,to:target);audio=target}catch{notice=error.localizedDescription}
+        }
     }
 }

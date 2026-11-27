@@ -124,4 +124,46 @@ final class VieLensTests:XCTestCase {
         let duration=try await asset.load(.duration)
         XCTAssertGreaterThan(CMTimeGetSeconds(duration),0.8)
     }
+    func testSignatureBackupMergeAndTopics() throws {
+        let a=MemoryRecord(kind:.life,title:"Local",note:"",date:Date(),unlock:nil,photos:[UUID()],cover:nil)
+        var changed=a;changed.title="Imported"
+        let b=MemoryRecord(kind:.daily,title:"New",note:"",date:Date(),unlock:nil,photos:[UUID()],cover:nil)
+        let merged=SignatureBackup.mergeRecords([a],[changed,b,b])
+        XCTAssertEqual(merged.map(\.title),["Local","New"])
+        let v=CreativeVersion(name:"Warm",date:Date(),recipe:CreativeRecipe(),photoIDs:a.photos)
+        let archive=SignatureBackup(version:1,records:merged,versions:[v],preset:v.recipe)
+        let decoded=try JSONDecoder().decode(SignatureBackup.self,from:JSONEncoder().encode(archive))
+        XCTAssertEqual(decoded.versions.first?.id,v.id)
+        XCTAssertEqual(SignatureBackup.mergeVersions([v],[v]).count,1)
+        XCTAssertTrue(VisualTopic.classify(["forest","mountain"],faces:0).contains(.nature))
+        XCTAssertTrue(VisualTopic.classify([],faces:1).contains(.people))
+    }
+    func testExactDuplicateScannerKeepsOriginal() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let vault=Vault(root:root),bytes=try patch()
+        let a=try await vault.add(bytes,look:.neutral,session:"")
+        let b=try await vault.add(bytes,look:.mono,session:"")
+        try await vault.edit(b.id,rating:5)
+        let shots=try await vault.all()
+        let groups=DuplicateScanner.groups(shots,vault:vault)
+        XCTAssertEqual(groups.count,1)
+        XCTAssertEqual(groups.first?.shots.count,2)
+        XCTAssertEqual(groups.first?.suggestedKeep?.id,b.id)
+        XCTAssertEqual(try Data(contentsOf:vault.picture(a,original:true)),bytes)
+    }
+    func testAnimatedMemoryMovie() async throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let vault=Vault(root:root),bytes=try patch()
+        let a=try await vault.add(bytes,look:.neutral,session:"")
+        let b=try await vault.add(bytes,look:.amber,session:"")
+        let url=try await MemoryMovie.make([a,b],vault:vault,width:320,height:240,seconds:1,title:"Signature",motion:.zoom,transition:.dissolve)
+        defer{try? FileManager.default.removeItem(at:url)}
+        let asset=AVURLAsset(url:url)
+        let duration=try await asset.load(.duration)
+        XCTAssertGreaterThan(CMTimeGetSeconds(duration),1.8)
+        let tracks=try await asset.loadTracks(withMediaType:.video)
+        XCTAssertEqual(tracks.count,1)
+    }
 }
