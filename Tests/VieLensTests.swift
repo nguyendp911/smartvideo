@@ -49,4 +49,20 @@ final class VieLensTests:XCTestCase {
         do {_=try await vault.add(Data([1,2,3]),look:.neutral,session:"");XCTFail("Expected decode failure")} catch {}
         let all=try await vault.all();XCTAssertTrue(all.isEmpty)
     }
+    func testTimelineGroupsAndFilters() throws {
+        let day1=Date(timeIntervalSince1970:10), day2=Date(timeIntervalSince1970:20)
+        let a=Shot(id:UUID(),date:day1,day:"2025-01-01",session:"Hội An",rating:5,tags:"Đêm",deleted:nil,light:.night,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let b=Shot(id:UUID(),date:day2,day:"2025-02-01",session:"Hội An",rating:1,tags:"Sáng",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        var c=a;c.day="2025-01-01";c.rating=2
+        let d=Shot(id:UUID(),date:day2,day:"2025-03-01",session:"Khác",rating:5,tags:"",deleted:day2,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let shots=[a,b,c,d]
+        XCTAssertEqual(TimelineIndex.filter(shots,scope:.all,query:"hoi an dem",minimumRating:4).count,1)
+        XCTAssertEqual(TimelineIndex.filter(shots,scope:.trash).map(\.id),[d.id])
+        XCTAssertEqual(TimelineIndex.filter(shots,scope:.all,period:"2025-02").map(\.id),[b.id])
+        let grouped=TimelineIndex.group([a,b,c],period:.month,newest:true)
+        XCTAssertEqual(grouped.map(\.key),["2025-02","2025-01"])
+        XCTAssertEqual(grouped.last?.items.count,2)
+        XCTAssertEqual(grouped.last?.cover.rating,5)
+        XCTAssertEqual(TimelineIndex.albums(shots).first?.items.count,3)
+    }
 }

@@ -26,6 +26,11 @@ let night=Color(red:0.065,green:0.075,blue:0.079)
         do {try await vault.edit(id,rating:rating,tags:tags,session:session,trash:trash);await reload()} catch {message=error.localizedDescription}
     }
 }
+private final class PhotoMemoryCache {
+    static let shared=PhotoMemoryCache()
+    let images=NSCache<NSString,UIImage>()
+    private init(){images.totalCostLimit=48*1024*1024;images.countLimit=160}
+}
 struct DiskImage:View {
     let url:URL
     var limit=1200
@@ -35,12 +40,18 @@ struct DiskImage:View {
             if let picture {Image(uiImage:picture).resizable()}
             else {Rectangle().fill(.white.opacity(0.08)).overlay(Image(systemName:"photo").foregroundStyle(.secondary))}
         }
-        .task(id:url) {
+        .task(id:"\(url.path)#\(limit)") {
             picture=nil
             let path=url, size=limit
             let img=await Task.detached(priority:.utility) { ()->UIImage? in
+                let stamp=(try? path.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
+                let key="\(path.path)#\(size)#\(stamp)" as NSString
+                let cache=PhotoMemoryCache.shared.images
+                if let hit=cache.object(forKey:key){return hit}
                 guard let bytes=try? Data(contentsOf:path,options:.mappedIfSafe),let cg=PhotoEngine.thumb(bytes,limit:size) else{return nil}
-                return UIImage(cgImage:cg)
+                let image=UIImage(cgImage:cg)
+                cache.setObject(image,forKey:key,cost:cg.bytesPerRow*cg.height)
+                return image
             }.value
             if !Task.isCancelled {picture=img}
         }
