@@ -126,8 +126,9 @@ struct LifeCalendar:View{
                     Button{target = .photo(shot)}label:{DiskImage(url:vault.thumbnail(shot.id),limit:240).scaledToFill().frame(width:72,height:72).clipped().clipShape(RoundedRectangle(cornerRadius:8))}.buttonStyle(.plain)
                         .contextMenu{Button("Đặt ảnh nổi bật"){do{try MemorySync.setCover(shot,target:selectedTarget,archive:stories)}catch{notice=error.localizedDescription}}}
                 }}}
-                HStack{Button("Mở Timeline",systemImage:"leaf"){select(day)};Spacer();Button("Phát slide",systemImage:"play.circle"){showSlide=true}}.font(.caption)
+                Button("Phát slide",systemImage:"play.circle"){showSlide=true}.font(.caption)
             }
+            if !items.isEmpty || current != nil || !life.milestones(day).isEmpty{Button("Mở Timeline ngày này",systemImage:"leaf"){select(day)}.font(.caption)}
             Button{target=selectedTarget}label:{
                 VStack(alignment:.leading,spacing:6){
                     Label(current?.title.isEmpty == false ? current?.title ?? "Nhật ký":"Nhật ký trong ngày",systemImage:"book.closed").font(.headline)

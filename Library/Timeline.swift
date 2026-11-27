@@ -26,6 +26,8 @@ struct Timeline: View {
     @ObservedObject private var stories=StoryArchive.shared
     @ObservedObject private var life=LifeArchive.shared
     @State private var showToday=false
+    @State private var pathMode:LifePathMode?
+    @State private var showLifeBackup=false
     @State private var showChapters=false
     @State private var showIntelligence=false
     @State private var showLetters=false
@@ -134,6 +136,8 @@ struct Timeline: View {
         }
         .sheet(isPresented:$showFilters) { filterSheet }
         .sheet(isPresented:$showVines){VineCollectionView()}
+        .sheet(item:$pathMode){LifePathView(shots:active,vault:model.vault,mode:$0)}
+        .sheet(isPresented:$showLifeBackup){LifeBackupView()}
         .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{showToday=false})}
         .sheet(isPresented:$showChapters){LifeChapterStudio(shots:active,vault:model.vault)}
         .sheet(isPresented:$showIntelligence){LifeIntelligence(shots:active,vault:model.vault)}
@@ -213,6 +217,9 @@ struct Timeline: View {
             Spacer(minLength:4)
             Menu {
                 Button("Hôm nay của tôi",systemImage:"sun.max"){showToday=true}
+                Button("Life Journey",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){pathMode = .journey}
+                Button("Memory River",systemImage:"water.waves"){pathMode = .river}
+                Button("Sao lưu nhật ký & cuộc đời",systemImage:"externaldrive"){showLifeBackup=true}
                 Button("Life Chapters",systemImage:"book.pages"){showChapters=true}
                 Button("Memory Intelligence",systemImage:"sparkles"){showIntelligence=true}
                 Button("Thư tương lai",systemImage:"envelope"){showLetters=true}

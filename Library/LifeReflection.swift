@@ -181,6 +181,7 @@ struct LifeIntelligence:View{
     @State private var range:LifeReflectionRange?
     @State private var notice=""
     @State private var reminder=false
+    @State private var anniversaryDate=Date()
     @State private var hour=Date()
     @State private var connections=false
     @State private var smartCover:Shot?
@@ -219,6 +220,9 @@ struct LifeIntelligence:View{
                     DatePicker("Giờ nhắc",selection:$hour,displayedComponents:.hourAndMinute)
                     Button("Bật nhắc hằng ngày"){Task{do{try await MemoryReminder.schedule(id:"daily-journal",title:"Dành một phút lưu lại hôm nay.",date:LifeDate.calendar.dateComponents([.hour,.minute],from:hour),repeats:true);notice="Đã bật nhắc hằng ngày."}catch{notice=error.localizedDescription}}}
                     Button("Tắt nhắc"){MemoryReminder.cancel("daily-journal");notice="Đã tắt nhắc."}
+                    DatePicker("Ngày kỷ niệm hằng năm",selection:$anniversaryDate,displayedComponents:[.date,.hourAndMinute])
+                    Button("Bật nhắc kỷ niệm"){Task{do{try await MemoryReminder.schedule(id:"annual-memory",title:"Hôm nay là ngày nhìn lại một kỷ niệm.",date:LifeDate.calendar.dateComponents([.month,.day,.hour,.minute],from:anniversaryDate),repeats:true);notice="Đã bật nhắc hằng năm."}catch{notice=error.localizedDescription}}}
+                    Button("Tắt nhắc kỷ niệm"){MemoryReminder.cancel("annual-memory");notice="Đã tắt nhắc kỷ niệm."}
                     Text(notice).font(.caption)
                 }
             }.navigationTitle("Memory Intelligence").toolbar{Button("Đóng"){dismiss()}}

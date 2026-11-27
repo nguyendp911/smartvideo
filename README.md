@@ -33,3 +33,5 @@ Build 60/61: Story Writer Apple Foundation Models khi khả dụng trên iOS 26,
 
 ## Life Memory System 15
 Shared period IDs for Calendar/Timeline/Story. Calendar modes photo/mood/heat, empty-day journal, selected cover, milestones, photo story and slideshow, month/year reflections. Timeline includes journal-only and milestone-only dates. Life Today from camera and timeline, life chapters, future letters with optional local notifications, stats and daily reminder. Story data stays in original archive, Life metadata separately protected. No new bundle ID or extension.
+
+Build 63: Life Journey/Memory River alternating cards, six Story Presentation modes (magazine, envelope, cinema, scrapbook, book, podcast), combined Story/Life JSON backup, annual local reminder. No notification auto-restoration; photo and Signature backups remain separate. Future letters are date-gated in UI, not cryptographically time-locked. Smart chapter suggests year periods, not inferred life events.

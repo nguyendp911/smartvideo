@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import UserNotifications
 import AVFoundation
 
@@ -217,5 +218,45 @@ struct FutureLetterStudio:View{
             title="";content="";notice="Đã niêm phong thư."
             if reminder{Task{do{try await MemoryReminder.schedule(id:"letter:"+letter.id.uuidString,title:"Một lá thư tương lai đã đến ngày mở.",date:LifeDate.calendar.dateComponents([.year,.month,.day,.hour,.minute],from:letter.opens),repeats:false)}catch{notice="Đã lưu thư; "+error.localizedDescription}}}
         }catch{notice=error.localizedDescription}
+    }
+}
+
+struct LifeBackupView:View{
+    @ObservedObject private var archive=StoryArchive.shared
+    @ObservedObject private var life=LifeArchive.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var output:URL?
+    @State private var importing=false
+    @State private var notice=""
+    struct Package:Codable{let version:Int;let story:Data;let life:Data}
+    var body:some View{
+        NavigationStack{
+            Form{
+                Section("Nhật ký và cuộc đời"){
+                    Text("Gộp story, bản nháp, giọng kể, canvas, cột mốc, chương cuộc đời và thư tương lai vào một tệp. Ảnh gốc và Signature vẫn sao lưu riêng. Tệp chứa dữ liệu cá nhân, hãy lưu nơi an toàn.").font(.caption)
+                    Button("Tạo bản sao lưu"){
+                        do{
+                            let url=try archive.export()
+                            defer{try? FileManager.default.removeItem(at:url)}
+                            let package=Package(version:1,story:try Data(contentsOf:url),life:try life.exportData())
+                            output=try CreativeEngine.exportURL(JSONEncoder().encode(package),extension:"json");notice="Đã tạo bản sao lưu."
+                        }catch{notice=error.localizedDescription}
+                    }
+                    if let output{ShareLink(item:output){Label("Lưu bản sao lưu",systemImage:"square.and.arrow.up")}}
+                    Button("Khôi phục / hợp nhất"){importing=true}
+                    Text(notice).font(.caption)
+                }
+            }.navigationTitle("Life Backup").toolbar{Button("Xong"){dismiss()}}
+        }.fileImporter(isPresented:$importing,allowedContentTypes:[.json]){result in
+            do{
+                let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
+                let bytes=try Data(contentsOf:url)
+                guard bytes.count<=150_000_000 else{throw CameraError.unreadable}
+                let package=try JSONDecoder().decode(Package.self,from:bytes)
+                guard package.version==1,try JSONDecoder().decode(LifePackage.self,from:package.life).version==1,try JSONDecoder().decode(StoryArchivePackage.self,from:package.story).version==1 else{throw CameraError.unreadable}
+                try archive.merge(package.story)
+                do{try life.merge(package.life);notice="Đã hợp nhất Story và Life. Các thông báo cần bật lại thủ công."}catch{notice="Story đã hợp nhất, Life chưa khôi phục: "+error.localizedDescription}
+            }catch{notice=error.localizedDescription}
+        }
     }
 }

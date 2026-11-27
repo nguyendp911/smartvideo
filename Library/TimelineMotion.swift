@@ -47,7 +47,7 @@ struct TimelineTreeMonth:Identifiable{
     var id:String{group.key}
 }
 enum TimelineTreeIndex{
-    static func build(_ shots:[Shot],newest:Bool,extraDays:Set<String>=[])->[TimelineTreeYear]{
+    static func build(_ shots:[Shot],newest:Bool,extraDays:Set<String> = [])->[TimelineTreeYear]{
         let allDays=Set(shots.map(\.day)).union(extraDays.filter{$0.count==10})
         let sort:(String,String)->Bool={newest ? $0>$1:$0<$1}
         let byDay=Dictionary(grouping:shots,by:\.day)
