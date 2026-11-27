@@ -303,4 +303,19 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(BotanicalAssets.rail(theme:.emerald,age:VineGrowth(days:180)),"botanical_bloom")
         XCTAssertEqual(BotanicalAssets.rail(theme:.autumn,age:VineGrowth(days:365)),"botanical_autumn")
     }
+    func testContinuousBotanicalTilePlan(){
+        let whole=BotanicalTilePlan.tiles(height:260,offset:0,tileHeight:100)
+        let sliced=BotanicalTilePlan.tiles(height:140,offset:120,tileHeight:100)
+        XCTAssertEqual(whole.map(\.index),[0,1,2])
+        XCTAssertEqual(sliced.map(\.index),[1,2])
+        XCTAssertEqual(sliced.first?.top,-20)
+        XCTAssertEqual(sliced.first?.mirrored,true)
+        XCTAssertEqual(BotanicalTilePlan.extraLeaves(age:VineGrowth(days:0),density:1.8),0)
+        XCTAssertGreaterThan(BotanicalTilePlan.extraLeaves(age:VineGrowth(days:365),density:1),BotanicalTilePlan.extraLeaves(age:VineGrowth(days:7),density:1))
+        XCTAssertEqual(BotanicalTilePlan.edgeFade(0),0)
+        XCTAssertEqual(BotanicalTilePlan.edgeFade(0.5),1)
+        XCTAssertEqual(BotanicalTilePlan.edgeFade(1),0)
+        XCTAssertLessThan(GardenRenderQuality.automatic.rate(lowPower:true),GardenRenderQuality.automatic.rate(lowPower:false))
+        XCTAssertEqual(GardenDaylight.title(hour:18),"Hoàng hôn")
+    }
 }

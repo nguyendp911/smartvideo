@@ -84,6 +84,7 @@ struct TimelineStoryTree:View{
     @AppStorage("garden.weather") private var weather=GardenAtmosphere.none.rawValue
     @AppStorage("garden.intensity") private var intensity=0.35
     @AppStorage("garden.paper") private var paper="Đêm"
+    @AppStorage("garden.weather.foreground") private var foregroundWeather=false
     @AppStorage("garden.haptics") private var haptics=true
     @State private var expanded=Set<String>()
     @State private var initialized=false
@@ -111,10 +112,12 @@ struct TimelineStoryTree:View{
                         Image(systemName:"circle.fill").font(.system(size:8)).foregroundStyle(accent)
                         Text(newest ? "Khởi đầu những ký ức":"Khoảnh khắc mới nhất").font(.caption).foregroundStyle(.secondary)
                     }.padding(.leading,18).padding(.vertical,18)
-                }.padding(.horizontal,12)
+                }.padding(.horizontal,12).coordinateSpace(name:"gardenContent")
             }.safeAreaPadding(.bottom,20)
-        }.background(GardenBackground.color(paper))
-        .overlay{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}
+        }.background{if !foregroundWeather{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}}
+        .background{GardenSceneBackground(paper:paper)}
+        .overlay{if foregroundWeather{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}}
+        .modifier(GardenPowerObserver())
         .sheet(isPresented:$showVines){VineCollectionView()}
         .sheet(item:$storyTarget){target in
             if archive.entry(target.id) != nil{StoryReader(target:target,vault:vault,archive:archive)}else{StoryComposer(target:target,vault:vault,archive:archive)}
@@ -196,7 +199,7 @@ struct TimelineStoryTree:View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
             .buttonStyle(.plain).disabled(group.items.isEmpty)
     }
-    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true,branchKey:key)}
+    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true,branchKey:key,continuous:true,trunkTheme:vine)}
     private func storyButton(_ target:StoryTarget)->some View{
         let entry=archive.entry(target.id)
         return Button{

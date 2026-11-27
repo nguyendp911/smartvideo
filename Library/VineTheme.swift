@@ -92,6 +92,10 @@ struct VineRail:View {
     var growth:VineGrowth?=nil
     var specialBloom=false
     var branchKey="preview"
+    var continuous=false
+    var trunkTheme:VineTheme?=nil
+    @AppStorage("garden.quality") private var quality=GardenRenderQuality.automatic.rawValue
+    @Environment(\.gardenLowPower) private var lowPower
     @AppStorage("garden.live") private var live=true
     @AppStorage("garden.speed") private var speed=0.7
     @AppStorage("garden.glow") private var glow=0.6
@@ -105,12 +109,18 @@ struct VineRail:View {
     private var leafColor:Color{useCustom && custom ? GardenColor.decode(leafHex):theme.leaf}
     private var bloomColor:Color{useCustom && custom ? GardenColor.decode(bloomHex):theme.bloom}
     var body:some View{
-        TimelineView(.animation(minimumInterval:1/15,paused:!live || reduced || scene != .active)){clock in
-            drawing(time:live && !reduced && scene == .active ? clock.date.timeIntervalSinceReferenceDate:0)
-        }.accessibilityHidden(true)
+        if continuous{
+            GeometryReader{geometry in
+                animated(offset:geometry.frame(in:.named("gardenContent")).minY)
+            }.accessibilityHidden(true)
+        }else{animated(offset:0).accessibilityHidden(true)}
     }
-    private func drawing(time:Double)->some View{
-        BotanicalAssetVine(level:level,theme:theme,age:growth ?? VineGrowth(days:365),density:density,curvature:curvature,node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:time,animate:live && !reduced && scene == .active,speed:speed,glow:glow,customLeaf:useCustom && custom ? leafColor:nil,customStem:useCustom && custom ? stemColor:nil,customBloom:useCustom && custom ? bloomColor:nil)
+    private func animated(offset:CGFloat)->some View{
+        let active=live && !reduced && scene == .active
+        let rate=(GardenRenderQuality(rawValue:quality) ?? .automatic).rate(lowPower:lowPower)
+        return TimelineView(.animation(minimumInterval:1/min(15,rate),paused:!active)){clock in
+            BotanicalAssetVine(level:level,theme:theme,age:growth ?? VineGrowth(days:365),density:density,curvature:curvature,node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:active ? clock.date.timeIntervalSinceReferenceDate:0,animate:active,speed:speed,glow:glow,customLeaf:useCustom && custom ? leafColor:nil,customStem:useCustom && custom ? stemColor:nil,customBloom:useCustom && custom ? bloomColor:nil,railOffset:offset,trunkTheme:trunkTheme)
+        }
     }
 }
 
@@ -184,12 +194,17 @@ enum GardenAtmosphere:String,CaseIterable{
 struct GardenWeather:View{
     let effect:GardenAtmosphere
     let intensity:Double
+    @AppStorage("garden.quality") private var quality=GardenRenderQuality.automatic.rawValue
+    @AppStorage("garden.weather.speed") private var speed=0.8
+    @AppStorage("garden.weather.wind") private var wind=0.0
+    @Environment(\.gardenLowPower) private var lowPower
     @Environment(\.accessibilityReduceMotion) private var reduced
     @Environment(\.scenePhase) private var phase
     var body:some View{
         if effect != .none && !reduced && intensity>0 && phase == .active{
-            TimelineView(.animation(minimumInterval:1/30)){clock in
-                BotanicalAssetWeather(effect:effect,intensity:intensity,time:clock.date.timeIntervalSinceReferenceDate)
+            let policy=GardenRenderQuality(rawValue:quality) ?? .automatic
+            TimelineView(.animation(minimumInterval:1/policy.rate(lowPower:lowPower))){clock in
+                BotanicalAssetWeather(effect:effect,intensity:intensity,time:clock.date.timeIntervalSinceReferenceDate,speed:speed,wind:wind,particleScale:policy.particleScale(lowPower:lowPower))
             }.allowsHitTesting(false).accessibilityHidden(true)
         }
     }
@@ -247,6 +262,7 @@ struct GardenDesigner:View{
                     Picker("Nền",selection:$paper){ForEach(["Đêm","Giấy cổ","Nhung","Rừng","Ánh kim"],id:\.self){Text($0).tag($0)}}
                     Toggle("Phản hồi rung",isOn:$haptics)
                 }
+                GardenAtmosphereSettings()
                 Section("Bộ phối cá nhân"){
                     TextField("Tên bộ phối",text:$name)
                     Button("Lưu bộ phối"){presets.append(Preset(name:name,theme:theme,custom:custom,stem:stem,leaf:leaf,bloom:bloom,live:live,speed:speed,glow:glow,seasonal:seasonal,weather:weather,intensity:intensity,paper:paper,density:density,curvature:curvature,node:node,haptics:haptics));persist();name=""}.disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
@@ -254,7 +270,7 @@ struct GardenDesigner:View{
                         .onDelete{presets.remove(atOffsets:$0);persist()}
                 }
             }.navigationTitle("Vine Designer").toolbar{Button("Xong"){dismiss()}}
-        }.onAppear{presets=(try? JSONDecoder().decode([Preset].self,from:saved)) ?? []}
+        }.modifier(GardenPowerObserver()).onAppear{presets=(try? JSONDecoder().decode([Preset].self,from:saved)) ?? []}
     }
     private func persist(){if let data=try? JSONEncoder().encode(presets){saved=data}}
 }

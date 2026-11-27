@@ -48,10 +48,12 @@ struct BotanicalAssetVine:View{
     var customLeaf:Color?=nil
     var customStem:Color?=nil
     var customBloom:Color?=nil
+    var railOffset:CGFloat=0
+    var trunkTheme:VineTheme?=nil
     var body:some View{
         Canvas{ctx,size in
             guard size.width>10,size.height>2 else{return}
-            let rail=BotanicalAssets.rail(theme:theme,age:age)
+            let rail=BotanicalAssets.rail(theme:trunkTheme ?? theme,age:age)
             let source=ctx.resolve(Image(rail))
             let young=ctx.resolve(Image("botanical_young"))
             let corner=ctx.resolve(Image("botanical_corner"))
@@ -62,7 +64,7 @@ struct BotanicalAssetVine:View{
             let light=ctx.resolve(Image("botanical_light"))
             let root:CGFloat=18
             let stage=CGFloat(age.maturity)
-            let w=CGFloat(13+15*stage)*CGFloat(max(0.75,min(1.22,density)))
+            let w=CGFloat(17+17*stage)*CGFloat(max(0.85,min(1.15,density)))
             let h=size.height
             func sprite(_ context:GraphicsContext,_ image:GraphicsContext.ResolvedImage,_ center:CGPoint,_ width:CGFloat,_ angle:Double=0,_ opacity:Double=1,_ height:CGFloat?=nil){
                 let ratio=image.size.height/max(1,image.size.width)
@@ -78,29 +80,75 @@ struct BotanicalAssetVine:View{
                 }
                 return layer
             }
-            func stem(_ x:CGFloat,_ width:CGFloat,_ image:GraphicsContext.ResolvedImage,_ offset:Int){
-                let ratio=image.size.height/max(1,image.size.width)
-                let tile=max(84,width*ratio)
-                let overlap=min(14,tile*0.10)
-                let stride=max(1,tile-overlap)
-                let count=max(1,Int(ceil(h/stride))+1)
-                for i in 0..<count{
-                    let jitter=CGFloat(NaturalSample.value(seed &+ i &+ offset,5)-0.5)*CGFloat(curvature)*2.5
-                    let sway=animate ? CGFloat(sin(time*0.32*speed+Double(i)*0.81+Double(offset)))*0.7:0
-                    let top=CGFloat(i)*stride-overlap/2
-                    sprite(tint(ctx,customStem),image,CGPoint(x:x+jitter+sway,y:top+tile/2),width,0,1,tile)
+            func tileHeight(_ width:CGFloat,_ image:GraphicsContext.ResolvedImage)->CGFloat{
+                width*image.size.height/max(1,image.size.width)
+            }
+            // Each row samples one continuous image strip in content coordinates.
+            // Use the same tile transform at every boundary; only the branch is local.
+            func stem(_ x:CGFloat,_ width:CGFloat,_ image:GraphicsContext.ResolvedImage,_ offset:CGFloat){
+                let tile=tileHeight(width,image)
+                for part in BotanicalTilePlan.tiles(height:h,offset:offset,tileHeight:tile){
+                    var layer=tint(ctx,customStem)
+                    layer.translateBy(x:x,y:part.top+tile/2)
+                    if part.mirrored{layer.scaleBy(x:1,y:-1)}
+                    layer.draw(image,in:CGRect(x:-width/2,y:-tile/2,width:width,height:tile+0.35))
                 }
             }
-            stem(root,w,source,0)
-            if level==2 && age.hasBranches{stem(44,w*0.66,young,17)}
+            func centerX(_ y:CGFloat,_ x:CGFloat,_ width:CGFloat,_ image:GraphicsContext.ResolvedImage,_ offset:CGFloat,_ name:String)->CGFloat{
+                let tile=tileHeight(width,image)
+                guard tile>0 else{return x}
+                let position=(offset+y)/tile
+                let index=Int(floor(position)),f=position-floor(position)
+                let u=index%2 != 0 ? 1-f:f
+                // Stem anchors sampled from the alpha silhouettes of the actual PNGs.
+                let profile:[CGFloat]
+                switch name{
+                case "botanical_autumn":profile=[0.60,0.63,0.35,0.51,0.40,0.41,0.45,0.39,0.51,0.41,0.57,0.39,0.42]
+                case "botanical_bloom":profile=[0.47,0.53,0.48,0.56,0.39,0.43,0.49,0.38,0.44,0.43,0.49,0.53,0.32]
+                default:profile=[0.52,0.30,0.50,0.45,0.28,0.55,0.52,0.33,0.59,0.39,0.31,0.58,0.34]
+                }
+                let t=max(0,min(CGFloat(profile.count-1),u*CGFloat(profile.count-1)))
+                let j=min(profile.count-2,Int(t)),frac=t-CGFloat(j)
+                return x+(profile[j]*(1-frac)+profile[j+1]*frac-0.5)*width
+            }
+            stem(root,w,source,railOffset)
+            if level==2 && age.hasBranches{stem(44,w*0.66,young,railOffset+24)}
+            // More foliage and buds are separate textures, never baked into the young stem.
+            let foliage=BotanicalTilePlan.extraLeaves(age:age,density:density)
+            if foliage>0 && theme != .minimal{
+                let spacing=max(37,CGFloat(220)/CGFloat(foliage))
+                let first=Int(floor(railOffset/spacing)),last=Int(floor((railOffset+h)/spacing))
+                for i in first...last{
+                    let key=seed &+ i &* 7919
+                    let y=CGFloat(i)*spacing-railOffset+spacing*0.38
+                    guard y>4,y<h-4 else{continue}
+                    let side:CGFloat=i%2==0 ? 1:-1
+                    let scale=CGFloat(age.leafScale)
+                    let leafWidth=(9+CGFloat(NaturalSample.value(key,7))*5)*scale
+                    let sway=animate ? sin(time*speed*0.8+Double(i%97))*5:0
+                    let x=centerX(y,root,w,source,railOffset,rail)
+                    let angle=Double(side)*(-24-NaturalSample.value(key,18)*23)+sway
+                    var layer=tint(ctx,customLeaf)
+                    layer.translateBy(x:x+side*leafWidth*0.30,y:y-2)
+                    if side<0{layer.scaleBy(x:-1,y:1)}
+                    sprite(layer,leaf,.zero,leafWidth,angle,0.95)
+                    if age.hasBuds && i%5==0{
+                        sprite(tint(ctx,customBloom),bud,CGPoint(x:x+side*4,y:y+4),6+stage*4,angle,0.96)
+                    }
+                    if age.hasFlowers && i%age.bloomEvery==0{
+                        sprite(tint(ctx,customBloom),bloom,CGPoint(x:x-side*4,y:y-2),13+stage*6,angle*0.4,0.98)
+                    }
+                }
+            }
             let origin:CGFloat=level==2 && age.hasBranches ? 44:root
             let y=min(h-3,min(h*0.55,level==0 ? 35:level==1 ? 34:30))
-            let arm=max(9,size.width-origin+3)
+            let anchor=centerX(y,origin,origin==root ? w:w*0.66,origin==root ? source:young,origin==root ? railOffset:railOffset+24,origin==root ? rail:"botanical_young")
+            let arm=max(9,size.width-anchor+3)
             if age.hasFlowers && node == .natural && theme != .minimal{
-                sprite(tint(ctx,customBloom),corner,CGPoint(x:origin+arm*0.43,y:y-4),arm*1.12,0,0.96,arm*0.51)
+                sprite(tint(ctx,customBloom),corner,CGPoint(x:anchor+arm*0.43,y:y-4),arm*1.12,0,0.96,arm*0.51)
             }else{
-                // The original young vine is rotated to make a branch without flowers.
-                sprite(tint(ctx,customStem),young,CGPoint(x:origin+arm*0.39,y:y),max(3.5,w*0.42),-90,0.95,arm)
+                // Keep the texture aspect and rotate a smaller crop-like connector.
+                sprite(tint(ctx,customStem),young,CGPoint(x:anchor+arm*0.42,y:y),max(4,arm*0.145),-90,0.96,arm)
             }
             let c=CGPoint(x:level==0 ? root:size.width-9,y:y)
             if age.hasFlowers && node == .natural && theme != .minimal && (special || level==0){
@@ -116,7 +164,7 @@ struct BotanicalAssetVine:View{
                 let p=0.32+0.25*sin(time*speed+Double(seed%17))
                 sprite(ctx,light,CGPoint(x:c.x-2,y:c.y-8),14,0,p*glow)
             }
-        }.clipped().hueRotation(.degrees(BotanicalAssets.hue(theme,young:!age.hasFlowers))).saturation(BotanicalAssets.saturation(theme)).accessibilityHidden(true)
+        }.clipped().hueRotation(.degrees(BotanicalAssets.hue(trunkTheme ?? theme,young:!age.hasFlowers))).saturation(BotanicalAssets.saturation(theme)).accessibilityHidden(true)
     }
 }
 
@@ -126,6 +174,9 @@ struct BotanicalAssetWeather:View{
     let effect:GardenAtmosphere
     let intensity:Double
     let time:Double
+    var speed:Double=0.8
+    var wind:Double=0
+    var particleScale:Double=1
     var body:some View{
         Canvas{ctx,size in
             let strength=max(0,min(1,intensity)),w=size.width,h=size.height
@@ -139,7 +190,7 @@ struct BotanicalAssetWeather:View{
             let drop=ctx.resolve(Image("botanical_drop"))
             let petal=ctx.resolve(Image("botanical_petal"))
             let leaf=ctx.resolve(Image("botanical_leaf"))
-            let count=Int(Double(effect == .rain ? 48:effect == .snow ? 44:effect == .firefly ? 12:effect == .gold ? 18:20)*strength)+1
+            let count=Int(Double(effect == .rain ? 48:effect == .snow ? 44:effect == .firefly ? 12:effect == .gold ? 18:20)*strength*max(0.3,min(1,particleScale)))+1
             func draw(_ sprite:GraphicsContext.ResolvedImage,_ x:CGFloat,_ y:CGFloat,_ width:CGFloat,_ angle:Double,_ alpha:Double,_ stretch:CGFloat=1){
                 guard alpha>0.012 else{return}
                 let height=width*sprite.size.height/max(1,sprite.size.width)*stretch
@@ -148,27 +199,31 @@ struct BotanicalAssetWeather:View{
             }
             for i in 0..<count{
                 let a=NaturalSample.value(i,91),b=NaturalSample.value(i,34),d=NaturalSample.value(i,72),p=NaturalSample.value(i,14)*2*Double.pi
-                let velocity=effect == .rain ? 0.45+d*0.55:0.025+d*0.07
-                var x=CGFloat(NaturalSample.fraction(a+time*(effect == .rain ? 0.015:0.003)))*w
-                var y=CGFloat(NaturalSample.fraction(b+time*velocity))*h
-                x+=CGFloat(sin(time*(0.4+d*0.3)+p))*CGFloat(8+d*15)
-                let alpha=(0.25+0.55*d)*min(1,0.4+strength)
+                let clock=time*max(0.25,min(1.8,speed))
+                // Points per second, not a fixed fraction of the viewport.
+                let velocity=effect == .rain ? 220+d*390:effect == .snow ? 14+d*41:12+d*32
+                let track=NaturalSample.fraction(b+clock*velocity/Double(h+28))
+                var x=CGFloat(NaturalSample.fraction(a+clock*(wind*0.045+(effect == .rain ? 0.012:0.001))))*w
+                var y=CGFloat(track)*(h+28)-14
+                x+=CGFloat(sin(clock*(0.4+d*0.3)+p))*CGFloat(8+d*15)
+                let fade=effect == .firefly || effect == .gold ? 1:BotanicalTilePlan.edgeFade(track)
+                let alpha=(0.25+0.55*d)*min(1,0.4+strength)*fade
                 if effect == .firefly || effect == .gold{
-                    x=CGFloat(a)*w+CGFloat(sin(time*0.42+p))*CGFloat(14+d*24)
-                    y=CGFloat(b)*h+CGFloat(cos(time*0.32+p))*CGFloat(12+d*20)
-                    let pulse=pow(max(0,0.5+0.5*sin(time*(0.5+d*0.55)+p)),1.7)
-                    if effect == .firefly && i%7==0 && d>0.36{draw(fly,x,y,CGFloat(15+10*d),sin(time*0.55+p)*16,alpha*pulse)}
+                    x=CGFloat(a)*w+CGFloat(sin(clock*0.42+p))*CGFloat(14+d*24)
+                    y=CGFloat(b)*h+CGFloat(cos(clock*0.32+p))*CGFloat(12+d*20)
+                    let pulse=pow(max(0,0.5+0.5*sin(clock*(0.5+d*0.55)+p)),1.7)
+                    if effect == .firefly && i%7==0 && d>0.36{draw(fly,x,y,CGFloat(15+10*d),sin(clock*0.55+p)*16,alpha*pulse)}
                     else if d>0.8{draw(bokeh,x,y,CGFloat(14+16*d),0,alpha*pulse*0.56)}
                     else{draw(light,x,y,CGFloat(4+9*d),0,alpha*pulse)}
                 }else if effect == .snow{
                     let sprite=d>0.82 ? softSnow:(i%4==0 ? crystal:smallSnow)
-                    draw(sprite,x,y,CGFloat(2.4+9*d),time*(7+d*13)+p*45,alpha)
+                    draw(sprite,x,y,CGFloat(2.4+9*d),clock*(7+d*13)+p*45,alpha)
                 }else if effect == .rain{
-                    draw(drop,x,y,CGFloat(0.8+d*1.6),-17,alpha*0.50,CGFloat(3.5+d*2.5))
+                    draw(drop,x,y,CGFloat(0.8+d*1.6),-17-wind*24,alpha*0.50,CGFloat(3.5+d*2.5))
                 }else if effect == .petals{
-                    draw(petal,x,y,CGFloat(4+8*d),time*(12+d*14)+p*52,alpha,CGFloat(0.60+0.40*abs(sin(time*0.65+p))))
+                    draw(petal,x,y,CGFloat(4+8*d),clock*(12+d*14)+p*52,alpha,CGFloat(0.60+0.40*abs(sin(clock*0.65+p))))
                 }else if effect == .leaves{
-                    draw(leaf,x,y,CGFloat(6+9*d),time*(10+d*12)+p*48,alpha,CGFloat(0.65+0.35*abs(cos(time*0.55+p))))
+                    draw(leaf,x,y,CGFloat(6+9*d),clock*(10+d*12)+p*48,alpha,CGFloat(0.65+0.35*abs(cos(time*0.55+p))))
                 }
             }
         }.clipped().accessibilityHidden(true)
