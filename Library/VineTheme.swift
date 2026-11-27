@@ -89,6 +89,8 @@ struct VineRail:View {
     var curvature:Double=1
     var node:VineNode = .natural
     var useCustom=false
+    var growth:VineGrowth?=nil
+    var specialBloom=false
     @AppStorage("garden.live") private var live=true
     @AppStorage("garden.speed") private var speed=0.7
     @AppStorage("garden.glow") private var glow=0.6
@@ -112,6 +114,9 @@ struct VineRail:View {
             let phase=time*speed
             let amplitude=CGFloat(max(0.2,min(2,curvature)))*5
             let sway=CGFloat(sin(phase))*1.6
+            let age=growth ?? VineGrowth(days:365)
+            let stemFactor=CGFloat(age.stemScale),leafFactor=CGFloat(age.leafScale)
+            let maturity=age.maturity
             func stem(_ x:CGFloat,_ color:Color,_ width:CGFloat){
                 var p=Path();p.move(to:CGPoint(x:x,y:0))
                 let segments=max(1,Int(ceil(h/42)))
@@ -119,25 +124,35 @@ struct VineRail:View {
                     let a=h*CGFloat(i)/CGFloat(segments),b=h*CGFloat(i+1)/CGFloat(segments),sign:CGFloat=i%2==0 ? 1:-1
                     p.addCurve(to:CGPoint(x:x,y:b),control1:CGPoint(x:x+amplitude*sign,y:a+(b-a)*0.35),control2:CGPoint(x:x-amplitude*sign,y:a+(b-a)*0.7))
                 }
-                ctx.stroke(p,with:.color(color.opacity(0.2)),style:StrokeStyle(lineWidth:width+3,lineCap:.round))
-                ctx.stroke(p,with:.color(color),style:StrokeStyle(lineWidth:width,lineCap:.round))
-                let interval=CGFloat(theme == .minimal ? 65:32)/CGFloat(max(0.35,min(1.8,density)))
+                ctx.stroke(p,with:.color(color.opacity(0.2*maturity)),style:StrokeStyle(lineWidth:width*stemFactor+2*maturity,lineCap:.round))
+                ctx.stroke(p,with:.color(color),style:StrokeStyle(lineWidth:width*stemFactor,lineCap:.round))
+                let interval=CGFloat(theme == .minimal ? 65:32)/CGFloat(max(0.15,min(1.8,density*age.leafDensity)))
                 var pos:CGFloat=12;var index=0
                 while pos<h-5{
                     let side:CGFloat=index%2==0 ? -1:1
-                    leaf(ctx,base:CGPoint(x:x,y:pos),tip:CGPoint(x:x+side*(theme == .minimal ? 8:12)+sway,y:pos-10),color:leafColor.opacity(index%3==0 ? 0.75:1))
+                    leaf(ctx,base:CGPoint(x:x,y:pos),tip:CGPoint(x:x+side*(theme == .minimal ? 8:12)*leafFactor+sway*leafFactor,y:pos-10*leafFactor),color:leafColor.opacity(index%3==0 ? 0.75:1))
+                    if age.hasBranches && index%3==1{
+                        let start=CGPoint(x:x,y:pos+5),end=CGPoint(x:x+side*9*leafFactor,y:pos-10*leafFactor)
+                        var shoot=Path();shoot.move(to:start);shoot.addQuadCurve(to:end,control:CGPoint(x:x+side*4,y:pos-2));ctx.stroke(shoot,with:.color(stemColor.opacity(0.85)),lineWidth:0.85)
+                        leaf(ctx,base:end,tip:CGPoint(x:end.x-side*5,y:end.y-7*leafFactor),color:leafColor)
+                    }
+                    if age.hasBuds && index%age.bloomEvery==0 && theme != .minimal{
+                        let c=CGPoint(x:x+side*6*leafFactor,y:pos+5),r:CGFloat=age.hasFlowers ? CGFloat(3.2*age.flowerScale):1.65
+                        if age.hasFlowers{for i in 0..<5{let a=Double(i)*2*Double.pi/5;let q=CGPoint(x:c.x+CGFloat(cos(a))*r,y:c.y+CGFloat(sin(a))*r);ctx.fill(Path(ellipseIn:CGRect(x:q.x-r*0.65,y:q.y-r*0.65,width:r*1.3,height:r*1.3)),with:.color(bloomColor.opacity(0.85)))}}
+                        ctx.fill(Path(ellipseIn:CGRect(x:c.x-r*0.65,y:c.y-r*0.65,width:r*1.3,height:r*1.3)),with:.color(bloomColor))
+                    }
                     pos+=interval;index+=1
                 }
             }
             stem(root,stemColor,level==0 ? 2.6:1.8)
-            if level==2{stem(45,stemColor.opacity(0.68),1.2)}
-            let origin:CGFloat=level==2 ? 45:root
+            if level==2 && age.hasBranches{stem(45,stemColor.opacity(0.68),1.2)}
+            let origin:CGFloat=level==2 && age.hasBranches ? 45:root
             var arm=Path();arm.move(to:CGPoint(x:origin,y:max(0,y-13)))
             arm.addCurve(to:CGPoint(x:size.width,y:y),control1:CGPoint(x:origin+6,y:y+6),control2:CGPoint(x:branch-5,y:y-8))
-            ctx.stroke(arm,with:.color(stemColor),style:StrokeStyle(lineWidth:level==0 ? 2:1.6,lineCap:.round))
-            if level>0 && theme != .minimal{leaf(ctx,base:CGPoint(x:branch-10,y:y),tip:CGPoint(x:branch-4,y:y-12),color:leafColor)}
-            if live && !reduced && glow>0{
-                for i in 0..<3{
+            ctx.stroke(arm,with:.color(stemColor),style:StrokeStyle(lineWidth:(level==0 ? 2:1.6)*stemFactor,lineCap:.round))
+            if level>0 && theme != .minimal && age.hasBranches{leaf(ctx,base:CGPoint(x:branch-10,y:y),tip:CGPoint(x:branch-4,y:y-12),color:leafColor)}
+            if live && !reduced && glow>0 && age.hasBuds{
+                for i in 0..<(age.hasFlowers ? 3:1){
                     let t=phase+Double(i)*2.1
                     let p=CGPoint(x:root+CGFloat(sin(t))*12,y:h*CGFloat(i+1)/4+CGFloat(cos(t*0.8))*7)
                     let opacity=(0.3+0.3*sin(t))*glow
@@ -145,10 +160,12 @@ struct VineRail:View {
                     ctx.fill(Path(ellipseIn:CGRect(x:p.x-1,y:p.y-1,width:2,height:2)),with:.color(bloomColor.opacity(0.9)))
                 }
             }
-            let center=CGPoint(x:level==0 ? root:branch,y:y),r:CGFloat=level==0 ? 6:4
-            if node == .leaf || (node == .natural && level==1){
+            let center=CGPoint(x:level==0 ? root:branch,y:y),r:CGFloat=(level==0 ? 6:4)*leafFactor
+            if !age.hasBuds{
+                ctx.fill(Path(ellipseIn:CGRect(x:center.x-r*0.6,y:center.y-r*0.6,width:r*1.2,height:r*1.2)),with:.color(leafColor))
+            }else if node == .leaf || (node == .natural && level==1 && !specialBloom){
                 leaf(ctx,base:CGPoint(x:center.x-4,y:center.y+5),tip:CGPoint(x:center.x+5,y:center.y-7),color:bloomColor)
-            }else if node == .pearl || theme == .minimal || level==2{
+            }else if node == .pearl || theme == .minimal || !age.hasFlowers || (level==2 && !specialBloom){
                 ctx.fill(Path(ellipseIn:CGRect(x:center.x-r-3,y:center.y-r-3,width:(r+3)*2,height:(r+3)*2)),with:.color(bloomColor.opacity(0.17)))
                 ctx.fill(Path(ellipseIn:CGRect(x:center.x-r,y:center.y-r,width:r*2,height:r*2)),with:.color(bloomColor))
                 ctx.fill(Path(ellipseIn:CGRect(x:center.x-r*0.5,y:center.y-r*0.6,width:r*0.65,height:r*0.65)),with:.color(.white.opacity(0.8)))
@@ -175,6 +192,7 @@ struct VineRail:View {
     }
 }
 struct VineCollectionView:View{
+    @ObservedObject private var life=LifeArchive.shared
     @AppStorage("timeline.vine.theme") private var themeValue=VineTheme.emerald.rawValue
     @AppStorage("timeline.vine.density") private var density=1.0
     @AppStorage("timeline.vine.curvature") private var curvature=1.0
@@ -188,12 +206,13 @@ struct VineCollectionView:View{
                 VStack(alignment:.leading,spacing:18){
                     Text("Khu vườn ký ức").font(.system(size:32,design:.serif))
                     Text("Chọn dây leo, lá, hoa và nụ để cá nhân hóa cây thời gian. Vector sắc nét, không dùng ảnh nền raster.").font(.caption).foregroundStyle(.secondary)
+                    VineGrowthCard(life:life)
                     LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:2),spacing:12){
                         ForEach(VineTheme.allCases){item in
                             Button{withAnimation(.easeInOut(duration:0.25)){themeValue=item.rawValue}}label:{
                                 VStack(alignment:.leading,spacing:7){
                                     HStack{
-                                        VineRail(level:2,theme:item,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural).frame(width:75,height:112)
+                                        VineRail(level:2,theme:item,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,growth:VineGrowth(days:life.gardenDays)).frame(width:75,height:112)
                                         VStack(alignment:.leading,spacing:5){
                                             RoundedRectangle(cornerRadius:5).fill(item.leaf.opacity(0.18)).frame(height:27).overlay{Image(systemName:"leaf.fill").foregroundStyle(item.leaf)}
                                             RoundedRectangle(cornerRadius:5).fill(item.bloom.opacity(0.14)).frame(height:35).overlay{Image(systemName:"photo").foregroundStyle(item.bloom)}
@@ -211,7 +230,7 @@ struct VineCollectionView:View{
                     Button("Vine Designer & hiệu ứng",systemImage:"paintpalette"){showDesigner=true}.buttonStyle(.borderedProminent)
                     GroupBox("Tùy chỉnh dây leo"){
                         VStack(alignment:.leading,spacing:10){
-                            Text("Mật độ lá").font(.caption)
+                            Text("Mật độ lá · theo tuổi cây").font(.caption)
                             Slider(value:$density,in:0.35...1.8)
                             Text("Độ uốn lượn").font(.caption)
                             Slider(value:$curvature,in:0.2...2)
@@ -274,6 +293,7 @@ struct GardenWeather:View{
     }
 }
 struct GardenDesigner:View{
+    @ObservedObject private var life=LifeArchive.shared
     @AppStorage("timeline.vine.theme") private var theme=VineTheme.emerald.rawValue
     @AppStorage("garden.live") private var live=true
     @AppStorage("garden.speed") private var speed=0.7
@@ -301,7 +321,7 @@ struct GardenDesigner:View{
         NavigationStack{
             Form{
                 Section("Xem trước"){
-                    HStack{VineRail(level:2,theme:VineTheme(rawValue:theme) ?? .emerald,density:density,curvature:curvature,node:VineNode(rawValue:node) ?? .natural,useCustom:true).frame(width:78,height:150);VStack(alignment:.leading){Text("Một ngày đáng nhớ").font(.system(.title2,design:.serif));Text("Ký ức nở hoa").font(.caption);RoundedRectangle(cornerRadius:12).fill(GardenColor.decode(leaf).opacity(0.2)).frame(height:65)}}
+                    HStack{VineRail(level:2,theme:VineTheme(rawValue:theme) ?? .emerald,density:density,curvature:curvature,node:VineNode(rawValue:node) ?? .natural,useCustom:true,growth:VineGrowth(days:life.gardenDays)).frame(width:78,height:150);VStack(alignment:.leading){Text("Một ngày đáng nhớ").font(.system(.title2,design:.serif));Text("Ký ức nở hoa").font(.caption);RoundedRectangle(cornerRadius:12).fill(GardenColor.decode(leaf).opacity(0.2)).frame(height:65)}}
                         .padding().background(GardenBackground.color(paper)).overlay{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}
                 }
                 Section("Dây leo sống"){

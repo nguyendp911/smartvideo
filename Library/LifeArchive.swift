@@ -51,6 +51,7 @@ struct LifePackage:Codable{
     var milestones:[LifeMilestone]=[]
     var letters:[FutureMemoryLetter]=[]
     var chapters:[LifeChapter]=[]
+    var gardenUsageDays:Set<String>?=nil
 }
 @MainActor final class LifeArchive:ObservableObject{
     static let shared=LifeArchive()
@@ -75,6 +76,12 @@ struct LifePackage:Codable{
         try bytes.write(to:root.appendingPathComponent("life.json"),options:[.atomic,.completeFileProtection])
         data=next
     }
+    var gardenDays:Int{data.gardenUsageDays?.count ?? 0}
+    func recordGardenUse(_ date:Date=Date())throws{
+        let key=LifeDate.key(date)
+        guard !(data.gardenUsageDays ?? []).contains(key) else{return}
+        try update{$0.gardenUsageDays=($0.gardenUsageDays ?? []).union([key])}
+    }
     func milestones(_ day:String)->[LifeMilestone]{data.milestones.filter{$0.date==day}}
     func exportData()throws->Data{guard issue==nil else{throw CameraError.unreadable};return try JSONEncoder().encode(data)}
     func merge(_ bytes:Data)throws{
@@ -85,6 +92,7 @@ struct LifePackage:Codable{
             p.milestones += incoming.milestones.filter{m.insert($0.id).inserted}
             p.letters += incoming.letters.filter{l.insert($0.id).inserted}
             p.chapters += incoming.chapters.filter{c.insert($0.id).inserted}
+            p.gardenUsageDays=(p.gardenUsageDays ?? []).union(incoming.gardenUsageDays ?? [])
         }
     }
 }

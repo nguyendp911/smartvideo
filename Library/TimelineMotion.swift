@@ -93,6 +93,7 @@ struct TimelineStoryTree:View{
             ScrollView{
                 LazyVStack(alignment:.leading,spacing:0){
                     treeHeader(proxy)
+                    if years.isEmpty{VStack(spacing:10){VineRail(level:0,theme:vine,growth:VineGrowth(days:life.gardenDays)).frame(width:45,height:150);Text("Mầm ký ức đầu tiên").font(.system(.title2,design:.serif));Text("Chụp ảnh hoặc viết nhật ký trong lịch để tạo nhánh đầu tiên.").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)}.frame(maxWidth:.infinity).padding(20)}
                     ForEach(years){year in
                         yearRow(year).id(year.id)
                         if expanded.contains(year.id){
@@ -148,6 +149,7 @@ struct TimelineStoryTree:View{
                 }label:{Image(systemName:"calendar.badge.clock").font(.title3).padding(10).background(.white.opacity(0.08),in:Circle())}
             }
             Text("\(years.count) năm · \(Set(shots.map(\.day)).union(extraDays).count) ngày · \(shots.count) khoảnh khắc").font(.caption).foregroundStyle(.secondary)
+            VineGrowthCard(life:life)
         }.padding(.horizontal,8).padding(.vertical,14)
     }
     private func yearRow(_ year:TimelineTreeYear)->some View{
@@ -194,7 +196,7 @@ struct TimelineStoryTree:View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
             .buttonStyle(.plain).disabled(group.items.isEmpty)
     }
-    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal)}
+    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true)}
     private func storyButton(_ target:StoryTarget)->some View{
         let entry=archive.entry(target.id)
         return Button{

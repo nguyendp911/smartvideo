@@ -174,6 +174,13 @@ struct CameraHome:View {
         .onReceive(NotificationCenter.default.publisher(for:UIDevice.orientationDidChangeNotification)){ _ in
             let o=UIDevice.current.orientation;if o.isLandscape || o.isPortrait {facing=o}
         }
+        .task(id:phase){
+            guard phase == .active else{return}
+            while !Task.isCancelled{
+                try? LifeArchive.shared.recordGardenUse()
+                do{try await Task.sleep(for:.seconds(60))}catch{return}
+            }
+        }
         .onChange(of:phase) { _,p in if p == .active && !showTimeline && !showToday {camera.start()} else {sequence?.cancel();camera.stop()} }
         .onChange(of:showTimeline){_,shown in if shown {camera.stop()} else if phase == .active && !showToday {camera.start()} }
         .onChange(of:showToday){_,shown in if shown{camera.stop()}else if phase == .active && !showTimeline{camera.start()}}

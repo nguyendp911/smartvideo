@@ -180,6 +180,7 @@ struct LifeToday:View{
                         Text(TimelineIndex.label(day)).font(.subheadline).foregroundStyle(.secondary)
                     }
                     hero
+                    VineGrowthCard(life:life)
                     HStack(spacing:7){
                         quick("Chụp ảnh","camera",camera)
                         quick("Viết Story","pencil.line"){target=MemorySync.target(day:day,shots:shots)}
@@ -221,7 +222,7 @@ struct LifeToday:View{
         ZStack(alignment:.bottomLeading){
             RoundedRectangle(cornerRadius:18).fill(LinearGradient(colors:[Color(red:0.19,green:0.35,blue:0.24),night],startPoint:.topLeading,endPoint:.bottomTrailing))
             if let cover=MemorySync.cover(today,entry:story){DiskImage(url:model.vault.picture(cover),limit:1100).scaledToFill().frame(height:210).clipped()}
-            else{VineRail(level:2,theme:.emerald,density:1.1,curvature:1.4).frame(width:90,height:200).frame(maxWidth:.infinity,alignment:.trailing).padding(.trailing,25)}
+            else{VineRail(level:2,theme:.emerald,density:1.1,curvature:1.4,growth:VineGrowth(days:life.gardenDays)).frame(width:90,height:200).frame(maxWidth:.infinity,alignment:.trailing).padding(.trailing,25)}
             VStack(alignment:.leading,spacing:5){
                 Text(story?.title.isEmpty == false ? story?.title ?? "":"Một ngày mới").font(.system(.title,design:.serif))
                 Text(story?.body.isEmpty == false ? story?.body ?? "":"Mỗi ngày đều có một câu chuyện đáng giữ lại.").font(.caption).lineLimit(3)

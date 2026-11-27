@@ -114,7 +114,7 @@ struct Timeline: View {
                 if working { ProgressView(importStatus.isEmpty ? "Đang xử lý…" : importStatus).padding(8).frame(maxWidth:.infinity) }
                 if selecting || compare { selectionBar }
                 if showAlbums { albumPage }
-                else if filtered.isEmpty && (presentation != .tree || journalDays.isEmpty || selecting || compare) { emptyPage }
+                else if filtered.isEmpty && (presentation != .tree || selecting || compare || scope == .trash || (hasFilters && journalDays.isEmpty)) { emptyPage }
                 else if selecting || compare || scope == .trash || presentation == .gallery {gallery}
                 else if presentation == .tree{
                     TimelineStoryTree(shots:filtered,vault:model.vault,newest:newest,accent:layout.accent,open:{selection=$0},play:{slideShots=$0;slideshow=true},extraDays:journalDays)

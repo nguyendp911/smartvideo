@@ -252,4 +252,30 @@ final class VieLensTests:XCTestCase {
         XCTAssertFalse(LifeReflectionRange.month(date).contains("2026-12-01"))
         XCTAssertFalse(FutureMemoryLetter(title:"A",content:"B",opens:date).isOpen(at:date.addingTimeInterval(-1)))
     }
+    @MainActor func testVineGrowthPersistsUniqueUsageDays()throws{
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let life=LifeArchive(root:root)
+        let date=LifeDate.date("2026-11-27")!
+        XCTAssertEqual(life.gardenDays,0)
+        try life.recordGardenUse(date);try life.recordGardenUse(date)
+        XCTAssertEqual(life.gardenDays,1)
+        for i in 1..<7{try life.recordGardenUse(LifeDate.calendar.date(byAdding:.day,value:i,to:date)!)}
+        XCTAssertEqual(LifeArchive(root:root).gardenDays,7)
+        XCTAssertEqual(VineGrowth(days:life.gardenDays).stage,.sprout)
+        try life.merge(life.exportData())
+        XCTAssertEqual(life.gardenDays,7)
+        try life.update{$0.milestones=[]}
+        XCTAssertEqual(life.gardenDays,7)
+    }
+    func testVineGrowthStages(){
+        XCTAssertEqual(VineGrowth(days:1).stage,.seed)
+        XCTAssertFalse(VineGrowth(days:1).hasBuds)
+        XCTAssertEqual(VineGrowth(days:30).stage,.young)
+        XCTAssertTrue(VineGrowth(days:90).hasBuds)
+        XCTAssertFalse(VineGrowth(days:179).hasFlowers)
+        XCTAssertTrue(VineGrowth(days:180).hasFlowers)
+        XCTAssertEqual(VineGrowth(days:365).stage,.mature)
+        XCTAssertGreaterThan(VineGrowth(days:365).leafDensity,VineGrowth(days:1).leafDensity)
+    }
 }
