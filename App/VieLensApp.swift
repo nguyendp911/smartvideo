@@ -52,8 +52,13 @@ struct CameraHome:View {
     @Environment(\.scenePhase) private var phase
     @AppStorage("look") private var lookValue=Look.neutral.rawValue
     @AppStorage("session") private var session=""
-    @State private var showTimeline=false, options=false,flash=false,grid=false,shooting=false
-    @State private var draft="", blink=false
+    @State private var showTimeline=false
+    @State private var options=false
+    @State private var flash=false
+    @State private var grid=false
+    @State private var shooting=false
+    @State private var draft=""
+    @State private var blink=false
     @State private var facing=UIDeviceOrientation.portrait
     var look:Look {Look(rawValue:lookValue) ?? .neutral}
     var body:some View {

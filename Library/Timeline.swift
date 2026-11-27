@@ -8,10 +8,19 @@ private enum Transfer {case backup,restore}
 struct Timeline:View {
     @ObservedObject var model:LibraryModel
     @Environment(\.dismiss) private var dismiss
-    @State private var search="",session="",scope=Scope.all,scale=Scale.day
-    @State private var selection:Shot?,imported=[PhotosPickerItem](),importing=false,working=false
-    @State private var pickFolder=false,transfer=Transfer.backup
-    @State private var compare=false,chosen=[UUID](),pair=false
+    @State private var search=""
+    @State private var session=""
+    @State private var scope=Scope.all
+    @State private var scale=Scale.day
+    @State private var selection:Shot?
+    @State private var imported=[PhotosPickerItem]()
+    @State private var importing=false
+    @State private var working=false
+    @State private var pickFolder=false
+    @State private var transfer=Transfer.backup
+    @State private var compare=false
+    @State private var chosen=[UUID]()
+    @State private var pair=false
     @State private var newest=true
     private var active:[Shot]{model.shots.filter{$0.deleted==nil}}
     private var filtered:[Shot] {
@@ -148,7 +157,11 @@ private struct ShotDetail:View {
     @ObservedObject var model:LibraryModel
     let shot:Shot
     @Environment(\.dismiss) private var dismiss
-    @State private var original=false,tags="",session="",editing=false,confirm=false
+    @State private var original=false
+    @State private var tags=""
+    @State private var session=""
+    @State private var editing=false
+    @State private var confirm=false
     @State private var notice:String?
     var current:Shot {model.shots.first{$0.id==shot.id} ?? shot}
     var body:some View {
