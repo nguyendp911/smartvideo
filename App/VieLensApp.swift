@@ -66,6 +66,7 @@ struct CameraHome:View {
     @State private var showTimeline=false
     @State private var showToday=false
     @State private var pendingTimeline=false
+    @State private var timelineDay:String?
     @State private var options=false
     @State private var flash=FlashChoice.off
     @AppStorage("camera.quality") private var qualityValue=CaptureQuality.smart.rawValue
@@ -176,8 +177,8 @@ struct CameraHome:View {
         .onChange(of:phase) { _,p in if p == .active && !showTimeline && !showToday {camera.start()} else {sequence?.cancel();camera.stop()} }
         .onChange(of:showTimeline){_,shown in if shown {camera.stop()} else if phase == .active && !showToday {camera.start()} }
         .onChange(of:showToday){_,shown in if shown{camera.stop()}else if phase == .active && !showTimeline{camera.start()}}
-        .fullScreenCover(isPresented:$showToday,onDismiss:{if pendingTimeline{pendingTimeline=false;showTimeline=true}}){LifeToday(model:model,camera:{showToday=false},timeline:{pendingTimeline=true;showToday=false})}
-        .fullScreenCover(isPresented:$showTimeline){Timeline(model:model)}
+        .fullScreenCover(isPresented:$showToday,onDismiss:{if pendingTimeline{pendingTimeline=false;showTimeline=true}}){LifeToday(model:model,camera:{showToday=false},timeline:{day in timelineDay=day;pendingTimeline=true;showToday=false})}
+        .fullScreenCover(isPresented:$showTimeline,onDismiss:{timelineDay=nil}){Timeline(model:model,initialDay:timelineDay)}
         .sheet(isPresented:$showPro){
             NavigationStack{
                 Form{

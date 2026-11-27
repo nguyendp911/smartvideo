@@ -23,6 +23,7 @@ enum GalleryLayout: String, CaseIterable {
 }
 struct Timeline: View {
     @ObservedObject var model: LibraryModel
+    var initialDay:String?=nil
     @ObservedObject private var stories=StoryArchive.shared
     @ObservedObject private var life=LifeArchive.shared
     @State private var showToday=false
@@ -126,7 +127,7 @@ struct Timeline: View {
             .disabled(working)
             .toolbar(.hidden,for:.navigationBar)
         }
-        .task { await model.reload() }
+        .task { await model.reload();if let initialDay{resetFilters();period=initialDay;presentationValue=TimelinePresentation.tree.rawValue} }
         .onChange(of:search) { _,_ in chosen.removeAll() }
         .fullScreenCover(item:$selection) { shot in
             ShotDetail(model:model,shot:shot,shots:filtered)
@@ -138,7 +139,7 @@ struct Timeline: View {
         .sheet(isPresented:$showVines){VineCollectionView()}
         .sheet(item:$pathMode){LifePathView(shots:active,vault:model.vault,mode:$0)}
         .sheet(isPresented:$showLifeBackup){LifeBackupView()}
-        .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{showToday=false})}
+        .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{day in showToday=false;resetFilters();period=day ?? "";showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue})}
         .sheet(isPresented:$showChapters){LifeChapterStudio(shots:active,vault:model.vault)}
         .sheet(isPresented:$showIntelligence){LifeIntelligence(shots:active,vault:model.vault)}
         .sheet(isPresented:$showLetters){FutureLetterStudio(life:life)}

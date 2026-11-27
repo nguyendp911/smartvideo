@@ -154,7 +154,7 @@ struct LifeToday:View{
     @ObservedObject private var life=LifeArchive.shared
     @Environment(\.dismiss) private var dismiss
     let camera:()->Void
-    let timeline:()->Void
+    let timeline:(String?)->Void
     @State private var target:StoryTarget?
     @State private var calendar=false
     @State private var letters=false
@@ -196,7 +196,7 @@ struct LifeToday:View{
                     }
                     GroupBox("Hành trình của tôi"){
                         VStack(spacing:13){
-                            action("Mở cây thời gian","leaf",timeline)
+                            action("Mở cây thời gian","leaf"){timeline(nil)}
                             action("Life Chapters","book.pages"){chapters=true}
                             action("Cột mốc mới","star"){milestone=true}
                             action("Thư tương lai","envelope"){letters=true}
@@ -209,7 +209,7 @@ struct LifeToday:View{
             }.background(night).navigationBarTitleDisplayMode(.inline).toolbar{Button("Xong"){dismiss()}}
         }.task{await model.reload()}
         .sheet(item:$target){LifeStorySheet(target:$0,vault:model.vault,archive:stories)}
-        .sheet(isPresented:$calendar){LifeCalendar(shots:shots,vault:model.vault){_ in calendar=false;timeline()}}
+        .sheet(isPresented:$calendar){LifeCalendar(shots:shots,vault:model.vault){key in calendar=false;timeline(key)}}
         .sheet(isPresented:$letters){FutureLetterStudio(life:life)}
         .sheet(isPresented:$milestone){LifeMilestoneEditor(day:day,life:life)}
         .sheet(isPresented:$chapters){LifeChapterStudio(shots:shots,vault:model.vault)}
