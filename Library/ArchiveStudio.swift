@@ -56,41 +56,19 @@ struct ArchiveSlideshow:View {
     let shots:[Shot]
     let vault:Vault
     @Environment(\.dismiss) private var dismiss
-    @State private var index=0
-    @State private var playing=true
-    @State private var interval=3
-    var body:some View {
-        ZStack {
+    var body:some View{
+        ZStack{
             Color.black.ignoresSafeArea()
-            if shots.indices.contains(index) {
-                let shot=shots[index]
-                DiskImage(url:vault.picture(shot),limit:1800).scaledToFit().id(shot.id).transition(.opacity)
-                VStack {
-                    HStack {
-                        Button{dismiss()} label:{Image(systemName:"xmark.circle.fill").font(.title)}
-                        Spacer()
-                        Menu {ForEach([2,3,5,8],id:\.self){n in Button("\(n) giây"){interval=n}}} label:{Label("\(interval)s",systemImage:"timer")}
-                    }.padding(20)
+            VStack(spacing:0){
+                HStack{
+                    Text("V I E L E N S   /   M O T I O N").font(.caption2.monospaced()).foregroundStyle(gold)
                     Spacer()
-                    VStack(spacing:10){
-                        Text(TimelineIndex.label(shot.day)).font(.system(.title2,design:.serif))
-                        Text(shot.note ?? shot.session).font(.caption).lineLimit(2)
-                        HStack(spacing:32){
-                            Button{advance(-1)} label:{Image(systemName:"backward.fill")}
-                            Button{playing.toggle()} label:{Image(systemName:playing ? "pause.fill":"play.fill")}
-                            Button{advance(1)} label:{Image(systemName:"forward.fill")}
-                        }.font(.title2)
-                        Text("\(index+1) / \(shots.count)").font(.caption.monospacedDigit())
-                    }.padding(20).frame(maxWidth:.infinity).background(.black.opacity(0.68))
-                }
-            } else {Button("Đóng"){dismiss()}}
-        }.task(id:"\(playing)-\(interval)"){
-            guard playing,shots.count>1 else{return}
-            while !Task.isCancelled {
-                do {try await Task.sleep(for:.seconds(interval))}catch{return}
-                if !Task.isCancelled {advance(1)}
+                    Button{dismiss()}label:{Image(systemName:"xmark.circle.fill").font(.title2).padding(8)}
+                }.padding(.horizontal,16)
+                Spacer(minLength:0)
+                TimelineSlideStage(shots:shots,vault:vault)
+                Spacer(minLength:0)
             }
         }
     }
-    private func advance(_ amount:Int){guard !shots.isEmpty else{return};withAnimation(.easeInOut(duration:0.35)){index=(index+amount+shots.count)%shots.count}}
 }

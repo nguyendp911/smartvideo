@@ -166,4 +166,14 @@ final class VieLensTests:XCTestCase {
         let tracks=try await asset.loadTracks(withMediaType:.video)
         XCTAssertEqual(tracks.count,1)
     }
+    func testTimelineTreeHierarchy() {
+        let a=Shot(id:UUID(),date:Date(timeIntervalSince1970:10),day:"2025-01-01",session:"",rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let b=Shot(id:UUID(),date:Date(timeIntervalSince1970:20),day:"2025-01-02",session:"",rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let c=Shot(id:UUID(),date:Date(timeIntervalSince1970:30),day:"2026-02-01",session:"",rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let tree=TimelineTreeIndex.build([a,b,c],newest:true)
+        XCTAssertEqual(tree.map(\.id),["2026","2025"])
+        XCTAssertEqual(tree.last?.months.first?.id,"2025-01")
+        XCTAssertEqual(tree.last?.months.first?.days.map(\.key),["2025-01-02","2025-01-01"])
+        XCTAssertEqual(tree.flatMap(\.months).flatMap(\.days).flatMap(\.items).count,3)
+    }
 }

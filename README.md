@@ -19,3 +19,6 @@ Timeline Designer (7 layout gồm grid, tùy chỉnh), pinch số cột, nhảy 
 
 ## Signature Evolution 11
 Memory Cinema thêm chuyển cảnh mờ/hòa ảnh, chuyển động zoom/lướt, ngang/dọc, nhạc từ Tệp với lặp và fade-out. Creative Studio lưu công thức chỉnh sửa đặt tên và ID ảnh qua các lần mở. Chỉnh sửa câu chuyện, ảnh bìa, thành viên. Sao lưu Signature JSON riêng, hợp nhất theo ID; phục hồi ảnh bằng backup Vault riêng. Duplicate Cleaner chỉ chọn bản trùng byte SHA-256, luôn giữ một ảnh mỗi nhóm và xóa mềm có xác nhận. Visual Collections nhóm chủ đề Vision và RAW gallery cho ảnh RAW đã nhập. Chưa tự động nhận diện danh tính người; không suy đoán cảm xúc thực tế; Private Vault vẫn là bản sao mã hóa.
+
+## Motion Timeline 12
+Cây thời gian mặc định năm–tháng–ngày có nhánh, mở/thu gọn, nhảy năm, carousel có scroll transition; Slide ký ức với sáu hiệu ứng, cử chỉ, phát/tạm dừng, thanh tiến độ, filmstrip, hỗ trợ Reduce Motion. Thư viện lưới cũ vẫn có. Cải thiện cấp phát và backpressure encoder video, giữ kiểm thử xuất phim.

@@ -24,6 +24,8 @@ enum GalleryLayout: String, CaseIterable {
 struct Timeline: View {
     @ObservedObject var model: LibraryModel
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("timeline.presentation.v2") private var presentationValue=TimelinePresentation.tree.rawValue
+    private var presentation:TimelinePresentation{TimelinePresentation(rawValue:presentationValue) ?? .tree}
     @AppStorage("timeline.layout") private var layoutValue = GalleryLayout.editorial.rawValue
     @AppStorage("timeline.spacing") private var photoSpacing=5.0
     @AppStorage("timeline.radius") private var photoRadius=8.0
@@ -82,7 +84,12 @@ struct Timeline: View {
                 if selecting || compare { selectionBar }
                 if showAlbums { albumPage }
                 else if filtered.isEmpty { emptyPage }
-                else { gallery }
+                else if selecting || compare || scope == .trash || presentation == .gallery {gallery}
+                else if presentation == .tree{
+                    TimelineStoryTree(shots:filtered,vault:model.vault,newest:newest,accent:layout.accent,open:{selection=$0},play:{slideShots=$0;slideshow=true})
+                }else{
+                    TimelineSlideStage(shots:filtered,vault:model.vault,open:{selection=$0})
+                }
             }
             .background(layout.background)
             .tint(layout.accent)
@@ -172,6 +179,8 @@ struct Timeline: View {
                 Button("Nhập ảnh",systemImage:"photo.badge.plus") { importing=true }
                 Button("Lịch ảnh",systemImage:"calendar") {showCalendar=true}
                 Button("Ngày này qua các năm",systemImage:"clock.arrow.circlepath"){resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false}
+                Button("Cây thời gian",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){clearSelection();showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue}
+                Button("Slide ký ức",systemImage:"rectangle.on.rectangle"){clearSelection();showAlbums=false;presentationValue=TimelinePresentation.slides.rawValue}
                 Button("Trình chiếu",systemImage:"play.rectangle"){slideShots=filtered;slideshow=true}.disabled(filtered.isEmpty || scope == .trash)
                 Button("So sánh hai ảnh",systemImage:"rectangle.split.2x1") { showAlbums=false;clearSelection();compare=true }
                 Button("Sao lưu vào Tệp",systemImage:"square.and.arrow.up") { transfer = .backup;pickFolder=true }
@@ -193,6 +202,7 @@ struct Timeline: View {
                 Button { showFilters=true } label: { circleIcon(hasFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease") }.accessibilityLabel("Bộ lọc")
                 Button { if selecting || compare {clearSelection()} else {showAlbums=false;selecting=true} } label: { circleIcon(selecting || compare ? "xmark" : "checkmark.circle") }.accessibilityLabel("Chọn ảnh")
             }
+            if showAlbums || presentation == .gallery {
             Button {showSignature=true} label:{
                 HStack{
                     Image(systemName:"sparkles").foregroundStyle(layout.accent)
@@ -202,12 +212,32 @@ struct Timeline: View {
                     Image(systemName:"chevron.right").font(.caption)
                 }.padding(10).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:11))
             }.buttonStyle(.plain)
+            }
             if !showAlbums {
+                if !selecting && !compare && scope != .trash{
+                    HStack(spacing:5){
+                        ForEach(TimelinePresentation.allCases,id:\.self){mode in
+                            Button{
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                withAnimation(.easeInOut(duration:0.25)){presentationValue=mode.rawValue}
+                            }label:{
+                                VStack(spacing:4){
+                                    Image(systemName:mode.icon).font(.system(size:15,weight:.medium))
+                                    Text(mode.rawValue).font(.system(size:10,weight:.semibold)).lineLimit(1)
+                                }.frame(maxWidth:.infinity).frame(height:43)
+                                    .foregroundStyle(presentation==mode ? Color.black:Color.white.opacity(0.8))
+                                    .background(presentation==mode ? layout.accent:Color.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }
+                if presentation == .gallery || selecting || compare || scope == .trash{
                 HStack(spacing:8) {
                     Picker("Khoảng thời gian",selection:Binding(get:{scale},set:{scale=$0;period="";clearSelection()})) {
                         ForEach(TimelinePeriod.allCases,id:\.self) { Text($0.rawValue).tag($0) }
                     }.pickerStyle(.segmented)
                     Button {showDesigner=true} label:{Image(systemName:"paintbrush.pointed").frame(width:40,height:36)}.accessibilityLabel("Thiết kế Timeline")
+                }
                 }
                 HStack {
                     Image(systemName:"magnifyingglass")

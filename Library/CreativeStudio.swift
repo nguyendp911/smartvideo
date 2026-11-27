@@ -206,8 +206,8 @@ enum MemoryMovie {
         let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString+".mp4")
         let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
         let input=AVAssetWriterInput(mediaType:.video,outputSettings:[AVVideoCodecKey:AVVideoCodecType.h264,AVVideoWidthKey:width,AVVideoHeightKey:height])
-        let adaptor=AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:input,sourcePixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32ARGB,kCVPixelBufferWidthKey as String:width,kCVPixelBufferHeightKey as String:height,kCVPixelBufferCGImageCompatibilityKey as String:true,kCVPixelBufferCGBitmapContextCompatibilityKey as String:true])
-        guard writer.canAdd(input) else{throw CameraError.writeFailed};writer.add(input)
+        let adaptor=AVAssetWriterInputPixelBufferAdaptor(assetWriterInput:input,sourcePixelBufferAttributes:[kCVPixelBufferPixelFormatTypeKey as String:kCVPixelFormatType_32BGRA,kCVPixelBufferWidthKey as String:width,kCVPixelBufferHeightKey as String:height,kCVPixelBufferCGImageCompatibilityKey as String:true,kCVPixelBufferCGBitmapContextCompatibilityKey as String:true])
+        guard writer.canAdd(input) else{throw CameraError.writeFailed};input.expectsMediaDataInRealTime=false;writer.add(input)
         guard writer.startWriting() else{throw writer.error ?? CameraError.writeFailed}
         writer.startSession(atSourceTime:.zero)
         do{
@@ -228,23 +228,29 @@ enum MemoryMovie {
                     let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.white,.backgroundColor:UIColor.black.withAlphaComponent(0.6)]
                     (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.1),withAttributes:attrs)
                 }
-                guard let cg=still.cgImage,let pool=adaptor.pixelBufferPool else{throw CameraError.writeFailed}
+                guard let cg=still.cgImage else{throw CameraError.writeFailed}
                 let frames=max(1,seconds*24)
                 for j in 0..<frames{
                     try Task.checkCancellation()
-                    var wait=0
+                    let deadline=Date().addingTimeInterval(60)
                     while !input.isReadyForMoreMediaData {
-                        guard writer.status == .writing,wait<1000 else{throw writer.error ?? CameraError.writeFailed}
-                        try await Task.sleep(for:.milliseconds(10));wait+=1
+                        guard writer.status == .writing,Date()<deadline else{throw writer.error ?? NSError(domain:"VieLens.Movie",code:1,userInfo:[NSLocalizedDescriptionKey:"Encoder không sẵn sàng ở frame \(frame)."])}
+                        try await Task.sleep(for:.milliseconds(15))
                     }
                     let p=Double(j)/Double(max(1,frames-1))
                     let fadeFrames=min(12,max(1,frames/3))
                     let pixel:CVPixelBuffer=try autoreleasepool{
                         var buffer:CVPixelBuffer?
-                        guard CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)==kCVReturnSuccess,let pixel=buffer else{throw CameraError.writeFailed}
+                        var status:kern_return_t = kCVReturnError
+                        if let pool=adaptor.pixelBufferPool{status=CVPixelBufferPoolCreatePixelBuffer(nil,pool,&buffer)}
+                        if status != kCVReturnSuccess || buffer == nil{
+                            let attrs=[kCVPixelBufferCGImageCompatibilityKey:true,kCVPixelBufferCGBitmapContextCompatibilityKey:true] as CFDictionary
+                            status=CVPixelBufferCreate(nil,width,height,kCVPixelFormatType_32BGRA,attrs,&buffer)
+                        }
+                        guard status==kCVReturnSuccess,let pixel=buffer else{throw NSError(domain:"VieLens.Movie",code:Int(status),userInfo:[NSLocalizedDescriptionKey:"Không cấp phát được frame video."])} 
                         CVPixelBufferLockBaseAddress(pixel,[])
                         defer{CVPixelBufferUnlockBaseAddress(pixel,[])}
-                        guard let ctx=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGImageAlphaInfo.noneSkipFirst.rawValue) else{throw CameraError.writeFailed}
+                        guard let ctx=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue) else{throw CameraError.writeFailed}
                         let w=CGFloat(width),h=CGFloat(height),full=CGRect(x:0,y:0,width:w,height:h)
                         ctx.setFillColor(UIColor.black.cgColor);ctx.fill(full)
                         let scale:CGFloat=motion == .zoom ? 1+0.075*CGFloat(p) : (motion == .pan ? 1.08:1)
@@ -265,6 +271,7 @@ enum MemoryMovie {
                 }
                 previous=cg
             }
+            writer.endSession(atSourceTime:CMTime(value:frame,timescale:24))
             input.markAsFinished()
             await writer.finishWriting()
             guard writer.status == .completed else{throw writer.error ?? CameraError.writeFailed}
