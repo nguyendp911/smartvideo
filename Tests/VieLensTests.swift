@@ -214,4 +214,13 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(decoded.chapters,["Chương đầu"])
         XCTAssertTrue(decoded.hasContent)
     }
+    func testStoryProductionSoundscape()throws{
+        XCTAssertNil(StorySoundscape.none.generate())
+        let sound=try XCTUnwrap(StorySoundscape.rain.generate())
+        XCTAssertEqual(String(data:sound.prefix(4),encoding:.ascii),"RIFF")
+        XCTAssertGreaterThan(sound.count,100000)
+        let player=try AVAudioPlayer(data:sound)
+        XCTAssertEqual(player.duration,8,accuracy:0.1)
+        XCTAssertTrue(StoryWritingAssistant.template(facts:"Đi Đà Lạt",mood:"Bình yên").contains("Đi Đà Lạt"))
+    }
 }

@@ -288,9 +288,12 @@ struct GardenDesigner:View{
     @AppStorage("garden.paper") private var paper="Đêm"
     @AppStorage("garden.haptics") private var haptics=true
     @AppStorage("garden.saved") private var saved=Data()
+    @AppStorage("timeline.vine.density") private var density=1.0
+    @AppStorage("timeline.vine.curvature") private var curvature=1.0
+    @AppStorage("timeline.vine.node") private var node=VineNode.natural.rawValue
     @Environment(\.dismiss) private var dismiss
     struct Preset:Codable,Identifiable{
-        var id=UUID();var name:String;var theme:String;var custom:Bool;var stem:String;var leaf:String;var bloom:String;var live:Bool;var speed:Double;var glow:Double;var seasonal:Bool;var weather:String;var intensity:Double;var paper:String
+        var id=UUID();var name:String;var theme:String;var custom:Bool;var stem:String;var leaf:String;var bloom:String;var live:Bool;var speed:Double;var glow:Double;var seasonal:Bool;var weather:String;var intensity:Double;var paper:String;var density:Double?=nil;var curvature:Double?=nil;var node:String?=nil;var haptics:Bool?=nil
     }
     @State private var name=""
     @State private var presets=[Preset]()
@@ -298,7 +301,7 @@ struct GardenDesigner:View{
         NavigationStack{
             Form{
                 Section("Xem trước"){
-                    HStack{VineRail(level:2,theme:VineTheme(rawValue:theme) ?? .emerald,useCustom:true).frame(width:78,height:150);VStack(alignment:.leading){Text("Một ngày đáng nhớ").font(.system(.title2,design:.serif));Text("Ký ức nở hoa").font(.caption);RoundedRectangle(cornerRadius:12).fill(GardenColor.decode(leaf).opacity(0.2)).frame(height:65)}}
+                    HStack{VineRail(level:2,theme:VineTheme(rawValue:theme) ?? .emerald,density:density,curvature:curvature,node:VineNode(rawValue:node) ?? .natural,useCustom:true).frame(width:78,height:150);VStack(alignment:.leading){Text("Một ngày đáng nhớ").font(.system(.title2,design:.serif));Text("Ký ức nở hoa").font(.caption);RoundedRectangle(cornerRadius:12).fill(GardenColor.decode(leaf).opacity(0.2)).frame(height:65)}}
                         .padding().background(GardenBackground.color(paper)).overlay{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}
                 }
                 Section("Dây leo sống"){
@@ -306,6 +309,9 @@ struct GardenDesigner:View{
                     Text("Tốc độ");Slider(value:$speed,in:0.1...2)
                     Text("Ánh sáng");Slider(value:$glow,in:0...1)
                     Toggle("Màu theo mùa quy ước Bắc bán cầu",isOn:$seasonal)
+                    Text("Mật độ lá");Slider(value:$density,in:0.35...1.8)
+                    Text("Độ uốn lượn");Slider(value:$curvature,in:0.2...2)
+                    Picker("Kiểu nút",selection:$node){ForEach(VineNode.allCases,id:\.self){Text($0.rawValue).tag($0.rawValue)}}
                     Toggle("Tùy phối màu",isOn:$custom)
                     if custom{
                         ColorPicker("Thân",selection:Binding(get:{GardenColor.decode(stem)},set:{stem=GardenColor.encode($0)}),supportsOpacity:false)
@@ -321,8 +327,8 @@ struct GardenDesigner:View{
                 }
                 Section("Bộ phối cá nhân"){
                     TextField("Tên bộ phối",text:$name)
-                    Button("Lưu bộ phối"){presets.append(Preset(name:name,theme:theme,custom:custom,stem:stem,leaf:leaf,bloom:bloom,live:live,speed:speed,glow:glow,seasonal:seasonal,weather:weather,intensity:intensity,paper:paper));persist();name=""}.disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
-                    ForEach(presets){p in Button(p.name){theme=p.theme;custom=p.custom;stem=p.stem;leaf=p.leaf;bloom=p.bloom;live=p.live;speed=p.speed;glow=p.glow;seasonal=p.seasonal;weather=p.weather;intensity=p.intensity;paper=p.paper}}
+                    Button("Lưu bộ phối"){presets.append(Preset(name:name,theme:theme,custom:custom,stem:stem,leaf:leaf,bloom:bloom,live:live,speed:speed,glow:glow,seasonal:seasonal,weather:weather,intensity:intensity,paper:paper,density:density,curvature:curvature,node:node,haptics:haptics));persist();name=""}.disabled(name.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                    ForEach(presets){p in Button(p.name){theme=p.theme;custom=p.custom;stem=p.stem;leaf=p.leaf;bloom=p.bloom;live=p.live;speed=p.speed;glow=p.glow;seasonal=p.seasonal;weather=p.weather;intensity=p.intensity;paper=p.paper;density=p.density ?? 1;curvature=p.curvature ?? 1;node=p.node ?? VineNode.natural.rawValue;haptics=p.haptics ?? true}}
                         .onDelete{presets.remove(atOffsets:$0);persist()}
                 }
             }.navigationTitle("Vine Designer").toolbar{Button("Xong"){dismiss()}}

@@ -179,6 +179,7 @@ struct AnimatedStoryText:View{
     let font:CanvasFont
     let color:Color
     var duration:Double=3
+    var trigger:Int=0
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var visible=0
     @State private var shown=false
@@ -187,7 +188,7 @@ struct AnimatedStoryText:View{
             .font(font == .hand ? .custom("Noteworthy",size:17):.system(.body,design:font.font))
             .foregroundStyle(color).lineSpacing(5)
             .opacity(effect == .fade && !shown && !reduced ? 0:1)
-            .task(id:text+effect.rawValue){
+            .task(id:text+effect.rawValue+String(trigger)){
                 visible=0;shown=false
                 if reduced || effect == .normal{visible=text.count;shown=true;return}
                 if effect == .fade{withAnimation(.easeIn(duration:0.8)){shown=true};return}
@@ -209,7 +210,7 @@ enum StoryPDF{
             let style=NSMutableParagraphStyle();style.lineSpacing=6
             let attributes:[NSAttributedString.Key:Any]=[.font:UIFont.systemFont(ofSize:14),.paragraphStyle:style,.foregroundColor:UIColor.darkGray]
             let string=NSAttributedString(string:text,attributes:attributes)
-            let framesetter=CTFramesetterCreateWithAttributedString(string)
+            let framesetter=CTFramesetterCreateWithAttributedString(string as CFAttributedString)
             var offset=0
             repeat{
                 ctx.beginPage()

@@ -600,7 +600,8 @@ private struct ShotDetail:View {
                     }
                 }.tabViewStyle(.page(indexDisplayMode:.never))
                 .frame(maxHeight:.infinity)
-                .onChange(of:selectedID){_,_ in original=false}
+                .onAppear{MemoryVisitLog.mark(selectedID)}
+                .onChange(of:selectedID){_,id in original=false;MemoryVisitLog.mark(id)}
                 if !immersive {
                 Text("\((shots.firstIndex{$0.id==selectedID} ?? 0)+1) / \(shots.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
                 ScrollViewReader { proxy in

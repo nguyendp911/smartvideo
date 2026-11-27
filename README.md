@@ -28,3 +28,5 @@ Sáu chủ đề dây leo vector, tùy chỉnh mật độ, độ cong và node.
 
 ## Living Memory World 14
 15 bộ dây leo vector, lá chuyển động, hạt sáng, theo mùa quy ước, màu tùy chỉnh, nền và môi trường, lưu preset. 14 hiệu ứng slideshow trong app. Story Canvas kéo thả layer chữ/ảnh/sticker, font, màu, thứ tự, xuất PNG/PDF; Story PDF nhiều trang, chapter và hiệu ứng chữ. Memory World có bản đồ cây/vũ trụ/vườn 2D, museum carousel, wall kéo thả; Discovery nhóm kỷ niệm, cảm xúc, thẻ, tổng kết, GPS; Podcast lời kể. Chưa có WidgetKit, AR/3D thực, AI sinh văn bản, phân đoạn chủ thể, đồng bộ từng chữ với âm thanh hoặc xuất MP4 story đầy đủ.
+
+Build 60/61: Story Writer Apple Foundation Models khi khả dụng trên iOS 26, mẫu offline riêng; Vision foreground mask cho lớp ảnh PNG trong suốt; soundscape tổng hợp offline, phim story 1080p có caption, lời kể không lặp và ambient loop. Đồng bộ chữ theo tổng thời lượng lời kể, không phải nhận dạng từng từ. Chưa có WidgetKit (cần app extension/provisioning riêng), AR/3D thật, xuất toàn bộ layer Canvas động hoặc toàn bộ hiệu ứng UI vào MP4. Bộ phối lưu cả mật độ/độ cong/nút/rung.

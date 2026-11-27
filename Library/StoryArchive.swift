@@ -284,6 +284,7 @@ struct StoryReader:View{
     @State private var pdfURL:URL?
     @State private var exportError=""
     @State private var showVideo=false
+    @State private var textReplay=0
     @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
     @StateObject private var voice=StoryVoice()
     @Environment(\.scenePhase) private var phase
@@ -301,7 +302,7 @@ struct StoryReader:View{
                         if !story.location.isEmpty{Label(story.location,systemImage:"mappin").font(.caption)}
                         if !story.people.isEmpty{Label(story.people,systemImage:"person.2").font(.caption)}
                         if !story.quote.isEmpty{Text("“"+story.quote+"”").font(.system(.title3,design:.serif)).italic().foregroundStyle(gold)}
-                        AnimatedStoryText(text:story.body,effect:story.textEffect ?? .normal,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"),duration:story.audio.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 3)
+                        AnimatedStoryText(text:story.body,effect:story.textEffect ?? .normal,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"),duration:story.audio.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 3,trigger:textReplay)
                         ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){i,chapter in VStack(alignment:.leading,spacing:7){Text("CHƯƠNG \(i+1)").font(.caption2.monospaced()).foregroundStyle(gold);Text(chapter).font(.body).lineSpacing(5)}}
                         Button("Story Canvas",systemImage:"paintpalette"){canvasEditor=true}.buttonStyle(.bordered)
                         Button("Xuất sách ký ức PDF",systemImage:"book.closed"){do{pdfURL=try StoryPDF.export(story,shots:target.shots,vault:vault)}catch{exportError=error.localizedDescription}}
@@ -309,7 +310,7 @@ struct StoryReader:View{
                         Button("Tạo video ký ức",systemImage:"film"){showVideo=true}.disabled(target.shots.isEmpty)
                         if !exportError.isEmpty{Text(exportError).font(.caption)}
                         if !story.tags.isEmpty{Text(story.tags).font(.caption).foregroundStyle(.secondary)}
-                        if let data=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể",systemImage:voice.playing ? "stop.fill":"waveform"){if voice.playing{voice.stopPlayback()}else{voice.play(data)}}.buttonStyle(.borderedProminent)}
+                        if let data=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể",systemImage:voice.playing ? "stop.fill":"waveform"){if voice.playing{voice.stopPlayback()}else{textReplay+=1;voice.play(data)}}.buttonStyle(.borderedProminent)}
                         if target.shots.count>1{
                             HStack{Image(systemName:"leaf.fill");Text("NHỮNG KHOẢNH KHẮC").tracking(2);Spacer()}.font(.caption2).foregroundStyle(gold)
                             ForEach(target.shots.filter{$0.id != story.cover || story.captions[$0.id.uuidString] != nil}){shot in

@@ -14,6 +14,7 @@ struct MemoryWorld:View{
     @Environment(\.accessibilityReduceMotion) private var reduced
     @State private var mode=MemoryWorldMode.tree
     @State private var zoom=1.0
+    @GestureState private var magnification=1.0
     @State private var selection:TimelineGroup?
     @State private var story:StoryTarget?
     @State private var offset=CGSize.zero
@@ -99,9 +100,9 @@ struct MemoryWorld:View{
                         }.buttonStyle(.plain).position(point(i,count:visible.count,size:size))
                     }
                     if mode != .tree{Image(systemName:mode == .garden ? "leaf.fill":"sparkles").font(.system(size:38)).foregroundStyle(gold)}
-                }.scaleEffect(zoom).offset(offset)
+                }.scaleEffect(max(0.7,min(2.5,zoom*magnification))).offset(offset)
                 if items.count>24{VStack{Spacer();Text("Hiển thị 24/\(items.count) nhánh. Duyệt đầy đủ ở Timeline.").font(.caption2).padding(7).background(.black.opacity(0.6),in:Capsule())}}
-            }.clipped().gesture(DragGesture().onChanged{v in offset=CGSize(width:origin.width+v.translation.width,height:origin.height+v.translation.height)}.onEnded{_ in origin=offset})
+            }.clipped().gesture(DragGesture().onChanged{v in offset=CGSize(width:origin.width+v.translation.width,height:origin.height+v.translation.height)}.onEnded{_ in origin=offset}).simultaneousGesture(MagnifyGesture().updating($magnification){v,state,_ in state=v.magnification}.onEnded{v in zoom=max(0.7,min(2.5,zoom*v.magnification))})
         }
     }
     private var museum:some View{
@@ -180,7 +181,7 @@ struct MemoryDiscover:View{
             List{
                 Picker("Khám phá",selection:$mode){ForEach(["Kỷ niệm","Lâu chưa xem","Cảm xúc","Liên kết","Tổng kết","Hành trình"],id:\.self){Text($0).tag($0)}}
                 if mode=="Tổng kết"{Picker("Năm",selection:$year){ForEach(Array(Set(shots.compactMap{Int($0.day.prefix(4))})).sorted(by:>),id:\.self){Text(String($0)).tag($0)}}}
-                if mode=="Lâu chưa xem"{Text("Dựa trên ngày chụp và lượt mở trong mục Khám phá; không theo dõi toàn bộ lượt xem.").font(.caption)}
+                if mode=="Lâu chưa xem"{Text("Dựa trên ngày chụp và lượt mở ảnh trong Timeline / Khám phá kể từ phiên bản này.").font(.caption)}
                 if mode=="Tổng kết"{let items=groups.flatMap(\.items);Text("\(items.count) ảnh · \(Set(items.map(\.day)).count) ngày · \(groups.count) tháng có ảnh").font(.headline)}
                 if mode=="Hành trình"{NavigationLink("Bản đồ hành trình"){SignatureAtlas(shots:shots,vault:vault)}}
                 if groups.isEmpty{Text("Chưa có dữ liệu phù hợp.").foregroundStyle(.secondary)}
@@ -221,5 +222,15 @@ struct MemoryPodcast:View{
             do{try await Task.sleep(for:.seconds(duration+0.15))}catch{return}
             if !Task.isCancelled{if index+1<tracks.count{index+=1}else{playing=false}}
         }.onChange(of:scene){_,p in if p != .active{playing=false;voice.stopPlayback()}}.onDisappear{voice.cancel()}
+    }
+}
+
+enum MemoryVisitLog{
+    @MainActor static func mark(_ id:UUID){
+        let defaults=UserDefaults.standard,key="world.lastViewed"
+        var entries=(try? JSONDecoder().decode([String:Date].self,from:defaults.data(forKey:key) ?? Data())) ?? [:]
+        entries[id.uuidString]=Date()
+        if entries.count>10000{entries=Dictionary(uniqueKeysWithValues:entries.sorted{$0.value>$1.value}.prefix(10000).map{($0.key,$0.value)})}
+        if let data=try? JSONEncoder().encode(entries){defaults.set(data,forKey:key)}
     }
 }
