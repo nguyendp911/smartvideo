@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import AVFoundation
+import UniformTypeIdentifiers
 
 enum TimelinePresentation:String,CaseIterable {
     case tree="Cây thời gian",slides="Slide ký ức",gallery="Thư viện"
@@ -53,6 +55,14 @@ struct TimelineStoryTree:View{
     let open:(Shot)->Void
     let play:([Shot])->Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @ObservedObject private var archive=StoryArchive.shared
+    @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
+    @AppStorage("timeline.vine.density") private var density=1.0
+    @AppStorage("timeline.vine.curvature") private var curvature=1.0
+    @AppStorage("timeline.vine.node") private var nodeValue=VineNode.natural.rawValue
+    @State private var showVines=false
+    @State private var storyTarget:StoryTarget?
+    private var vine:VineTheme{VineTheme(rawValue:vineValue) ?? .emerald}
     @State private var expanded=Set<String>()
     @State private var initialized=false
     private var years:[TimelineTreeYear]{TimelineTreeIndex.build(shots,newest:newest)}
@@ -80,6 +90,9 @@ struct TimelineStoryTree:View{
                     }.padding(.leading,18).padding(.vertical,18)
                 }.padding(.horizontal,12)
             }.safeAreaPadding(.bottom,20)
+        }.sheet(isPresented:$showVines){VineCollectionView()}
+        .sheet(item:$storyTarget){target in
+            if archive.entry(target.id) != nil{StoryReader(target:target,vault:vault,archive:archive)}else{StoryComposer(target:target,vault:vault,archive:archive)}
         }.onAppear{
             if !initialized{initialized=true;openFirst()}
         }.onChange(of:shots.first?.id){_,_ in if expanded.isEmpty || !years.contains(where:{expanded.contains($0.id)}){openFirst()}}
@@ -97,10 +110,11 @@ struct TimelineStoryTree:View{
         VStack(alignment:.leading,spacing:12){
             HStack(alignment:.firstTextBaseline){
                 VStack(alignment:.leading,spacing:4){
-                    Text("HÀNH TRÌNH").font(.caption2.weight(.semibold)).tracking(3).foregroundStyle(accent)
+                    Text(vine.rawValue.uppercased()).font(.caption2.weight(.semibold)).tracking(2).foregroundStyle(vine.leaf)
                     Text("Cây ký ức").font(.system(size:31,design:.serif))
                 }
                 Spacer()
+                Button{showVines=true}label:{Image(systemName:"leaf.fill").font(.title3).foregroundStyle(vine.leaf).padding(10).background(vine.stem.opacity(0.16),in:Circle())}.accessibilityLabel("Bộ sưu tập dây leo")
                 Menu{
                     Button("Mở tất cả"){withAnimation{expanded=Set(years.flatMap{[$0.id]+$0.months.map(\.id)})}}
                     Button("Thu gọn"){withAnimation{expanded=[]}}
@@ -114,7 +128,8 @@ struct TimelineStoryTree:View{
     }
     private func yearRow(_ year:TimelineTreeYear)->some View{
         HStack(alignment:.top,spacing:0){
-            TreeRail(level:0,accent:accent,large:true).frame(width:43)
+            rail(0).frame(width:43)
+            VStack(alignment:.leading,spacing:5){
             Button{toggle(year.id)}label:{
                 HStack(spacing:12){
                     VStack(alignment:.leading,spacing:4){
@@ -125,12 +140,15 @@ struct TimelineStoryTree:View{
                     Image(systemName:expanded.contains(year.id) ? "chevron.up":"chevron.down").font(.caption.weight(.semibold))
                 }.padding(12).frame(maxWidth:.infinity,alignment:.leading)
                     .background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:15))
-            }.buttonStyle(.plain).padding(.vertical,5)
+            }.buttonStyle(.plain)
+            storyButton(.group(year.group))
+            }.padding(.vertical,5)
         }
     }
     private func monthRow(_ month:TimelineTreeMonth)->some View{
         HStack(alignment:.top,spacing:0){
-            TreeRail(level:1,accent:accent,large:false).frame(width:62)
+            rail(1).frame(width:62)
+            VStack(alignment:.leading,spacing:5){
             Button{toggle(month.id)}label:{
                 HStack(spacing:10){
                     DiskImage(url:vault.thumbnail(month.group.cover.id),limit:180).scaledToFill().frame(width:56,height:56).clipped().clipShape(RoundedRectangle(cornerRadius:8))
@@ -141,12 +159,33 @@ struct TimelineStoryTree:View{
                     Spacer(minLength:4)
                     Image(systemName:expanded.contains(month.id) ? "minus.circle":"plus.circle").foregroundStyle(accent)
                 }.padding(8).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
-            }.buttonStyle(.plain).padding(.vertical,4)
+            }.buttonStyle(.plain)
+            storyButton(.group(month.group))
+            }.padding(.vertical,4)
         }
+    }
+    private func rail(_ level:Int)->some View{VineRail(level:level,theme:vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural)}
+    private func storyButton(_ target:StoryTarget)->some View{
+        let entry=archive.entry(target.id)
+        return Button{
+            UISelectionFeedbackGenerator().selectionChanged();storyTarget=target
+        }label:{
+            HStack(alignment:.top,spacing:7){
+                Image(systemName:entry == nil ? "pencil.line":"book.closed.fill").foregroundStyle(vine.bloom).font(.caption)
+                VStack(alignment:.leading,spacing:3){
+                    Text(entry == nil ? "Viết story" : (entry?.title.isEmpty == false ? entry?.title ?? "Story":"Đọc story")).font(.caption.weight(.semibold))
+                    if let entry,!entry.body.isEmpty{Text(entry.body).font(.caption2).foregroundStyle(.secondary).lineLimit(2)}
+                    if let mood=entry?.mood{Text(mood.rawValue).font(.caption2).foregroundStyle(vine.leaf)}
+                }
+                Spacer(minLength:0)
+                if entry?.audio != nil{Image(systemName:"waveform").font(.caption).foregroundStyle(vine.bloom)}
+            }.padding(8).frame(maxWidth:.infinity,alignment:.leading)
+                .background(vine.stem.opacity(0.12),in:RoundedRectangle(cornerRadius:9))
+        }.buttonStyle(.plain)
     }
     private func dayRow(_ day:TimelineGroup)->some View{
         HStack(alignment:.top,spacing:0){
-            TreeRail(level:2,accent:accent,large:false).frame(width:79)
+            rail(2).frame(width:79)
             VStack(alignment:.leading,spacing:8){
                 HStack{
                     VStack(alignment:.leading,spacing:3){
@@ -158,7 +197,8 @@ struct TimelineStoryTree:View{
                         Image(systemName:"play.fill").font(.caption).foregroundStyle(.black).frame(width:34,height:34).background(accent,in:Circle())
                     }.accessibilityLabel("Trình diễn ảnh ngày này")
                 }
-                StoryStrip(shots:day.items,vault:vault,accent:accent,open:open)
+                storyButton(.group(day))
+                StoryStrip(shots:day.items,vault:vault,accent:vine.bloom,archive:archive,open:open,story:{storyTarget = .photo($0)})
                 if let note=day.cover.note,!note.isEmpty{Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3)}
             }.padding(.vertical,12)
         }.scrollTransition(.interactive,axis:.vertical){content,phase in
@@ -166,35 +206,13 @@ struct TimelineStoryTree:View{
         }
     }
 }
-private struct TreeRail:View{
-    let level:Int
-    let accent:Color
-    let large:Bool
-    var body:some View{
-        Canvas{ctx,size in
-            let root:CGFloat=18,branch=size.width-11,y:CGFloat=level==0 ? 36:level==1 ? 35:30
-            var line=Path()
-            line.move(to:CGPoint(x:root,y:0));line.addLine(to:CGPoint(x:root,y:size.height))
-            if level>0{
-                let mid:CGFloat=level==2 ? 45:root
-                if level==2{line.move(to:CGPoint(x:mid,y:0));line.addLine(to:CGPoint(x:mid,y:size.height))}
-                line.move(to:CGPoint(x:root,y:y-12))
-                line.addQuadCurve(to:CGPoint(x:mid+8,y:y),control:CGPoint(x:mid,y:y))
-                line.addLine(to:CGPoint(x:branch,y:y))
-                line.addLine(to:CGPoint(x:size.width,y:y))
-            }else{line.move(to:CGPoint(x:root,y:y));line.addLine(to:CGPoint(x:size.width,y:y))}
-            ctx.stroke(line,with:.color(accent.opacity(0.43)),style:StrokeStyle(lineWidth:1.2,lineCap:.round,lineJoin:.round))
-            let x=level==0 ? root:branch,r:CGFloat=large ? 7:4
-            ctx.fill(Path(ellipseIn:CGRect(x:x-r-4,y:y-r-4,width:(r+4)*2,height:(r+4)*2)),with:.color(accent.opacity(0.12)))
-            ctx.fill(Path(ellipseIn:CGRect(x:x-r,y:y-r,width:r*2,height:r*2)),with:.color(accent))
-        }.accessibilityHidden(true)
-    }
-}
 private struct StoryStrip:View{
     let shots:[Shot]
     let vault:Vault
     let accent:Color
+    @ObservedObject var archive:StoryArchive
     let open:(Shot)->Void
+    let story:(Shot)->Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var current:UUID?
     var body:some View{
@@ -202,6 +220,7 @@ private struct StoryStrip:View{
             ScrollView(.horizontal,showsIndicators:false){
                 LazyHStack(spacing:8){
                     ForEach(shots){shot in
+                        VStack(alignment:.leading,spacing:5){
                         Button{open(shot)}label:{
                             Color.clear.aspectRatio(1.38,contentMode:.fit)
                                 .overlay{DiskImage(url:vault.picture(shot),limit:700).scaledToFill()}
@@ -212,6 +231,10 @@ private struct StoryStrip:View{
                                 .clipShape(RoundedRectangle(cornerRadius:12))
                                 .overlay{RoundedRectangle(cornerRadius:12).strokeBorder(.white.opacity(0.1),lineWidth:1)}
                         }.buttonStyle(.plain)
+                        Button{story(shot)}label:{
+                            HStack{Image(systemName:archive.entry(StoryTarget.photo(shot).id) == nil ? "pencil.line":"book.closed.fill").foregroundStyle(accent);Text(archive.entry(StoryTarget.photo(shot).id)?.title.isEmpty == false ? archive.entry(StoryTarget.photo(shot).id)?.title ?? "Story":"Story ảnh").lineLimit(1);Spacer();if archive.entry(StoryTarget.photo(shot).id)?.audio != nil{Image(systemName:"waveform")}}.font(.caption).padding(7).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:7))
+                        }.buttonStyle(.plain)
+                        }
                         .containerRelativeFrame(.horizontal){length,_ in max(1,length*(shots.count>1 ? 0.87:1))}
                         .scrollTransition(.interactive,axis:.horizontal){content,phase in
                             content.scaleEffect(reduceMotion || phase.isIdentity ? 1:0.88).opacity(reduceMotion || phase.isIdentity ? 1:0.65).rotation3DEffect(.degrees(reduceMotion ? 0:phase.value*11),axis:(x:0,y:1,z:0))
@@ -247,6 +270,24 @@ struct TimelineSlideStage:View{
     @State private var progress=0.0
     @State private var initialized=false
     @State private var motion=false
+    @ObservedObject private var archive=StoryArchive.shared
+    @StateObject private var voice=StoryVoice()
+    @State private var storyTarget:StoryTarget?
+    @State private var narration=true
+    @State private var musicPicker=false
+    @State private var musicData:Data?
+    @State private var musicName=""
+    @State private var music:AVAudioPlayer?
+    @State private var musicVolume=0.25
+    @State private var soundIssue=""
+    private func entry(_ shot:Shot)->StoryEntry?{
+        archive.entry(StoryTarget.photo(shot).id) ?? archive.entry("period:"+shot.day)
+    }
+    private func narrationData(_ shot:Shot)->Data?{
+        if let own=archive.entry(StoryTarget.photo(shot).id)?.audio{return own}
+        if index==0 || shots[index-1].day != shot.day{return archive.entry("period:"+shot.day)?.audio}
+        return nil
+    }
     private var effect:StoryEffect{StoryEffect(rawValue:effectValue) ?? .zoom}
     private var shot:Shot?{shots.indices.contains(index) ? shots[index]:nil}
     var body:some View{
@@ -263,17 +304,28 @@ struct TimelineSlideStage:View{
                             Button{effectValue=style.rawValue}label:{if effect==style{Label(style.rawValue,systemImage:"checkmark")}else{Text(style.rawValue)}}
                         }
                         Divider()
+                        Button(narration ? "Tắt lời kể":"Bật lời kể"){narration.toggle();if !narration{voice.stopPlayback()}}
+                        Button("Chọn nhạc nền"){playing=false;musicPicker=true}
+                        if musicData != nil{Button("Bỏ nhạc nền",role:.destructive){music?.stop();music=nil;musicData=nil;musicName=""}}
+                        Divider()
                         ForEach([2,4,6,8],id:\.self){n in Button("\(n) giây / ảnh"){interval=n}}
                     }label:{Label(effect.rawValue,systemImage:"sparkles").font(.caption).padding(8).background(.white.opacity(0.08),in:Capsule())}
                 }
                 stage(shot)
+                if let e=entry(shot),e.hasContent{
+                    Button{playing=false;storyTarget=archive.entry(StoryTarget.photo(shot).id) != nil ? .photo(shot):.group(TimelineGroup(key:shot.day,items:shots.filter{$0.day==shot.day}))}label:{
+                        HStack{Image(systemName:"book.closed.fill").foregroundStyle(gold);Text(e.title.isEmpty ? "Đọc story":e.title).lineLimit(1);Spacer();if e.audio != nil{Image(systemName:"waveform")};Image(systemName:"chevron.right").font(.caption)}
+                    }.buttonStyle(.plain).font(.caption).padding(8)
+                }
+                if musicData != nil{HStack{Image(systemName:"music.note");Text(musicName).lineLimit(1);Slider(value:$musicVolume,in:0...0.8)}.font(.caption)}
+                if !soundIssue.isEmpty{Text(soundIssue).font(.caption2).foregroundStyle(.secondary)}
                 ProgressView(value:progress).tint(gold)
                 HStack{
                     Button{move(-1)}label:{Image(systemName:"backward.end.fill").frame(width:44,height:44)}
                     Spacer()
                     Button{playing.toggle();progress=0}label:{
                         Image(systemName:playing ? "pause.fill":"play.fill").font(.title2).foregroundStyle(.black).frame(width:56,height:56).background(gold,in:Circle())
-                    }.accessibilityLabel(playing ? "Tạm dừng":"Phát slide").disabled(shots.count<2)
+                    }.accessibilityLabel(playing ? "Tạm dừng":"Phát slide").disabled(shots.isEmpty)
                     Spacer()
                     Button{move(1)}label:{Image(systemName:"forward.end.fill").frame(width:44,height:44)}
                 }.buttonStyle(.plain)
@@ -288,16 +340,27 @@ struct TimelineSlideStage:View{
                 do{try await Task.sleep(for:.milliseconds(80))}catch{return}
                 if !Task.isCancelled{animateMotion()}
             }
-            .onChange(of:scenePhase){_,p in if p != .active{playing=false}}
-            .task(id:"\(playing)-\(interval)-\(index)"){
-                guard playing,shots.count>1 else{return}
-                let steps=max(1,interval)*20
+            .onChange(of:scenePhase){_,p in if p != .active{playing=false;voice.stopPlayback();music?.pause()}}
+            .onChange(of:musicVolume){_,v in music?.volume=Float(v)}
+            .onChange(of:playing){_,p in if p{startMusic()}else{voice.stopPlayback();music?.pause()}}
+            .onDisappear{voice.cancel();music?.stop();music=nil}
+            .sheet(item:$storyTarget){target in StoryReader(target:target,vault:vault,archive:archive)}
+            .fileImporter(isPresented:$musicPicker,allowedContentTypes:[.audio]){result in
+                do{let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let size=(try url.resourceValues(forKeys:[.fileSizeKey])).fileSize ?? 0;guard size<=30_000_000 else{throw CameraError.unreadable};let data=try Data(contentsOf:url);_ = try AVAudioPlayer(data:data);music?.stop();music=nil;musicData=data;musicName=url.lastPathComponent;soundIssue=""}catch{soundIssue=error.localizedDescription}
+            }
+            .task(id:"\(playing)-\(interval)-\(index)-\(narration)"){
+                voice.stopPlayback()
+                guard playing,let shot else{return}
+                startMusic()
+                var duration=Double(max(1,interval))
+                if narration,let data=narrationData(shot){duration=max(duration,voice.play(data))}
+                let steps=max(1,Int(duration*20))
                 for tick in 1...steps{
                     do{try await Task.sleep(for:.milliseconds(50))}catch{return}
                     if Task.isCancelled{return}
                     progress=Double(tick)/Double(steps)
                 }
-                move(1)
+                if shots.count>1{move(1)}else{playing=false}
             }
     }
     private func stage(_ shot:Shot)->some View{
@@ -317,8 +380,10 @@ struct TimelineSlideStage:View{
                 Spacer()
                 HStack(alignment:.bottom){
                     VStack(alignment:.leading,spacing:4){
-                        Text(shot.session.isEmpty ? "Khoảnh khắc":shot.session).font(.system(.title2,design:.serif)).lineLimit(2)
-                        if let note=shot.note,!note.isEmpty{Text(note).font(.caption).lineLimit(2)}
+                        Text(entry(shot)?.title.isEmpty == false ? entry(shot)?.title ?? "Khoảnh khắc":(shot.session.isEmpty ? "Khoảnh khắc":shot.session)).font(.system(.title2,design:.serif)).lineLimit(2)
+                        if let caption=entry(shot)?.captions[shot.id.uuidString],!caption.isEmpty{Text(caption).font(.caption).lineLimit(3)}
+                        else if let body=entry(shot)?.body,!body.isEmpty{Text(body).font(.caption).lineLimit(3)}
+                        else if let note=shot.note,!note.isEmpty{Text(note).font(.caption).lineLimit(2)}
                         else if !shot.tags.isEmpty{Text(shot.tags).font(.caption).lineLimit(2)}
                     }
                     Spacer()
@@ -362,6 +427,14 @@ struct TimelineSlideStage:View{
         let target=(index+delta+shots.count)%shots.count
         forward=delta>0;progress=0;motion=false
         withAnimation(reduceMotion ? .easeOut(duration:0.15):.easeInOut(duration:0.48)){index=target}
+    }
+    private func startMusic(){
+        guard let data=musicData else{return}
+        do{
+            let session=AVAudioSession.sharedInstance();try session.setCategory(.playback,mode:.default,options:[.mixWithOthers]);try session.setActive(true)
+            if music==nil{let p=try AVAudioPlayer(data:data);p.numberOfLoops = -1;music=p}
+            music?.volume=Float(musicVolume);music?.play()
+        }catch{soundIssue=error.localizedDescription}
     }
     private func animateMotion(){
         guard !reduceMotion else{return}

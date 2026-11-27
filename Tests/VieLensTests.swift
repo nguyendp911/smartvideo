@@ -176,4 +176,29 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(tree.last?.months.first?.days.map(\.key),["2025-01-02","2025-01-01"])
         XCTAssertEqual(tree.flatMap(\.months).flatMap(\.days).flatMap(\.items).count,3)
     }
+    @MainActor func testStoryArchiveDraftSaveMerge() throws {
+        let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let archive=StoryArchive(root:root)
+        var story=StoryEntry(id:"period:2026-11-27")
+        story.title="Một ngày đẹp";story.body="Đà Lạt bình yên";story.mood = .peaceful
+        try archive.save(story,draft:true)
+        XCTAssertNil(archive.entry(story.id))
+        XCTAssertEqual(archive.drafts[story.id]?.title,story.title)
+        try archive.save(story,draft:false)
+        XCTAssertNil(archive.drafts[story.id])
+        let reopened=StoryArchive(root:root)
+        XCTAssertEqual(reopened.entry(story.id)?.body,story.body)
+        var changed=story;changed.body="Imported"
+        try reopened.merge(JSONEncoder().encode(StoryArchivePackage(version:1,entries:[changed],drafts:[])))
+        XCTAssertEqual(reopened.entry(story.id)?.body,story.body)
+        let shot=Shot(id:UUID(),date:Date(),day:"2026-11-27",session:"",rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        XCTAssertTrue(reopened.matching("da lat",shot:shot))
+        try reopened.remove(story.id)
+        XCTAssertNil(reopened.entry(story.id))
+    }
+    func testVineThemesAndStoryFormats(){
+        XCTAssertEqual(VineTheme.allCases.count,6)
+        XCTAssertEqual(StoryFormat.allCases.count,5)
+    }
 }

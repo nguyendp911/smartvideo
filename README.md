@@ -22,3 +22,6 @@ Memory Cinema thêm chuyển cảnh mờ/hòa ảnh, chuyển động zoom/lư�
 
 ## Motion Timeline 12
 Cây thời gian mặc định năm–tháng–ngày có nhánh, mở/thu gọn, nhảy năm, carousel có scroll transition; Slide ký ức với sáu hiệu ứng, cử chỉ, phát/tạm dừng, thanh tiến độ, filmstrip, hỗ trợ Reduce Motion. Thư viện lưới cũ vẫn có. Cải thiện cấp phát và backpressure encoder video, giữ kiểm thử xuất phim.
+
+## Story Vine 13
+Sáu chủ đề dây leo vector, tùy chỉnh mật độ, độ cong và node. Story ảnh/ngày/tháng/năm/bộ sưu tập, draft, mood, chú thích, ảnh bìa, ghi âm AAC tối đa 120 giây, tìm kiếm theo nội dung, Story Studio và sao lưu JSON riêng. Slide đọc story và giọng kể (ưu tiên từng ảnh, lời kể ngày phát đầu nhóm), nhạc Tệp lặp trong phiên. Không xuất lời kể vào MP4; sao lưu ảnh, Signature, Story là các tệp riêng.

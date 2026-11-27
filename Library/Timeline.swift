@@ -23,6 +23,10 @@ enum GalleryLayout: String, CaseIterable {
 }
 struct Timeline: View {
     @ObservedObject var model: LibraryModel
+    @ObservedObject private var stories=StoryArchive.shared
+    @State private var showVines=false
+    @State private var showStoryLibrary=false
+    @State private var collectionStory:StoryTarget?
     @Environment(\.dismiss) private var dismiss
     @AppStorage("timeline.presentation.v2") private var presentationValue=TimelinePresentation.tree.rawValue
     private var presentation:TimelinePresentation{TimelinePresentation(rawValue:presentationValue) ?? .tree}
@@ -67,7 +71,12 @@ struct Timeline: View {
     @State private var batchText = ""
     @State private var batchKind = "album"
     private var active: [Shot] { model.shots.filter { $0.deleted == nil } }
-    private var filtered: [Shot] { TimelineIndex.filter(model.shots,scope:scope,query:search,session:session,period:period,light:light,minimumRating:minimumRating,newest:newest,collection:collection,look:look,anniversary:anniversary) }
+    private var filtered:[Shot]{
+        let base=TimelineIndex.filter(model.shots,scope:scope,session:session,period:period,light:light,minimumRating:minimumRating,newest:newest,collection:collection,look:look,anniversary:anniversary)
+        if search.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{return base}
+        let hits=Set(TimelineIndex.filter(base,scope:scope,query:search,newest:newest).map(\.id))
+        return base.filter{hits.contains($0.id) || stories.matching(search,shot:$0)}
+    }
     private var groups: [TimelineGroup] { TimelineIndex.group(filtered,period:scale,newest:newest) }
     private var selectedShots: [Shot] { model.shots.filter { chosen.contains($0.id) } }
     private var layout: GalleryLayout { GalleryLayout(rawValue:layoutValue) ?? .editorial }
@@ -105,6 +114,9 @@ struct Timeline: View {
             CompareView(shots:selectedShots,vault:model.vault)
         }
         .sheet(isPresented:$showFilters) { filterSheet }
+        .sheet(isPresented:$showVines){VineCollectionView()}
+        .sheet(isPresented:$showStoryLibrary){StoryLibrary(shots:active,vault:model.vault,archive:stories)}
+        .sheet(item:$collectionStory){target in if stories.entry(target.id) != nil{StoryReader(target:target,vault:model.vault,archive:stories)}else{StoryComposer(target:target,vault:model.vault,archive:stories)}}
         .sheet(isPresented:$showDesigner){TimelineDesigner(layout:$layoutValue,spacing:$photoSpacing,radius:$photoRadius,columns:$columnCount,caption:$heroTitle,dateSize:$dateSize)}
         .fullScreenCover(isPresented:$showSignature){SignatureHub(model:model)}
         .sheet(isPresented:$showJump){
@@ -173,6 +185,8 @@ struct Timeline: View {
             }
             Spacer(minLength:4)
             Menu {
+                Button("Story Studio",systemImage:"book.closed"){showStoryLibrary=true}
+                Button("Bộ sưu tập dây leo",systemImage:"leaf.fill"){showVines=true}
                 Button("Signature Studio",systemImage:"sparkles"){showSignature=true}
                 Button("Thiết kế Timeline",systemImage:"paintbrush.pointed"){showDesigner=true}
                 Button("Đi đến tháng/năm",systemImage:"calendar.badge.clock"){showJump=true}
@@ -375,7 +389,10 @@ struct Timeline: View {
                 } else {
                     LazyVGrid(columns:coverColumns,spacing:12){
                         ForEach(collections){group in
+                            VStack(alignment:.leading,spacing:5){
                             Button {resetFilters();collection=group.key;scale = .day;showAlbums=false} label:{collectionCard(group,title:group.key,icon:"heart.text.square")}.buttonStyle(.plain)
+                            Button{collectionStory = .collection(group.key,shots:group.items)}label:{Label(stories.entry("collection:"+group.key) == nil ? "Viết chapter":"Đọc chapter",systemImage:"book.closed").font(.caption).foregroundStyle(gold)}.buttonStyle(.plain)
+                            }
                         }
                     }.padding(.horizontal,14)
                 }
@@ -541,6 +558,8 @@ private struct ShotDetail:View {
     @ObservedObject var model:LibraryModel
     let shots:[Shot]
     @State private var selectedID:UUID
+    @ObservedObject private var storyArchive=StoryArchive.shared
+    @State private var showPhotoStory=false
     @State private var showMetadata=false
     @State private var immersive=false
     @State private var showEditor=false
@@ -591,6 +610,7 @@ private struct ShotDetail:View {
                     Text([current.light.rawValue,current.look.rawValue,current.lens].filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline)
                     if !current.session.isEmpty || !current.tags.isEmpty {Text([current.session,current.tags].filter{!$0.isEmpty}.joined(separator:" · ")).font(.caption).foregroundStyle(.secondary)}
                     if let note=current.note,!note.isEmpty {Text(note).font(.caption).lineLimit(2)}
+                    Button{showPhotoStory=true}label:{Label(storyArchive.entry(StoryTarget.photo(current).id) == nil ? "Viết story ảnh":"Đọc / sửa story ảnh",systemImage:"book.closed").font(.caption.weight(.semibold)).foregroundStyle(gold)}.disabled(current.deleted != nil)
                     HStack(spacing:2){ForEach(1...5,id:\.self){n in Button {Task{await model.edit(shot.id,rating:current.rating==n ? 0 : n)}} label:{Image(systemName:n<=current.rating ? "star.fill":"star").foregroundStyle(gold).frame(width:35,height:40)}.accessibilityLabel("\(n) sao")}}
                 }
                 HStack(spacing:18) {
@@ -603,7 +623,8 @@ private struct ShotDetail:View {
                 }.font(.title3).padding(.bottom,18)
                 }
             }.navigationTitle(shot.day).navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.topBarLeading){Button{withAnimation(.easeInOut(duration:0.22)){immersive.toggle()}}label:{Image(systemName:immersive ? "rectangle.compress.vertical":"rectangle.expand.vertical")}.accessibilityLabel("Chế độ thưởng thức ảnh")};ToolbarItem(placement:.confirmationAction){Button("Xong"){dismiss()}}}
-        }.sheet(isPresented:$showEditor){NavigationStack{CreativeStudio(shots:[current],vault:model.vault).toolbar{Button("Xong"){showEditor=false}}}}
+        }.sheet(isPresented:$showPhotoStory){let target=StoryTarget.photo(current);if storyArchive.entry(target.id) != nil{StoryReader(target:target,vault:model.vault,archive:storyArchive)}else{StoryComposer(target:target,vault:model.vault,archive:storyArchive)}}
+        .sheet(isPresented:$showEditor){NavigationStack{CreativeStudio(shots:[current],vault:model.vault).toolbar{Button("Xong"){showEditor=false}}}}
         .sheet(isPresented:$showMetadata){PhotoMetadataView(shot:current,url:model.vault.picture(current,original:true))}
         .sheet(isPresented:$editing){NavigationStack{Form{TextField("Phiên chụp",text:$session);TextField("Nhãn ảnh",text:$tags);TextField("Nhật ký khoảnh khắc",text:$note,axis:.vertical)}.navigationTitle("Thông tin ảnh").toolbar{Button("Lưu"){Task{do{try await model.vault.edit(shot.id,tags:tags,session:session,note:note);await model.reload();editing=false}catch{notice=error.localizedDescription}}}}}.presentationDetents([.medium])}
         .confirmationDialog("Chuyển ảnh vào thùng rác trong 30 ngày?",isPresented:$confirm){Button("Chuyển vào thùng rác",role:.destructive){Task{await model.edit(shot.id,trash:true);dismiss()}}}

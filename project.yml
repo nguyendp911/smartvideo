@@ -15,8 +15,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
-        MARKETING_VERSION: "12.0.0"
-        CURRENT_PROJECT_VERSION: "56"
+        MARKETING_VERSION: "13.0.0"
+        CURRENT_PROJECT_VERSION: "57"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
     info:
@@ -27,6 +27,7 @@ targets:
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UILaunchScreen: {}
         NSFaceIDUsageDescription: "VieLens xác thực để mở bản sao ảnh mã hóa."
+        NSMicrophoneUsageDescription: "VieLens dùng microphone khi bạn chủ động thu âm lời kể cho story."
         NSCameraUsageDescription: "VieLens dùng camera để chụp ảnh trên iPhone."
         NSPhotoLibraryAddUsageDescription: "Lưu ảnh bạn chọn từ Timeline vào ứng dụng Ảnh."
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
