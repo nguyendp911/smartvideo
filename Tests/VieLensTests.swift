@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ImageIO
+import AVFoundation
 @testable import VieLens
 
 final class VieLensTests:XCTestCase {
@@ -84,5 +85,43 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(restored.first?.collections,["Favorite"])
         XCTAssertEqual(restored.first?.note,"Đêm đẹp")
         XCTAssertEqual(try Data(contentsOf:reopened.picture(shot,original:true)),bytes)
+    }
+    func testSignatureEventsAndMemoryRecord() throws {
+        let a=Shot(id:UUID(),date:Date(timeIntervalSince1970:100),day:"2025-01-01",session:"Travel",rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let b=Shot(id:UUID(),date:a.date.addingTimeInterval(60),day:a.day,session:a.session,rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        let c=Shot(id:UUID(),date:a.date.addingTimeInterval(8000),day:a.day,session:a.session,rating:0,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
+        XCTAssertEqual(SignatureIndex.events([a,b,c]).map{$0.shots.count},[1,2])
+        let record=MemoryRecord(kind:.capsule,title:"Memory",note:"A note",date:Date(),unlock:Date().addingTimeInterval(3600),photos:[a.id],cover:a.id)
+        let decoded=try JSONDecoder().decode(MemoryRecord.self,from:JSONEncoder().encode(record))
+        XCTAssertTrue(decoded.locked);XCTAssertEqual(decoded.photos,[a.id])
+    }
+    func testCreativeExportAndSimilarity() async throws {
+        let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:temp)}
+        let vault=Vault(root:temp),bytes=try patch()
+        let a=try await vault.add(bytes,look:.neutral,session:"")
+        let b=try await vault.add(bytes,look:.neutral,session:"")
+        var r=CreativeRecipe();r.crop="1:1";r.exposure=0.4
+        let result=try XCTUnwrap(CreativeEngine.render(vault.picture(a,original:true),recipe:r,maxSize:200,format:"PNG",quality:1,metadata:false))
+        let source=try XCTUnwrap(CGImageSourceCreateWithData(result as CFData,nil))
+        let image=try XCTUnwrap(CGImageSourceCreateImageAtIndex(source,0,nil))
+        XCTAssertEqual(image.width,200);XCTAssertEqual(image.height,200)
+        XCTAssertEqual(try Data(contentsOf:vault.picture(a,original:true)),bytes)
+        let aa=try XCTUnwrap(SignatureAnalyzer.assess(a,vault:vault)),bb=try XCTUnwrap(SignatureAnalyzer.assess(b,vault:vault))
+        XCTAssertEqual(aa.digest,bb.digest)
+        XCTAssertEqual(SignatureAnalyzer.similar([aa,bb]).first?.count,2)
+    }
+    func testMemoryMovieCreatesVideo() async throws {
+        let temp=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer{try? FileManager.default.removeItem(at:temp)}
+        let vault=Vault(root:temp)
+        let s=try await vault.add(patch(),look:.neutral,session:"")
+        let url=try await MemoryMovie.make([s],vault:vault,width:320,height:240,seconds:1,title:"Memory")
+        defer{try? FileManager.default.removeItem(at:url)}
+        let asset=AVURLAsset(url:url)
+        let tracks=try await asset.loadTracks(withMediaType:.video)
+        XCTAssertEqual(tracks.count,1)
+        let duration=try await asset.load(.duration)
+        XCTAssertGreaterThan(CMTimeGetSeconds(duration),0.8)
     }
 }
