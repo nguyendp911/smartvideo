@@ -30,16 +30,16 @@ struct StoryWriterSheet:View{
     @State private var facts=""
     @State private var draft=""
     @State private var busy=false
-    @State private var error=""
+    @State private var failure=""
     var body:some View{
         NavigationStack{
             Form{
                 Section("Thông tin thật của bạn"){TextField("Ai, ở đâu, điều gì đã xảy ra…",text:$facts,axis:.vertical).lineLimit(4...10)}
                 Section{
-                    Button("Viết bằng Apple Intelligence"){busy=true;error="";Task{do{draft=try await StoryWritingAssistant.write(facts:facts,mood:mood)}catch{error=error.localizedDescription};busy=false}}.disabled(busy || facts.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                    Button("Viết bằng Apple Intelligence"){busy=true;failure="";Task{do{draft=try await StoryWritingAssistant.write(facts:facts,mood:mood)}catch{failure=error.localizedDescription};busy=false}}.disabled(busy || facts.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                     Button("Tạo từ mẫu offline"){draft=StoryWritingAssistant.template(facts:facts,mood:mood)}.disabled(busy || facts.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                     if busy{ProgressView()}
-                    if !error.isEmpty{Text(error).font(.caption)}
+                    if !failure.isEmpty{Text(failure).font(.caption)}
                 }
                 Section("Bản nháp để bạn duyệt"){TextEditor(text:$draft).frame(minHeight:150)}
                 Text("AI chạy qua Apple Intelligence khi khả dụng. Kiểm tra lại nội dung trước khi lưu.").font(.caption).foregroundStyle(.secondary)
