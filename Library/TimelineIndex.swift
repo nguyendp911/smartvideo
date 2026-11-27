@@ -14,8 +14,12 @@ struct TimelineGroup: Identifiable {
     var cover: Shot { items.max { a,b in a.rating == b.rating ? a.date < b.date : a.rating < b.rating } ?? items[0] }
 }
 enum TimelineIndex {
+    private static func normalized(_ value: String) -> String {
+        value.folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"vi_VN"))
+            .lowercased().replacingOccurrences(of:"đ",with:"d")
+    }
     static func filter(_ shots: [Shot], scope: TimelineScope, query: String = "", session: String = "", period: String = "", light: Light? = nil, minimumRating: Int = 0, newest: Bool = true) -> [Shot] {
-        let words = query.split(whereSeparator: \.isWhitespace).map { String($0).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: Locale(identifier:"vi_VN")) }
+        let words = query.split(whereSeparator: \.isWhitespace).map { normalized(String($0)) }
         return shots.filter { s in
             guard (scope == .trash ? s.deleted != nil : s.deleted == nil),
                   (scope != .picks || s.rating >= 4),
@@ -23,7 +27,7 @@ enum TimelineIndex {
                   session.isEmpty || s.session == session,
                   period.isEmpty || s.day.hasPrefix(period),
                   light == nil || s.light == light else { return false }
-            let text = [s.day,s.session,s.tags,s.light.rawValue,s.look.rawValue,s.lens].joined(separator:" ").folding(options:[.caseInsensitive,.diacriticInsensitive],locale:Locale(identifier:"vi_VN"))
+            let text = normalized([s.day,s.session,s.tags,s.light.rawValue,s.look.rawValue,s.lens].joined(separator:" "))
             return words.allSatisfy { text.contains($0) }
         }.sorted {
             if $0.date == $1.date { return newest ? $0.id.uuidString > $1.id.uuidString : $0.id.uuidString < $1.id.uuidString }

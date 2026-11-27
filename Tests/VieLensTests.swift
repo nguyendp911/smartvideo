@@ -53,7 +53,7 @@ final class VieLensTests:XCTestCase {
         let day1=Date(timeIntervalSince1970:10), day2=Date(timeIntervalSince1970:20)
         let a=Shot(id:UUID(),date:day1,day:"2025-01-01",session:"Hội An",rating:5,tags:"Đêm",deleted:nil,light:.night,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
         let b=Shot(id:UUID(),date:day2,day:"2025-02-01",session:"Hội An",rating:1,tags:"Sáng",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
-        var c=a;c.day="2025-01-01";c.rating=2
+        let c=Shot(id:UUID(),date:day1,day:"2025-01-01",session:"Hội An",rating:2,tags:"",deleted:nil,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
         let d=Shot(id:UUID(),date:day2,day:"2025-03-01",session:"Khác",rating:5,tags:"",deleted:day2,light:.natural,look:.neutral,sourceFile:"original.jpg",enhanced:false,lens:"")
         let shots=[a,b,c,d]
         XCTAssertEqual(TimelineIndex.filter(shots,scope:.all,query:"hoi an dem",minimumRating:4).count,1)

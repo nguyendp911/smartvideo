@@ -56,9 +56,11 @@ struct Timeline: View {
                 else { gallery }
             }
             .background(night)
+            .disabled(working)
             .toolbar(.hidden,for:.navigationBar)
         }
         .task { await model.reload() }
+        .onChange(of:search) { _,_ in chosen.removeAll() }
         .fullScreenCover(item:$selection) { shot in
             ShotDetail(model:model,shot:shot,shots:filtered)
         }
@@ -235,7 +237,7 @@ struct Timeline: View {
             } else { selection=shot }
         } label: {
             Color.white.opacity(0.045).aspectRatio(hero ? 1.46 : 1,contentMode:.fit)
-                .overlay { DiskImage(url:model.vault.thumbnail(shot.id),limit:hero ? 800 : 400).scaledToFill() }
+                .overlay { DiskImage(url:hero ? model.vault.picture(shot) : model.vault.thumbnail(shot.id),limit:hero ? 1000 : 400).scaledToFill() }
                 .clipped()
                 .overlay(alignment:.bottomLeading) {
                     if hero {
@@ -259,7 +261,7 @@ struct Timeline: View {
     private func collectionCard(_ group: TimelineGroup,title: String,icon: String) -> some View {
         VStack(alignment:.leading,spacing:8) {
             Color.white.opacity(0.06).aspectRatio(0.95,contentMode:.fit)
-                .overlay { DiskImage(url:model.vault.thumbnail(group.cover.id),limit:650).scaledToFill() }.clipped()
+                .overlay { DiskImage(url:model.vault.picture(group.cover),limit:700).scaledToFill() }.clipped()
                 .overlay(alignment:.bottomLeading) {
                     VStack(alignment:.leading,spacing:4) {
                         Image(systemName:icon).font(.caption).foregroundStyle(gold)
@@ -439,16 +441,20 @@ private struct ShotDetail:View {
                 .frame(maxHeight:.infinity)
                 .onChange(of:selectedID){_,_ in original=false}
                 Text("\((shots.firstIndex{$0.id==selectedID} ?? 0)+1) / \(shots.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-                ScrollView(.horizontal,showsIndicators:false) {
-                    LazyHStack(spacing:5) {
-                        ForEach(shots){ item in
-                            Button { selectedID=item.id } label: {
-                                DiskImage(url:model.vault.thumbnail(item.id),limit:120).scaledToFill().frame(width:46,height:46).clipped()
-                                    .overlay { if item.id==selectedID { Rectangle().strokeBorder(gold,lineWidth:2) } }
-                            }.buttonStyle(.plain).id(item.id)
+                ScrollViewReader { proxy in
+                    ScrollView(.horizontal,showsIndicators:false) {
+                        LazyHStack(spacing:5) {
+                            ForEach(shots){ item in
+                                Button { selectedID=item.id } label: {
+                                    DiskImage(url:model.vault.thumbnail(item.id),limit:120).scaledToFill().frame(width:46,height:46).clipped()
+                                        .overlay { if item.id==selectedID { Rectangle().strokeBorder(gold,lineWidth:2) } }
+                                }.buttonStyle(.plain).id(item.id)
+                            }
                         }
-                    }
-                }.frame(height:48).padding(.horizontal)
+                    }.frame(height:48)
+                    .onAppear { proxy.scrollTo(selectedID,anchor:.center) }
+                    .onChange(of:selectedID) { _,id in withAnimation(.easeOut(duration:0.2)){ proxy.scrollTo(id,anchor:.center) } }
+                }.padding(.horizontal)
 
                 VStack(spacing:6){
                     Text([current.light.rawValue,current.look.rawValue,current.lens].filter{!$0.isEmpty}.joined(separator:" · ")).font(.subheadline)
