@@ -9,6 +9,7 @@ enum Light: String, Codable, CaseIterable {
 }
 enum Look: String, CaseIterable, Codable, Identifiable {
     case neutral = "Tự nhiên", amber = "Nắng phim", street = "Phố đêm"
+    case mono = "Đen trắng", vintage = "Hoài cổ", vivid = "Rực rỡ", soft = "Dịu nhẹ", cool = "Xanh lạnh", cinematic = "Điện ảnh"
     var id: Self { self }
 }
 struct RenderedPhoto {
@@ -71,11 +72,20 @@ enum PhotoEngine {
             image = curve(image, low: 0.235, mid: 0.506, high: 0.757)
             image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey:0.93])
         }
+        switch look {
+        case .mono: image=image.applyingFilter("CIPhotoEffectMono")
+        case .vintage: image=image.applyingFilter("CIPhotoEffectInstant")
+        case .vivid: image=image.applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:1.23,kCIInputContrastKey:1.05])
+        case .soft: image=image.applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:0.9,kCIInputContrastKey:0.92])
+        case .cool: image=image.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:7300,y:0)])
+        case .cinematic: image=image.applyingFilter("CIPhotoEffectProcess").applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:0.88,kCIInputContrastKey:1.04])
+        default: break
+        }
         // Feather local exposure across the face. No geometric or skin-texture edits.
         if !faces.isEmpty {
             let brighten = min(0.42, max(0, (0.46 - stats.face) * 1.15))
             var subject = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey:brighten])
-            if light == .warm {
+            if light == .warm && look != .mono {
                 subject = subject.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey:0.93])
             }
             for face in faces {

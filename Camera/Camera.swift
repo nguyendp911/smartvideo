@@ -2,6 +2,17 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
+enum FlashChoice:String,CaseIterable {
+    case off="Tắt",auto="Tự động",on="Bật"
+    var mode:AVCaptureDevice.FlashMode {self == .on ? .on : (self == .auto ? .auto : .off)}
+    var icon:String {self == .off ? "bolt.slash" : (self == .auto ? "bolt.badge.automatic" : "bolt.fill")}
+}
+enum CaptureQuality:String,CaseIterable {case smart="Thông minh",detail="Chi tiết",speed="Nhanh"}
+struct CameraControls {
+    var zoom=1.0,maxZoom=1.0,ev=0.0,minEV=0.0,maxEV=0.0
+    var locked=false,canLock=false,hasFlash=false,canManual=false,manual=false
+    var iso=0.0,minISO=0.0,maxISO=0.0,exposure=0.0,minExposure=0.0,maxExposure=0.0
+}
 struct Lens: Identifiable, Equatable {
     let id: String
     let title: String
@@ -19,6 +30,8 @@ final class Camera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, A
     private var previous=[Int](), frames=0, motion=0.0
     private var observers=[NSObjectProtocol]()
     private var wanted=false
+    @Published private(set) var controls=CameraControls()
+    @Published private(set) var histogram=[Double](repeating:0,count:32)
     @Published var ready=false
     @Published var issue:String?
     @Published var lenses=[Lens]()
@@ -76,7 +89,53 @@ final class Camera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, A
         guard let active=deviceInput?.device else {return}
         let list=devices.filter{$0.position==active.position}.sorted{$0.activeFormat.videoFieldOfView > $1.activeFormat.videoFieldOfView}.map{ Lens(id:$0.uniqueID,title:label($0)) }
         let running=session.isRunning && !session.isInterrupted
+        publishControls(active)
         DispatchQueue.main.async { self.lenses=list;self.front=active.position == .front;self.selected=active.uniqueID;self.ready=running;self.issue=running ? nil : "Camera đang tạm dừng." }
+    }
+    private func publishControls(_ d:AVCaptureDevice) {
+        var s=CameraControls()
+        s.zoom=Double(d.videoZoomFactor);s.maxZoom=Double(min(8,d.maxAvailableVideoZoomFactor))
+        s.ev=Double(d.exposureTargetBias);s.minEV=Double(d.minExposureTargetBias);s.maxEV=Double(d.maxExposureTargetBias)
+        s.locked=d.exposureMode == .locked;s.canLock=d.isExposureModeSupported(.locked);s.hasFlash=d.hasFlash
+        s.canManual=d.isExposureModeSupported(.custom);s.manual=d.exposureMode == .custom
+        s.iso=Double(d.iso);s.minISO=Double(d.activeFormat.minISO);s.maxISO=Double(d.activeFormat.maxISO)
+        s.exposure=CMTimeGetSeconds(d.exposureDuration);s.minExposure=CMTimeGetSeconds(d.activeFormat.minExposureDuration);s.maxExposure=CMTimeGetSeconds(d.activeFormat.maxExposureDuration)
+        let state=s
+        DispatchQueue.main.async{self.controls=state}
+    }
+    func zoom(_ value:Double) {
+        queue.async {
+            guard let d=self.deviceInput?.device,(try? d.lockForConfiguration()) != nil else{return}
+            d.videoZoomFactor=CGFloat(min(min(8,Double(d.maxAvailableVideoZoomFactor)),max(Double(d.minAvailableVideoZoomFactor),value)))
+            d.unlockForConfiguration();self.publishControls(d)
+        }
+    }
+    func exposureBias(_ value:Double) {
+        queue.async {
+            guard let d=self.deviceInput?.device,(try? d.lockForConfiguration()) != nil else{return}
+            d.setExposureTargetBias(Float(min(Double(d.maxExposureTargetBias),max(Double(d.minExposureTargetBias),value))),completionHandler:nil)
+            d.unlockForConfiguration();self.publishControls(d)
+        }
+    }
+    func lockExposure(_ enabled:Bool) {
+        queue.async {
+            guard let d=self.deviceInput?.device,(try? d.lockForConfiguration()) != nil else{return}
+            let mode:AVCaptureDevice.ExposureMode=enabled ? .locked : .continuousAutoExposure
+            if d.isExposureModeSupported(mode){d.exposureMode=mode}
+            if enabled && d.isFocusModeSupported(.locked){d.focusMode = .locked}
+            else if !enabled && d.isFocusModeSupported(.continuousAutoFocus){d.focusMode = .continuousAutoFocus}
+            d.unlockForConfiguration();self.publishControls(d)
+        }
+    }
+    func manualExposure(iso:Double,seconds:Double) {
+        queue.async {
+            guard let d=self.deviceInput?.device,d.isExposureModeSupported(.custom),(try? d.lockForConfiguration()) != nil else{return}
+            let low=CMTimeGetSeconds(d.activeFormat.minExposureDuration),high=CMTimeGetSeconds(d.activeFormat.maxExposureDuration)
+            let duration=CMTime(seconds:min(high,max(low,seconds)),preferredTimescale:1_000_000_000)
+            let value=Float(min(Double(d.activeFormat.maxISO),max(Double(d.activeFormat.minISO),iso)))
+            d.setExposureModeCustom(duration:duration,iso:value,completionHandler:nil)
+            d.unlockForConfiguration();self.publishControls(d)
+        }
     }
     func change(to id:String?=nil) {
         queue.async {
@@ -93,11 +152,11 @@ final class Camera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, A
         queue.async {
             guard let d=self.deviceInput?.device,(try? d.lockForConfiguration()) != nil else {return}
             defer {d.unlockForConfiguration()}
-            if d.isFocusPointOfInterestSupported && d.isFocusModeSupported(.continuousAutoFocus) { d.focusPointOfInterest=point;d.focusMode = .continuousAutoFocus }
-            if d.isExposurePointOfInterestSupported && d.isExposureModeSupported(.continuousAutoExposure) { d.exposurePointOfInterest=point;d.exposureMode = .continuousAutoExposure }
+            if d.focusMode != .locked && d.isFocusPointOfInterestSupported && d.isFocusModeSupported(.continuousAutoFocus) { d.focusPointOfInterest=point;d.focusMode = .continuousAutoFocus }
+            if d.exposureMode != .locked && d.exposureMode != .custom && d.isExposurePointOfInterestSupported && d.isExposureModeSupported(.continuousAutoExposure) { d.exposurePointOfInterest=point;d.exposureMode = .continuousAutoExposure }
         }
     }
-    func capture(flash:Bool,orientation:UIDeviceOrientation, completion:@escaping (Result<Data,Error>)->Void) {
+    func capture(flash:FlashChoice,quality:CaptureQuality,orientation:UIDeviceOrientation, completion:@escaping (Result<Data,Error>)->Void) {
         queue.async {
             guard self.callback==nil,self.session.isRunning,!self.session.isInterrupted,let conn=self.output.connection(with:.video) else {
                 DispatchQueue.main.async{completion(.failure(CameraError.missingCamera))};return
@@ -112,8 +171,8 @@ final class Camera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, A
             }
             if conn.isVideoMirroringSupported {conn.automaticallyAdjustsVideoMirroring=false;conn.isVideoMirrored=self.deviceInput?.device.position == .front}
             let settings=AVCapturePhotoSettings()
-            settings.photoQualityPrioritization=self.motion > 0.065 ? .balanced : .quality
-            if flash, self.deviceInput?.device.hasFlash==true, self.output.supportedFlashModes.contains(.auto) { settings.flashMode = .auto }
+            settings.photoQualityPrioritization=quality == .speed ? .speed : (quality == .detail ? .quality : (self.motion > 0.065 ? .balanced : .quality))
+            if self.deviceInput?.device.hasFlash==true, self.output.supportedFlashModes.contains(flash.mode) { settings.flashMode = flash.mode }
             self.callback=completion;self.captured=nil
             self.output.capturePhoto(with:settings,delegate:self)
         }
@@ -145,16 +204,26 @@ final class Camera: NSObject, ObservableObject, AVCapturePhotoCaptureDelegate, A
             motion=0.5*motion+0.5*change
         }
         previous=points
+        if frames % 12 == 0 {
+            var bins=[Double](repeating:0,count:32)
+            for y in 0..<24 {for x in 0..<32 {bins[min(31,Int(ptr[(h*y/24)*stride+w*x/32])/8)]+=1}}
+            let peak=max(1,bins.max() ?? 1), values=bins.map{$0/peak}
+            DispatchQueue.main.async{self.histogram=values}
+            if let d=deviceInput?.device{publishControls(d)}
+        }
     }
 }
 final class Viewfinder: UIView {
     override class var layerClass:AnyClass { AVCaptureVideoPreviewLayer.self }
     var preview:AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
     var onPoint:((CGPoint)->Void)?
+    var onZoom:((CGFloat,UIGestureRecognizer.State)->Void)?
     override init(frame:CGRect) {
         super.init(frame:frame);addGestureRecognizer(UITapGestureRecognizer(target:self,action:#selector(tap(_:))))
+        addGestureRecognizer(UIPinchGestureRecognizer(target:self,action:#selector(pinch(_:))))
     }
     required init?(coder:NSCoder) { fatalError() }
+    @objc private func pinch(_ gesture:UIPinchGestureRecognizer){onZoom?(gesture.scale,gesture.state)}
     @objc private func tap(_ gesture:UITapGestureRecognizer) {
         let p=gesture.location(in:self)
         onPoint?(preview.captureDevicePointConverted(fromLayerPoint:p))
@@ -167,7 +236,13 @@ struct CameraPreview:UIViewRepresentable {
     let camera:Camera
     func makeUIView(context:Context)->Viewfinder {
         let v=Viewfinder(frame:.zero);v.preview.session=camera.session;v.preview.videoGravity = .resizeAspect
-        v.onPoint={camera.focus($0)};return v
+        v.onPoint={camera.focus($0)}
+        var base=1.0
+        v.onZoom={scale,state in
+            if state == .began {base=camera.controls.zoom}
+            if state == .changed {camera.zoom(min(camera.controls.maxZoom,max(1,base*Double(scale))))}
+        }
+        return v
     }
     func updateUIView(_ uiView:Viewfinder,context:Context) {
         if let conn=uiView.preview.connection,conn.isVideoOrientationSupported {conn.videoOrientation = .portrait}
