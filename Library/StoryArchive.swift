@@ -22,9 +22,14 @@ struct StoryEntry:Codable,Equatable,Identifiable{
     var photoIDs:[UUID]=[]
     var captions:[String:String]=[:]
     var audio:Data?
+    var canvas:MemoryCanvasDesign?=nil
+    var textEffect:StoryTextEffect?=nil
+    var textFont:CanvasFont?=nil
+    var textColor:String?=nil
+    var chapters:[String]?=nil
     var createdAt=Date()
     var updatedAt=Date()
-    var hasContent:Bool{![title,body,location,people,quote,tags].allSatisfy{$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} || mood != nil || audio != nil || !captions.isEmpty}
+    var hasContent:Bool{![title,body,location,people,quote,tags].allSatisfy{$0.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty} || mood != nil || audio != nil || !captions.isEmpty || canvas != nil || !(chapters ?? []).isEmpty}
 }
 struct StoryTarget:Identifiable{
     let id:String
@@ -175,6 +180,7 @@ struct StoryComposer:View{
     @State private var notice=""
     @State private var deleting=false
     @State private var confirmClose=false
+    @State private var chapterText=""
     init(target:StoryTarget,vault:Vault,archive:StoryArchive){
         self.target=target;self.vault=vault;self.archive=archive
         let initial=archive.draft(target)
@@ -189,9 +195,15 @@ struct StoryComposer:View{
                         Button("Một ngày bình yên"){insert("Một ngày bình yên","Hôm ấy, điều mình muốn nhớ nhất là…",.peaceful)}
                         Button("Lá thư gửi tương lai"){insert("Gửi mình của ngày mai","Mình mong rằng khi đọc lại những dòng này…",.nostalgic)}
                         Button("Chương mới"){insert("Một chương mới","Mọi thứ bắt đầu từ…",.adventure)}
+                        Button("Gia đình"){insert("Nhà là nơi trở về","Điều mình trân trọng ở gia đình là…",.grateful)}
+                        Button("Tình yêu"){insert("Có nhau","Khoảnh khắc mình muốn kể về hai đứa là…",.romantic)}
+                        Button("Chuyến đi"){insert("Những bước chân","Nơi mình đã đến, điều mình học được…",.adventure)}
                     }.disabled(!value.title.isEmpty || !value.body.isEmpty)
                     TextField("Tiêu đề",text:$value.title)
                     TextEditor(text:$value.body).frame(minHeight:145).accessibilityLabel("Nội dung story")
+                    Picker("Hiệu ứng chữ",selection:Binding(get:{value.textEffect ?? .normal},set:{value.textEffect=$0})){ForEach(StoryTextEffect.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+                    Picker("Phong cách chữ",selection:Binding(get:{value.textFont ?? .serif},set:{value.textFont=$0})){ForEach(CanvasFont.allCases,id:\.self){Text($0.rawValue).tag($0)}}
+                    ColorPicker("Màu chữ",selection:Binding(get:{GardenColor.decode(value.textColor ?? "FFFFFF")},set:{value.textColor=GardenColor.encode($0)}),supportsOpacity:false)
                     if value.format != .quick{
                         Picker("Cảm xúc",selection:$value.mood){Text("Chưa chọn").tag(nil as StoryMood?);ForEach(StoryMood.allCases,id:\.self){Text($0.rawValue).tag(Optional($0))}}
                         TextField("Địa điểm / bối cảnh",text:$value.location)
@@ -199,6 +211,11 @@ struct StoryComposer:View{
                         TextField("Trích dẫn",text:$value.quote,axis:.vertical)
                         TextField("Hashtag cá nhân",text:$value.tags)
                     }
+                }
+                Section("Chương truyện"){
+                    ForEach(Array((value.chapters ?? []).indices),id:\.self){i in TextField("Chương \(i+1)",text:Binding(get:{(value.chapters ?? [])[i]},set:{value.chapters?[i]=$0}),axis:.vertical)}.onDelete{value.chapters?.remove(atOffsets:$0)}
+                    TextField("Nội dung chương mới",text:$chapterText,axis:.vertical)
+                    Button("Thêm chương"){value.chapters=(value.chapters ?? [])+[chapterText];chapterText=""}.disabled(chapterText.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
                 }
                 if target.shots.count>1{
                     Section("Ảnh bìa & chú thích"){
@@ -255,6 +272,10 @@ struct StoryReader:View{
     @ObservedObject var archive:StoryArchive
     @Environment(\.dismiss) private var dismiss
     @State private var editing=false
+    @State private var canvasEditor=false
+    @State private var pdfURL:URL?
+    @State private var exportError=""
+    @State private var showVideo=false
     @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
     @StateObject private var voice=StoryVoice()
     @Environment(\.scenePhase) private var phase
@@ -272,7 +293,13 @@ struct StoryReader:View{
                         if !story.location.isEmpty{Label(story.location,systemImage:"mappin").font(.caption)}
                         if !story.people.isEmpty{Label(story.people,systemImage:"person.2").font(.caption)}
                         if !story.quote.isEmpty{Text("“"+story.quote+"”").font(.system(.title3,design:.serif)).italic().foregroundStyle(gold)}
-                        Text(story.body).font(.body).lineSpacing(6).textSelection(.enabled)
+                        AnimatedStoryText(text:story.body,effect:story.textEffect ?? .normal,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"),duration:story.audio.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 3)
+                        ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){i,chapter in VStack(alignment:.leading,spacing:7){Text("CHƯƠNG \(i+1)").font(.caption2.monospaced()).foregroundStyle(gold);Text(chapter).font(.body).lineSpacing(5)}}
+                        Button("Story Canvas",systemImage:"paintpalette"){canvasEditor=true}.buttonStyle(.bordered)
+                        Button("Xuất sách ký ức PDF",systemImage:"book.closed"){do{pdfURL=try StoryPDF.export(story,shots:target.shots,vault:vault)}catch{exportError=error.localizedDescription}}
+                        if let pdfURL{ShareLink(item:pdfURL){Label("Lưu sách PDF",systemImage:"square.and.arrow.up")}}
+                        Button("Tạo video ký ức",systemImage:"film"){showVideo=true}.disabled(target.shots.isEmpty)
+                        if !exportError.isEmpty{Text(exportError).font(.caption)}
                         if !story.tags.isEmpty{Text(story.tags).font(.caption).foregroundStyle(.secondary)}
                         if let data=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể",systemImage:voice.playing ? "stop.fill":"waveform"){if voice.playing{voice.stopPlayback()}else{voice.play(data)}}.buttonStyle(.borderedProminent)}
                         if target.shots.count>1{
@@ -289,9 +316,11 @@ struct StoryReader:View{
                 }else{ContentUnavailableView("Chưa có story",systemImage:"book.closed",description:Text("Viết câu chuyện cho khoảnh khắc này."))}
             }.navigationTitle("Story").navigationBarTitleDisplayMode(.inline).toolbar{
                 ToolbarItem(placement:.cancellationAction){Button("Đóng"){dismiss()}}
-                ToolbarItem(placement:.confirmationAction){Button("Viết / sửa"){voice.stopPlayback();editing=true}}
+                ToolbarItem(placement:.confirmationAction){Menu{Button("Viết / sửa"){voice.stopPlayback();editing=true};Button("Story Canvas"){voice.stopPlayback();canvasEditor=true}}label:{Image(systemName:"ellipsis.circle")}}
             }
         }.sheet(isPresented:$editing){StoryComposer(target:target,vault:vault,archive:archive)}
+        .sheet(isPresented:$canvasEditor){StoryCanvasStudio(target:target,vault:vault,archive:archive)}
+        .sheet(isPresented:$showVideo){NavigationStack{MemoryCinema(shots:target.shots,vault:vault).toolbar{Button("Đóng"){showVideo=false}}}}
         .onChange(of:phase){_,p in if p != .active{voice.stopPlayback()}}.onDisappear{voice.cancel()}
     }
 }

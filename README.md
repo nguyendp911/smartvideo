@@ -25,3 +25,6 @@ Cây thời gian mặc định năm–tháng–ngày có nhánh, mở/thu gọn,
 
 ## Story Vine 13
 Sáu chủ đề dây leo vector, tùy chỉnh mật độ, độ cong và node. Story ảnh/ngày/tháng/năm/bộ sưu tập, draft, mood, chú thích, ảnh bìa, ghi âm AAC tối đa 120 giây, tìm kiếm theo nội dung, Story Studio và sao lưu JSON riêng. Slide đọc story và giọng kể (ưu tiên từng ảnh, lời kể ngày phát đầu nhóm), nhạc Tệp lặp trong phiên. Không xuất lời kể vào MP4; sao lưu ảnh, Signature, Story là các tệp riêng.
+
+## Living Memory World 14
+15 bộ dây leo vector, lá chuyển động, hạt sáng, theo mùa quy ước, màu tùy chỉnh, nền và môi trường, lưu preset. 14 hiệu ứng slideshow trong app. Story Canvas kéo thả layer chữ/ảnh/sticker, font, màu, thứ tự, xuất PNG/PDF; Story PDF nhiều trang, chapter và hiệu ứng chữ. Memory World có bản đồ cây/vũ trụ/vườn 2D, museum carousel, wall kéo thả; Discovery nhóm kỷ niệm, cảm xúc, thẻ, tổng kết, GPS; Podcast lời kể. Chưa có WidgetKit, AR/3D thực, AI sinh văn bản, phân đoạn chủ thể, đồng bộ từng chữ với âm thanh hoặc xuất MP4 story đầy đủ.

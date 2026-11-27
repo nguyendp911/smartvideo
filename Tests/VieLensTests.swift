@@ -198,7 +198,20 @@ final class VieLensTests:XCTestCase {
         XCTAssertNil(reopened.entry(story.id))
     }
     func testVineThemesAndStoryFormats(){
-        XCTAssertEqual(VineTheme.allCases.count,6)
+        XCTAssertEqual(VineTheme.allCases.count,15)
         XCTAssertEqual(StoryFormat.allCases.count,5)
+    }
+    func testLivingGardenAndStoryCanvasModels()throws{
+        XCTAssertEqual(StoryEffect.allCases.count,14)
+        XCTAssertEqual(GardenBackground.season("2026-11",fallback:.emerald),.autumn)
+        XCTAssertEqual(GardenBackground.season("2026-03",fallback:.emerald),.sakura)
+        var story=StoryEntry(id:"photo:"+UUID().uuidString)
+        var design=MemoryCanvasDesign()
+        design.layers=[MemoryCanvasLayer(kind:.text,text:"Ký ức")]
+        story.canvas=design;story.textEffect = .typewriter;story.chapters=["Chương đầu"]
+        let decoded=try JSONDecoder().decode(StoryEntry.self,from:JSONEncoder().encode(story))
+        XCTAssertEqual(decoded.canvas,design)
+        XCTAssertEqual(decoded.chapters,["Chương đầu"])
+        XCTAssertTrue(decoded.hasContent)
     }
 }

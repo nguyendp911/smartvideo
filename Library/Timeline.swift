@@ -25,6 +25,10 @@ struct Timeline: View {
     @ObservedObject var model: LibraryModel
     @ObservedObject private var stories=StoryArchive.shared
     @State private var showVines=false
+    @State private var showWorld=false
+    @State private var showDiscovery=false
+    @State private var showPodcast=false
+    @State private var showGardenDesigner=false
     @State private var showStoryLibrary=false
     @State private var collectionStory:StoryTarget?
     @Environment(\.dismiss) private var dismiss
@@ -115,6 +119,10 @@ struct Timeline: View {
         }
         .sheet(isPresented:$showFilters) { filterSheet }
         .sheet(isPresented:$showVines){VineCollectionView()}
+        .fullScreenCover(isPresented:$showWorld){MemoryWorld(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showDiscovery){MemoryDiscover(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showPodcast){MemoryPodcast()}
+        .sheet(isPresented:$showGardenDesigner){GardenDesigner()}
         .sheet(isPresented:$showStoryLibrary){StoryLibrary(shots:active,vault:model.vault,archive:stories)}
         .sheet(item:$collectionStory){target in if stories.entry(target.id) != nil{StoryReader(target:target,vault:model.vault,archive:stories)}else{StoryComposer(target:target,vault:model.vault,archive:stories)}}
         .sheet(isPresented:$showDesigner){TimelineDesigner(layout:$layoutValue,spacing:$photoSpacing,radius:$photoRadius,columns:$columnCount,caption:$heroTitle,dateSize:$dateSize)}
@@ -185,6 +193,10 @@ struct Timeline: View {
             }
             Spacer(minLength:4)
             Menu {
+                Button("Memory World",systemImage:"sparkles.rectangle.stack"){showWorld=true}
+                Button("Khám phá ký ức",systemImage:"clock.arrow.circlepath"){showDiscovery=true}
+                Button("Memory Podcast",systemImage:"waveform"){showPodcast=true}
+                Button("Vine Designer",systemImage:"paintpalette"){showGardenDesigner=true}
                 Button("Story Studio",systemImage:"book.closed"){showStoryLibrary=true}
                 Button("Bộ sưu tập dây leo",systemImage:"leaf.fill"){showVines=true}
                 Button("Signature Studio",systemImage:"sparkles"){showSignature=true}

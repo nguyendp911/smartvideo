@@ -10,7 +10,7 @@ enum TimelinePresentation:String,CaseIterable {
     }
 }
 enum StoryEffect:String,CaseIterable {
-    case slide="Slide ngang",vertical="Slide dọc",fade="Hòa mờ",zoom="Zoom điện ảnh",card="Lật thẻ",reveal="Reveal"
+    case slide="Slide ngang",vertical="Slide dọc",fade="Hòa mờ",zoom="Zoom điện ảnh",card="Lật thẻ",reveal="Reveal",book="Memory Book",floating="Floating Memories",film="Film Journey",petal="Petal Reveal",dust="Golden Dust",depth="Depth Motion",ink="Ink Reveal",hanging="Hanging Memories"
     func transition(forward:Bool)->AnyTransition {
         switch self{
         case .slide:return .asymmetric(insertion:.move(edge:forward ? .trailing:.leading).combined(with:.opacity),removal:.move(edge:forward ? .leading:.trailing).combined(with:.opacity))
@@ -19,6 +19,14 @@ enum StoryEffect:String,CaseIterable {
         case .zoom:return .asymmetric(insertion:.scale(scale:1.14).combined(with:.opacity),removal:.scale(scale:0.88).combined(with:.opacity))
         case .card:return .modifier(active:StoryCardFlip(angle:forward ? 72:-72,opacity:0),identity:StoryCardFlip(angle:0,opacity:1))
         case .reveal:return .asymmetric(insertion:.offset(x:forward ? 90:-90,y:24).combined(with:.scale(scale:0.87)).combined(with:.opacity),removal:.offset(x:forward ? -90:90,y:-24).combined(with:.opacity))
+        case .book:return .modifier(active:PageFold(angle:forward ? -88:88,anchor:forward ? .leading:.trailing,opacity:0),identity:PageFold(angle:0,anchor:forward ? .leading:.trailing,opacity:1))
+        case .floating:return .modifier(active:FloatingFrame(amount:1),identity:FloatingFrame(amount:0))
+        case .film:return .asymmetric(insertion:.move(edge:forward ? .trailing:.leading),removal:.move(edge:forward ? .leading:.trailing))
+        case .petal:return .modifier(active:ArtReveal(progress:0,style:.petal),identity:ArtReveal(progress:1,style:.petal))
+        case .dust:return .modifier(active:ArtReveal(progress:0,style:.dust),identity:ArtReveal(progress:1,style:.dust))
+        case .depth:return .asymmetric(insertion:.scale(scale:1.3).combined(with:.offset(x:forward ? 55:-55)).combined(with:.opacity),removal:.scale(scale:0.76).combined(with:.opacity))
+        case .ink:return .modifier(active:ArtReveal(progress:0,style:.ink),identity:ArtReveal(progress:1,style:.ink))
+        case .hanging:return .modifier(active:PageFold(angle:0,anchor:.top,opacity:0),identity:PageFold(angle:0,anchor:.top,opacity:1)).combined(with:.offset(y:-85)).combined(with:.opacity)
         }
     }
 }
@@ -63,6 +71,11 @@ struct TimelineStoryTree:View{
     @State private var showVines=false
     @State private var storyTarget:StoryTarget?
     private var vine:VineTheme{VineTheme(rawValue:vineValue) ?? .emerald}
+    @AppStorage("garden.seasonal") private var seasonal=false
+    @AppStorage("garden.weather") private var weather=GardenAtmosphere.none.rawValue
+    @AppStorage("garden.intensity") private var intensity=0.6
+    @AppStorage("garden.paper") private var paper="Đêm"
+    @AppStorage("garden.haptics") private var haptics=true
     @State private var expanded=Set<String>()
     @State private var initialized=false
     private var years:[TimelineTreeYear]{TimelineTreeIndex.build(shots,newest:newest)}
@@ -90,7 +103,9 @@ struct TimelineStoryTree:View{
                     }.padding(.leading,18).padding(.vertical,18)
                 }.padding(.horizontal,12)
             }.safeAreaPadding(.bottom,20)
-        }.sheet(isPresented:$showVines){VineCollectionView()}
+        }.background(GardenBackground.color(paper))
+        .overlay{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}
+        .sheet(isPresented:$showVines){VineCollectionView()}
         .sheet(item:$storyTarget){target in
             if archive.entry(target.id) != nil{StoryReader(target:target,vault:vault,archive:archive)}else{StoryComposer(target:target,vault:vault,archive:archive)}
         }.onAppear{
@@ -101,7 +116,7 @@ struct TimelineStoryTree:View{
         if let year=years.first{expanded.insert(year.id);if let month=year.months.first{expanded.insert(month.id)}}
     }
     private func toggle(_ id:String){
-        UISelectionFeedbackGenerator().selectionChanged()
+        if haptics{UISelectionFeedbackGenerator().selectionChanged()}
         withAnimation(reduceMotion ? nil:.spring(response:0.38,dampingFraction:0.86)){
             if expanded.contains(id){expanded.remove(id)}else{expanded.insert(id)}
         }
@@ -128,7 +143,7 @@ struct TimelineStoryTree:View{
     }
     private func yearRow(_ year:TimelineTreeYear)->some View{
         HStack(alignment:.top,spacing:0){
-            rail(0).frame(width:43)
+            rail(0,key:year.id).frame(width:43)
             VStack(alignment:.leading,spacing:5){
             Button{toggle(year.id)}label:{
                 HStack(spacing:12){
@@ -148,7 +163,7 @@ struct TimelineStoryTree:View{
     }
     private func monthRow(_ month:TimelineTreeMonth)->some View{
         HStack(alignment:.top,spacing:0){
-            rail(1).frame(width:62)
+            rail(1,key:month.id).frame(width:62)
             VStack(alignment:.leading,spacing:5){
             Button{toggle(month.id)}label:{
                 HStack(spacing:10){
@@ -170,11 +185,11 @@ struct TimelineStoryTree:View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
             .buttonStyle(.plain)
     }
-    private func rail(_ level:Int)->some View{VineRail(level:level,theme:vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural)}
+    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal)}
     private func storyButton(_ target:StoryTarget)->some View{
         let entry=archive.entry(target.id)
         return Button{
-            UISelectionFeedbackGenerator().selectionChanged();storyTarget=target
+            if haptics{UISelectionFeedbackGenerator().selectionChanged()};storyTarget=target
         }label:{
             HStack(alignment:.top,spacing:7){
                 Image(systemName:entry == nil ? "pencil.line":"book.closed.fill").foregroundStyle(vine.bloom).font(.caption)
@@ -191,7 +206,7 @@ struct TimelineStoryTree:View{
     }
     private func dayRow(_ day:TimelineGroup)->some View{
         HStack(alignment:.top,spacing:0){
-            rail(2).frame(width:79)
+            rail(2,key:day.key).frame(width:79)
             VStack(alignment:.leading,spacing:8){
                 HStack{
                     VStack(alignment:.leading,spacing:3){
@@ -276,6 +291,7 @@ struct TimelineSlideStage:View{
     @State private var progress=0.0
     @State private var initialized=false
     @State private var motion=false
+    @AppStorage("garden.haptics") private var haptics=true
     @ObservedObject private var archive=StoryArchive.shared
     @StateObject private var voice=StoryVoice()
     @State private var storyTarget:StoryTarget?
@@ -390,10 +406,13 @@ struct TimelineSlideStage:View{
                         DiskImage(url:vault.thumbnail(shot.id),limit:280).scaledToFill().frame(width:g.size.width,height:g.size.height).blur(radius:25).opacity(0.35).clipped()
                         DiskImage(url:vault.picture(shot),limit:1600).scaledToFit()
                             .frame(width:g.size.width,height:g.size.height)
-                            .scaleEffect(effect == .zoom && motion && !reduceMotion ? 1.045:1)
+                            .scaleEffect((effect == .zoom || effect == .depth) && motion && !reduceMotion ? 1.045:1)
+                            .rotationEffect(.degrees(effect == .hanging && motion && !reduceMotion ? 1.7:0))
                     }.clipped()
                 }.id(shot.id).transition(reduceMotion ? .opacity:effect.transition(forward:forward))
             }.clipShape(RoundedRectangle(cornerRadius:18))
+            if effect == .film{FilmPerforations().allowsHitTesting(false)}
+            if effect == .hanging{VStack{HStack{Spacer();Image(systemName:"paperclip").font(.title2);Spacer()}.padding(.top,8);Spacer()}.allowsHitTesting(false)}
             VStack{
                 Spacer()
                 HStack(alignment:.bottom){
@@ -437,7 +456,7 @@ struct TimelineSlideStage:View{
     private func jump(_ target:Int){
         guard shots.indices.contains(target),target != index else{return}
         forward=target>index;progress=0;motion=false
-        UISelectionFeedbackGenerator().selectionChanged()
+        if haptics{UISelectionFeedbackGenerator().selectionChanged()}
         withAnimation(reduceMotion ? .easeOut(duration:0.15):.easeInOut(duration:0.48)){index=target}
     }
     private func move(_ delta:Int){
@@ -457,5 +476,60 @@ struct TimelineSlideStage:View{
     private func animateMotion(){
         guard !reduceMotion else{return}
         withAnimation(.easeInOut(duration:Double(max(2,interval)))){motion=true}
+    }
+}
+
+private struct PageFold:AnimatableModifier{
+    var angle:Double
+    let anchor:UnitPoint
+    var opacity:Double
+    var animatableData:AnimatablePair<Double,Double>{get{.init(angle,opacity)}set{angle=newValue.first;opacity=newValue.second}}
+    func body(content:Content)->some View{content.rotation3DEffect(.degrees(angle),axis:(x:0,y:1,z:0),anchor:anchor,perspective:0.7).opacity(opacity)}
+}
+private struct FloatingFrame:AnimatableModifier{
+    var amount:Double
+    var animatableData:Double{get{amount}set{amount=newValue}}
+    func body(content:Content)->some View{content.scaleEffect(1-0.32*amount).offset(x:70*amount,y:-85*amount).rotationEffect(.degrees(12*amount)).opacity(1-amount)}
+}
+private struct ArtReveal:AnimatableModifier{
+    var progress:Double
+    let style:StoryEffect
+    var animatableData:Double{get{progress}set{progress=newValue}}
+    func body(content:Content)->some View{
+        content.mask{
+            Canvas{ctx,size in
+                let p=max(0,min(1,progress))
+                if p>=0.995{ctx.fill(Path(CGRect(origin:.zero,size:size)),with:.color(.white));return}
+                if style == .dust{
+                    let cols=14,rows=18,w=size.width/CGFloat(cols),h=size.height/CGFloat(rows)
+                    for y in 0..<rows{for x in 0..<cols{
+                        let order=Double((x*73+y*31)%97)/97
+                        if p>order{ctx.fill(Path(CGRect(x:CGFloat(x)*w,y:CGFloat(y)*h,width:w+0.5,height:h+0.5)),with:.color(.white))}
+                    }}
+                }else{
+                    let count=style == .petal ? 7:12
+                    let reach=hypot(size.width,size.height)*CGFloat(p)
+                    for i in 0..<count{
+                        let a=Double(i)*2*Double.pi/Double(count)
+                        let offset=style == .petal ? reach*0.24:reach*0.17
+                        let x=size.width/2+CGFloat(cos(a))*offset,y=size.height/2+CGFloat(sin(a))*offset
+                        let r=reach*(style == .petal ? 0.48:0.38)
+                        ctx.fill(Path(ellipseIn:CGRect(x:x-r,y:y-r,width:r*2,height:r*2)),with:.color(.white))
+                    }
+                }
+            }
+        }.overlay{
+            if progress<0.98 && progress>0.01{
+                GardenWeather(effect:style == .petal ? .petals:style == .dust ? .gold:.none,intensity:0.7*(1-progress))
+            }
+        }
+    }
+}
+private struct FilmPerforations:View{
+    var body:some View{
+        VStack{strip;Spacer();strip}.padding(.vertical,4)
+    }
+    private var strip:some View{
+        HStack(spacing:6){ForEach(0..<14,id:\.self){_ in RoundedRectangle(cornerRadius:2).fill(.white.opacity(0.6)).frame(width:10,height:6)}}.frame(maxWidth:.infinity).padding(5).background(.black.opacity(0.8))
     }
 }
