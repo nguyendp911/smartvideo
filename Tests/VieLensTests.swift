@@ -278,4 +278,15 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(VineGrowth(days:365).stage,.mature)
         XCTAssertGreaterThan(VineGrowth(days:365).leafDensity,VineGrowth(days:1).leafDensity)
     }
+    func testNaturalGardenStableSamples(){
+        let seed=NaturalSample.seed("2026-11-27")
+        XCTAssertEqual(seed,NaturalSample.seed("2026-11-27"))
+        XCTAssertNotEqual(seed,NaturalSample.seed("2026-11-28"))
+        for i in 0..<100{
+            let n=NaturalSample.value(i,seed)
+            XCTAssertGreaterThanOrEqual(n,0)
+            XCTAssertLessThanOrEqual(n,1)
+        }
+        XCTAssertEqual(NaturalSample.fraction(-0.2),0.8,accuracy:0.000001)
+    }
 }

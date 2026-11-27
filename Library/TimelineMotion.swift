@@ -82,7 +82,7 @@ struct TimelineStoryTree:View{
     private var vine:VineTheme{VineTheme(rawValue:vineValue) ?? .emerald}
     @AppStorage("garden.seasonal") private var seasonal=false
     @AppStorage("garden.weather") private var weather=GardenAtmosphere.none.rawValue
-    @AppStorage("garden.intensity") private var intensity=0.6
+    @AppStorage("garden.intensity") private var intensity=0.35
     @AppStorage("garden.paper") private var paper="Đêm"
     @AppStorage("garden.haptics") private var haptics=true
     @State private var expanded=Set<String>()
@@ -196,7 +196,7 @@ struct TimelineStoryTree:View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
             .buttonStyle(.plain).disabled(group.items.isEmpty)
     }
-    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true)}
+    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true,branchKey:key)}
     private func storyButton(_ target:StoryTarget)->some View{
         let entry=archive.entry(target.id)
         return Button{

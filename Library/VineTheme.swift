@@ -91,6 +91,7 @@ struct VineRail:View {
     var useCustom=false
     var growth:VineGrowth?=nil
     var specialBloom=false
+    var branchKey="preview"
     @AppStorage("garden.live") private var live=true
     @AppStorage("garden.speed") private var speed=0.7
     @AppStorage("garden.glow") private var glow=0.6
@@ -103,94 +104,15 @@ struct VineRail:View {
     private var leafColor:Color{useCustom && custom ? GardenColor.decode(leafHex):theme.leaf}
     private var bloomColor:Color{useCustom && custom ? GardenColor.decode(bloomHex):theme.bloom}
     var body:some View{
-        TimelineView(.animation(minimumInterval:0.1,paused:!live || reduced)){clock in
+        TimelineView(.animation(minimumInterval:1/15,paused:!live || reduced)){clock in
             drawing(time:live && !reduced ? clock.date.timeIntervalSinceReferenceDate:0)
         }.accessibilityHidden(true)
     }
     private func drawing(time:Double)->some View{
-        Canvas{ctx,size in
-            guard size.height>0 else{return}
-            let h=size.height,root:CGFloat=18,branch=size.width-9,y=min(h*0.65,level==0 ? 35:level==1 ? 34:30)
-            let phase=time*speed
-            let amplitude=CGFloat(max(0.2,min(2,curvature)))*5
-            let sway=CGFloat(sin(phase))*1.6
-            let age=growth ?? VineGrowth(days:365)
-            let stemFactor=CGFloat(age.stemScale),leafFactor=CGFloat(age.leafScale)
-            let maturity=age.maturity
-            func stem(_ x:CGFloat,_ color:Color,_ width:CGFloat){
-                var p=Path();p.move(to:CGPoint(x:x,y:0))
-                let segments=max(1,Int(ceil(h/42)))
-                for i in 0..<segments{
-                    let a=h*CGFloat(i)/CGFloat(segments),b=h*CGFloat(i+1)/CGFloat(segments),sign:CGFloat=i%2==0 ? 1:-1
-                    p.addCurve(to:CGPoint(x:x,y:b),control1:CGPoint(x:x+amplitude*sign,y:a+(b-a)*0.35),control2:CGPoint(x:x-amplitude*sign,y:a+(b-a)*0.7))
-                }
-                ctx.stroke(p,with:.color(color.opacity(0.2*maturity)),style:StrokeStyle(lineWidth:width*stemFactor+2*maturity,lineCap:.round))
-                ctx.stroke(p,with:.color(color),style:StrokeStyle(lineWidth:width*stemFactor,lineCap:.round))
-                let interval=CGFloat(theme == .minimal ? 65:32)/CGFloat(max(0.15,min(1.8,density*age.leafDensity)))
-                var pos:CGFloat=12;var index=0
-                while pos<h-5{
-                    let side:CGFloat=index%2==0 ? -1:1
-                    leaf(ctx,base:CGPoint(x:x,y:pos),tip:CGPoint(x:x+side*(theme == .minimal ? 8:12)*leafFactor+sway*leafFactor,y:pos-10*leafFactor),color:leafColor.opacity(index%3==0 ? 0.75:1))
-                    if age.hasBranches && index%3==1{
-                        let start=CGPoint(x:x,y:pos+5),end=CGPoint(x:x+side*9*leafFactor,y:pos-10*leafFactor)
-                        var shoot=Path();shoot.move(to:start);shoot.addQuadCurve(to:end,control:CGPoint(x:x+side*4,y:pos-2));ctx.stroke(shoot,with:.color(stemColor.opacity(0.85)),lineWidth:0.85)
-                        leaf(ctx,base:end,tip:CGPoint(x:end.x-side*5,y:end.y-7*leafFactor),color:leafColor)
-                    }
-                    if age.hasBuds && index%age.bloomEvery==0 && theme != .minimal{
-                        let c=CGPoint(x:x+side*6*leafFactor,y:pos+5),r:CGFloat=age.hasFlowers ? CGFloat(3.2*age.flowerScale):1.65
-                        if age.hasFlowers{for i in 0..<5{let a=Double(i)*2*Double.pi/5;let q=CGPoint(x:c.x+CGFloat(cos(a))*r,y:c.y+CGFloat(sin(a))*r);ctx.fill(Path(ellipseIn:CGRect(x:q.x-r*0.65,y:q.y-r*0.65,width:r*1.3,height:r*1.3)),with:.color(bloomColor.opacity(0.85)))}}
-                        ctx.fill(Path(ellipseIn:CGRect(x:c.x-r*0.65,y:c.y-r*0.65,width:r*1.3,height:r*1.3)),with:.color(bloomColor))
-                    }
-                    pos+=interval;index+=1
-                }
-            }
-            stem(root,stemColor,level==0 ? 2.6:1.8)
-            if level==2 && age.hasBranches{stem(45,stemColor.opacity(0.68),1.2)}
-            let origin:CGFloat=level==2 && age.hasBranches ? 45:root
-            var arm=Path();arm.move(to:CGPoint(x:origin,y:max(0,y-13)))
-            arm.addCurve(to:CGPoint(x:size.width,y:y),control1:CGPoint(x:origin+6,y:y+6),control2:CGPoint(x:branch-5,y:y-8))
-            ctx.stroke(arm,with:.color(stemColor),style:StrokeStyle(lineWidth:(level==0 ? 2:1.6)*stemFactor,lineCap:.round))
-            if level>0 && theme != .minimal && age.hasBranches{leaf(ctx,base:CGPoint(x:branch-10,y:y),tip:CGPoint(x:branch-4,y:y-12),color:leafColor)}
-            if live && !reduced && glow>0 && age.hasBuds{
-                for i in 0..<(age.hasFlowers ? 3:1){
-                    let t=phase+Double(i)*2.1
-                    let p=CGPoint(x:root+CGFloat(sin(t))*12,y:h*CGFloat(i+1)/4+CGFloat(cos(t*0.8))*7)
-                    let opacity=(0.3+0.3*sin(t))*glow
-                    ctx.fill(Path(ellipseIn:CGRect(x:p.x-3,y:p.y-3,width:6,height:6)),with:.color(bloomColor.opacity(opacity)))
-                    ctx.fill(Path(ellipseIn:CGRect(x:p.x-1,y:p.y-1,width:2,height:2)),with:.color(bloomColor.opacity(0.9)))
-                }
-            }
-            let center=CGPoint(x:level==0 ? root:branch,y:y),r:CGFloat=(level==0 ? 6:4)*leafFactor
-            if !age.hasBuds{
-                ctx.fill(Path(ellipseIn:CGRect(x:center.x-r*0.6,y:center.y-r*0.6,width:r*1.2,height:r*1.2)),with:.color(leafColor))
-            }else if node == .leaf || (node == .natural && level==1 && !specialBloom){
-                leaf(ctx,base:CGPoint(x:center.x-4,y:center.y+5),tip:CGPoint(x:center.x+5,y:center.y-7),color:bloomColor)
-            }else if node == .pearl || theme == .minimal || !age.hasFlowers || (level==2 && !specialBloom){
-                ctx.fill(Path(ellipseIn:CGRect(x:center.x-r-3,y:center.y-r-3,width:(r+3)*2,height:(r+3)*2)),with:.color(bloomColor.opacity(0.17)))
-                ctx.fill(Path(ellipseIn:CGRect(x:center.x-r,y:center.y-r,width:r*2,height:r*2)),with:.color(bloomColor))
-                ctx.fill(Path(ellipseIn:CGRect(x:center.x-r*0.5,y:center.y-r*0.6,width:r*0.65,height:r*0.65)),with:.color(.white.opacity(0.8)))
-            }else{
-                let petals=theme == .lotus || theme == .wisteria ? 7:(theme == .rose ? 9:5)
-                for i in 0..<petals{
-                    let a=Double(i)*2*Double.pi/Double(petals),d=Double(r)*0.9
-                    let p=CGPoint(x:center.x+CGFloat(cos(a)*d),y:center.y+CGFloat(sin(a)*d))
-                    ctx.fill(Path(ellipseIn:CGRect(x:p.x-r*0.75,y:p.y-r*0.75,width:r*1.5,height:r*1.5)),with:.color(bloomColor.opacity(0.88)))
-                }
-                ctx.fill(Path(ellipseIn:CGRect(x:center.x-2,y:center.y-2,width:4,height:4)),with:.color(stemColor))
-            }
-        }.accessibilityHidden(true)
-    }
-    private func leaf(_ ctx:GraphicsContext,base:CGPoint,tip:CGPoint,color:Color){
-        let dx=tip.x-base.x,dy=tip.y-base.y
-        let wide:CGFloat=theme == .lotus ? 0.55:(theme == .bamboo ? 0.13:0.34)
-        var path=Path();path.move(to:base)
-        path.addQuadCurve(to:tip,control:CGPoint(x:base.x+dx*0.48-dy*wide,y:base.y+dy*0.48+dx*wide))
-        path.addQuadCurve(to:base,control:CGPoint(x:base.x+dx*0.52+dy*wide,y:base.y+dy*0.52-dx*wide));path.closeSubpath()
-        ctx.fill(path,with:.color(color))
-        var vein=Path();vein.move(to:base);vein.addLine(to:CGPoint(x:base.x+dx*0.84,y:base.y+dy*0.84))
-        ctx.stroke(vein,with:.color(stemColor.opacity(0.7)),lineWidth:0.55)
+        NaturalVineCanvas(level:level,theme:theme,stemColor:stemColor,leafColor:leafColor,bloomColor:bloomColor,density:density,curvature:curvature,age:growth ?? VineGrowth(days:365),node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:time,animate:live && !reduced,glow:glow)
     }
 }
+
 struct VineCollectionView:View{
     @ObservedObject private var life=LifeArchive.shared
     @AppStorage("timeline.vine.theme") private var themeValue=VineTheme.emerald.rawValue
@@ -205,7 +127,7 @@ struct VineCollectionView:View{
             ScrollView{
                 VStack(alignment:.leading,spacing:18){
                     Text("Khu vườn ký ức").font(.system(size:32,design:.serif))
-                    Text("Chọn dây leo, lá, hoa và nụ để cá nhân hóa cây thời gian. Vector sắc nét, không dùng ảnh nền raster.").font(.caption).foregroundStyle(.secondary)
+                    Text("Thân dây có bóng đổ, lá có gân và sắc độ tự nhiên, hoa có cánh riêng. Dây leo lớn dần theo tuổi cây.").font(.caption).foregroundStyle(.secondary)
                     VineGrowthCard(life:life)
                     LazyVGrid(columns:Array(repeating:GridItem(.flexible(),spacing:10),count:2),spacing:12){
                         ForEach(VineTheme.allCases){item in
@@ -262,32 +184,11 @@ struct GardenWeather:View{
     let effect:GardenAtmosphere
     let intensity:Double
     @Environment(\.accessibilityReduceMotion) private var reduced
+    @Environment(\.scenePhase) private var phase
     var body:some View{
-        if effect != .none && !reduced && intensity>0{
-            TimelineView(.animation(minimumInterval:1/20)){clock in
-                Canvas{ctx,size in
-                    let t=clock.date.timeIntervalSinceReferenceDate
-                    for i in 0..<Int(12+28*intensity){
-                        let seed=Double(i)*0.61803398875
-                        let base=seed-floor(seed)
-                        let speed=effect == .rain ? 0.6:0.065+Double(i%5)*0.015
-                        let raw=t*speed+Double(i)*0.137
-                        let y=CGFloat(raw-floor(raw))*size.height
-                        let x=CGFloat(base)*size.width+CGFloat(sin(t*0.65+Double(i)))*12
-                        let r:CGFloat=effect == .snow ? 2.5:3
-                        let color:Color=effect == .gold ? gold:effect == .petals ? .pink:effect == .leaves ? .orange:effect == .firefly ? .yellow:.white
-                        if effect == .rain{
-                            var p=Path();p.move(to:CGPoint(x:x,y:y));p.addLine(to:CGPoint(x:x-3,y:y+16))
-                            ctx.stroke(p,with:.color(.white.opacity(0.16*intensity)),lineWidth:0.7)
-                        }else if effect == .petals || effect == .leaves{
-                            let rect=CGRect(x:x-r,y:y-r,width:r*2,height:r*3)
-                            ctx.fill(Path(ellipseIn:rect),with:.color(color.opacity(0.4*intensity)))
-                        }else{
-                            let opacity=effect == .firefly ? (0.25+0.25*sin(t+Double(i)))*intensity:0.35*intensity
-                            ctx.fill(Path(ellipseIn:CGRect(x:x-r,y:y-r,width:r*2,height:r*2)),with:.color(color.opacity(opacity)))
-                        }
-                    }
-                }
+        if effect != .none && !reduced && intensity>0 && phase == .active{
+            TimelineView(.animation(minimumInterval:1/30)){clock in
+                NaturalWeatherCanvas(effect:effect,intensity:intensity,time:clock.date.timeIntervalSinceReferenceDate)
             }.allowsHitTesting(false).accessibilityHidden(true)
         }
     }

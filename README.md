@@ -38,3 +38,6 @@ Build 63: Life Journey/Memory River alternating cards, six Story Presentation mo
 
 ## Living Vine Evolution (15.1)
 Growth is based on unique local foreground usage dates, saved in Life archive and merged in Life backup. Existing libraries start counting from this update; importing historical photos does not advance age. Stages at 0/7/30/90/180/365 active days. Theme changes, inactive periods and deleting photos do not reset growth. Growth controls stem thickness, density, leaf size, side shoots, buds and flowers; milestone/story nodes bloom at maturity. No streak pressure. Calendar dates follow device time, not a server clock.
+
+## Natural Garden renderer 15.2
+Replaces flat vine and weather primitives with stable per-branch organic curvature, shaded stems, asymmetric gradient leaves with veins, layered petals, glass-like dew, radial glow, six-arm snow crystals with depth/blur, angled rain and tumbling botanical particles. Growth stages remain intact. Procedural 2D illustration, not photographic assets or a physical simulation. Weather pauses outside active scene and honors Reduce Motion.
