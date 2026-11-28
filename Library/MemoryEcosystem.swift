@@ -167,10 +167,11 @@ struct GardenRoom:View{
                 VStack(alignment:.leading,spacing:14){
                     HStack{VineRail(level:2,theme:VineTheme(rawValue:g.theme) ?? .emerald,growth:VineGrowth(days:g.usage.count)).frame(width:70,height:125);VStack(alignment:.leading){Text(g.title).font(.system(.largeTitle,design:.serif));Text(g.kind.rawValue).foregroundStyle(gold);Text("\(g.usage.count) ngày · \(items.count) ảnh").font(.caption)}}
                     Button("Story khu vườn",systemImage:"book.closed"){target=StoryTarget(id:"garden:"+g.id.uuidString,label:g.title,shots:items)}
-                    Button("Lịch ảnh",systemImage:"calendar"){calendar=true}
+                    Button("Lịch ảnh chung",systemImage:"calendar"){calendar=true}
+                    Text("Nhật ký riêng của vườn nằm ở từng ngày bên dưới. Lịch ảnh đọc nhật ký ngày chung.").font(.caption2).foregroundStyle(.secondary)
                     Button("Trình chiếu",systemImage:"play"){play=true}.disabled(items.isEmpty)
                     ForEach(TimelineIndex.group(items,period:.day,newest:true)){group in
-                        Button{target = .group(group)}label:{HStack{DiskImage(url:vault.thumbnail(group.cover.id),limit:220).scaledToFill().frame(width:86,height:76).clipped().clipShape(RoundedRectangle(cornerRadius:10));VStack(alignment:.leading){Text(TimelineIndex.label(group.key));Text("\(group.items.count) ảnh").font(.caption)}}}.buttonStyle(.plain)
+                        Button{target=StoryTarget(id:"garden:"+g.id.uuidString+":"+group.key,label:TimelineIndex.label(group.key),shots:group.items)}label:{HStack{DiskImage(url:vault.thumbnail(group.cover.id),limit:220).scaledToFill().frame(width:86,height:76).clipped().clipShape(RoundedRectangle(cornerRadius:10));VStack(alignment:.leading){Text(TimelineIndex.label(group.key));Text("\(group.items.count) ảnh").font(.caption)}}}.buttonStyle(.plain)
                     }
                     Text(notice).font(.caption)
                 }.padding()

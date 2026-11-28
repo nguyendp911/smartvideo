@@ -159,6 +159,8 @@ struct MemorySignatureView:View{
     @State private var notice=""
     @State private var theme=VineTheme.emerald
     @State private var name=""
+    @State private var movie:URL?
+    @State private var exporting=false
     private var art:some View{
         ZStack{
             LinearGradient(colors:[night,Color(red:0.10,green:0.22,blue:0.14)],startPoint:.top,endPoint:.bottom)
@@ -174,6 +176,9 @@ struct MemorySignatureView:View{
             Picker("Dây leo",selection:$theme){ForEach(VineTheme.allCases){Text($0.rawValue).tag($0)}}
             Button("Xuất hình nền PNG"){let r=ImageRenderer(content:art);r.scale=3;do{guard let data=r.uiImage?.pngData() else{throw CameraError.writeFailed};output=try CreativeEngine.exportURL(data,extension:"png")}catch{notice=error.localizedDescription}}
             if let output{ShareLink(item:output){Label("Lưu hình nền",systemImage:"square.and.arrow.up")}}
+            Button("Xuất phim cây trưởng thành",systemImage:"film"){exporting=true;let days=life.gardenDays,t=theme,n=name;Task{do{movie=try await Task.detached(priority:.userInitiated){try await GardenEvolutionFilm.export(days:days,theme:t,name:n)}.value;notice="Đã xuất phim."}catch{notice=error.localizedDescription};exporting=false}}.disabled(exporting)
+            if exporting{ProgressView()}
+            if let movie{ShareLink(item:movie){Label("Lưu phim khu vườn",systemImage:"square.and.arrow.up")}}
             Text(notice).font(.caption)
         }.padding()}.navigationTitle("Memory Signature").toolbar{Button("Xong"){dismiss()}}}
     }

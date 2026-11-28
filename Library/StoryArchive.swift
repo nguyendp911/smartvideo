@@ -286,6 +286,7 @@ struct StoryReader:View{
     @State private var exportError=""
     @State private var showVideo=false
     @State private var showPresentation=false
+    @State private var showDesk=false
     @State private var textReplay=0
     @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
     @StateObject private var voice=StoryVoice()
@@ -307,6 +308,7 @@ struct StoryReader:View{
                         AnimatedStoryText(text:story.body,effect:story.textEffect ?? .normal,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"),duration:story.audio.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 3,trigger:textReplay)
                         ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){i,chapter in VStack(alignment:.leading,spacing:7){Text("CHƯƠNG \(i+1)").font(.caption2.monospaced()).foregroundStyle(gold);Text(chapter).font(.body).lineSpacing(5)}}
                         Button("Trình bày Story",systemImage:"book.pages"){voice.stopPlayback();showPresentation=true}.buttonStyle(.borderedProminent)
+                        Button("Memory Desk",systemImage:"photo.on.rectangle"){voice.stopPlayback();showDesk=true}.buttonStyle(.bordered)
                         Button("Story Canvas",systemImage:"paintpalette"){canvasEditor=true}.buttonStyle(.bordered)
                         Button("Xuất sách ký ức PDF",systemImage:"book.closed"){do{pdfURL=try StoryPDF.export(story,shots:target.shots,vault:vault)}catch{exportError=error.localizedDescription}}
                         if let pdfURL{ShareLink(item:pdfURL){Label("Lưu sách PDF",systemImage:"square.and.arrow.up")}}
@@ -332,6 +334,7 @@ struct StoryReader:View{
             }
         }.sheet(isPresented:$editing){StoryComposer(target:target,vault:vault,archive:archive)}
         .sheet(isPresented:$canvasEditor){StoryCanvasStudio(target:target,vault:vault,archive:archive)}
+        .sheet(isPresented:$showDesk){MemoryDeskView(target:target,vault:vault,archive:archive)}
         .sheet(isPresented:$showPresentation){if let story=archive.entry(target.id){StoryPresentationStudio(story:story,target:target,vault:vault,archive:archive)}}
         .sheet(isPresented:$showVideo){if let story=archive.entry(target.id){StoryFilmView(story:story,shots:target.shots,vault:vault)}}
         .onChange(of:phase){_,p in if p != .active{voice.stopPlayback()}}.onDisappear{voice.cancel()}

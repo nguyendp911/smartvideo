@@ -49,7 +49,7 @@ struct SecretLetterView:View{
                 }
                 Section("Phong thư"){
                     ForEach(files,id:\.self){url in
-                        Button{do{opened=try LetterCrypt.read(url,key:key)}catch{notice=error.localizedDescription}}label:{Label("Thư "+url.deletingPathExtension().lastPathComponent.prefix(8),systemImage:"lock.doc")}
+                        Button{do{opened=try LetterCrypt.read(url,key:key)}catch{notice=error.localizedDescription}}label:{Label("Thư "+String(url.deletingPathExtension().lastPathComponent.prefix(8)),systemImage:"lock.doc")}
                     }
                     if let opened{VStack(alignment:.leading,spacing:14){Image(systemName:"envelope.open.fill").font(.largeTitle).foregroundStyle(gold);Text(opened.title).font(.system(.title,design:.serif));Text(opened.text).font(.system(.body,design:.serif)).lineSpacing(8);Button("Gấp thư"){self.opened=nil}}.padding()}
                 }

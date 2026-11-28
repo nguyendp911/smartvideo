@@ -33,6 +33,7 @@ struct Timeline: View {
     @State private var showFocus=false
     @State private var showSecret=false
     @State private var showMemorySignature=false
+    @State private var showMemorySearch=false
     @State private var pathMode:LifePathMode?
     @State private var showLifeBackup=false
     @State private var showChapters=false
@@ -149,6 +150,7 @@ struct Timeline: View {
         .fullScreenCover(isPresented:$showFocus){TimelineFocusView(shots:filtered,vault:model.vault)}
         .sheet(isPresented:$showSecret){SecretLetterView()}
         .sheet(isPresented:$showMemorySignature){MemorySignatureView(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showMemorySearch){MemorySearchView(shots:active,vault:model.vault)}
         .sheet(item:$pathMode){LifePathView(shots:active,vault:model.vault,mode:$0)}
         .sheet(isPresented:$showLifeBackup){LifeBackupView()}
         .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{day in showToday=false;resetFilters();period=day ?? "";showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue})}
@@ -236,6 +238,7 @@ struct Timeline: View {
                     Button("Timeline Focus",systemImage:"arrow.up.left.and.arrow.down.right"){showFocus=true}
                     Button("Secret Letter",systemImage:"lock.envelope"){showSecret=true}
                     Button("Memory Signature & hình nền",systemImage:"signature"){showMemorySignature=true}
+                    Button("Memory Search",systemImage:"magnifyingglass"){showMemorySearch=true}
                 }
                 Button("Hôm nay của tôi",systemImage:"sun.max"){showToday=true}
                 Button("Life Journey",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){pathMode = .journey}
