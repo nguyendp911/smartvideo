@@ -112,6 +112,7 @@ struct CalendarExtras:View{
                 Button("Viết câu trả lời"){target=MemorySync.target(day:day,shots:shots)}
                 TextField("Điều tôi biết ơn",text:$gratitude,axis:.vertical)
                 Button("Lưu biết ơn"){saveGratitude()}.disabled(gratitude.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)
+                ForEach((life.data.ecosystem?.threads ?? []).filter{$0.days.contains(day)}){thread in NavigationLink{ThreadDetail(thread:thread,shots:shots,vault:vault)}label:{Label(thread.title+" · \(thread.days.count) ngày",systemImage:"link")}}
                 Button("Cùng ngày qua nhiều năm"){compare=true}
                 Button("365 ngày ký ức"){year=true}
                 Button("Tạo poster tháng"){makePoster()}
@@ -128,7 +129,7 @@ struct CalendarExtras:View{
             }.frame(maxWidth:.infinity,alignment:.leading)
         }.sheet(item:$target){LifeStorySheet(target:$0,vault:vault,archive:archive)}
         .sheet(isPresented:$compare){NavigationStack{ScrollView{LazyVStack{ForEach(MemoryPortalIndex.sameDay(day,shots:shots)){s in Text(s.day).font(.headline);DiskImage(url:vault.picture(s),limit:900).scaledToFit()}}.padding()}.navigationTitle("Cùng ngày qua các năm").toolbar{Button("Đóng"){compare=false}}}}
-        .sheet(isPresented:$year){LifeReflection(range:.year(LifeDate.date(day) ?? Date()),shots:shots,vault:vault)}
+        .sheet(isPresented:$year){LifeReflection(range:.rolling(LifeDate.date(day) ?? Date()),shots:shots,vault:vault)}
     }
     private func saveGratitude(){
         let id="period:"+day

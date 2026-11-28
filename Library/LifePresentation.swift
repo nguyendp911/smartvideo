@@ -59,7 +59,7 @@ struct LifePathView:View{
     }
 }
 enum StoryPresentation:String,CaseIterable,Codable{
-    case magazine="Magazine",letter="Memory Letter",cinema="Story Cinema",scrapbook="Scrapbook",book="Story Book",podcast="Podcast"
+    case magazine="Magazine",living="Living Magazine",letter="Memory Letter",cinema="Story Cinema",scrapbook="Scrapbook",book="Story Book",podcast="Podcast"
 }
 struct StoryPresentationStudio:View{
     let story:StoryEntry
@@ -81,6 +81,7 @@ struct StoryPresentationStudio:View{
                 ScrollView{
                     switch style{
                     case .magazine:magazine
+                    case .living:livingMagazine
                     case .letter:letter
                     case .cinema:TimelineSlideStage(shots:target.shots,vault:vault,autoplay:true)
                     case .scrapbook:scrapbook
@@ -98,6 +99,18 @@ struct StoryPresentationStudio:View{
                 }}
             }
         }.onAppear{style=story.presentation ?? .magazine}.onDisappear{voice.cancel()}
+    }
+    private var livingMagazine:some View{
+        VStack(alignment:.leading,spacing:16){
+            Text("L I V I N G  M A G A Z I N E").font(.caption2.monospaced()).foregroundStyle(gold)
+            if !target.shots.isEmpty{
+                TabView{ForEach(target.shots){shot in VStack(alignment:.leading){DiskImage(url:vault.picture(shot),limit:1200).scaledToFill().frame(height:260).clipped();Text(story.captions[shot.id.uuidString] ?? shot.day).font(.caption)}}}.tabViewStyle(.page).frame(height:315)
+            }
+            Text(story.title.isEmpty ? target.label:story.title).font(.system(size:34,design:.serif))
+            AnimatedStoryText(text:story.body,effect:.typewriter,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"))
+            if let audio=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể"){if voice.playing{voice.stopPlayback()}else{voice.play(audio)}}.buttonStyle(.borderedProminent)}
+            ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){i,c in Text("CHƯƠNG \(i+1)").font(.caption2.monospaced()).foregroundStyle(gold);Text(c).font(.system(.body,design:.serif))}
+        }.padding(20)
     }
     private var magazine:some View{
         VStack(alignment:.leading,spacing:16){

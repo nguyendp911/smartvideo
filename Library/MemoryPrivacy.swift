@@ -39,6 +39,7 @@ struct SecretLetterView:View{
     @State private var notice=""
     @State private var generation=UUID()
     @State private var busy=false
+    @State private var deleteURL:URL?
     var body:some View{
         NavigationStack{List{
             if let key{
@@ -49,7 +50,7 @@ struct SecretLetterView:View{
                 }
                 Section("Phong thư"){
                     ForEach(files,id:\.self){url in
-                        Button{do{opened=try LetterCrypt.read(url,key:key)}catch{notice=error.localizedDescription}}label:{Label("Thư "+String(url.deletingPathExtension().lastPathComponent.prefix(8)),systemImage:"lock.doc")}
+                        Button{do{opened=try LetterCrypt.read(url,key:key)}catch{notice=error.localizedDescription}}label:{Label("Thư "+String(url.deletingPathExtension().lastPathComponent.prefix(8)),systemImage:"lock.doc")}.swipeActions{Button("Xóa",role:.destructive){deleteURL=url}}
                     }
                     if let opened{VStack(alignment:.leading,spacing:14){Image(systemName:"envelope.open.fill").font(.largeTitle).foregroundStyle(gold);Text(opened.title).font(.system(.title,design:.serif));Text(opened.text).font(.system(.body,design:.serif)).lineSpacing(8);Button("Gấp thư"){self.opened=nil}}.padding()}
                 }
@@ -58,9 +59,10 @@ struct SecretLetterView:View{
             Text("Thư AES-GCM độc lập với story công khai. Khóa gắn với mật mã thiết bị, không nằm trong backup. Không chuyển story công khai vào kho này tự động.").font(.caption).foregroundStyle(.secondary)
             Text(notice).font(.caption)
         }.navigationTitle("Secret Letter").toolbar{Button("Đóng"){dismiss()}}}
+        .confirmationDialog("Xóa vĩnh viễn thư mã hóa?",isPresented:Binding(get:{deleteURL != nil},set:{if !$0{deleteURL=nil}})){Button("Xóa",role:.destructive){if let url=deleteURL{do{try FileManager.default.removeItem(at:url);files=LetterCrypt.files();opened=nil}catch{notice=error.localizedDescription}};deleteURL=nil}}
         .onChange(of:phase){_,p in if p == .background{lock()}}.onDisappear{lock()}
     }
-    private func lock(){generation=UUID();key=nil;files=[];opened=nil;title="";bodyText="";notice="";busy=false}
+    private func lock(){generation=UUID();deleteURL=nil;key=nil;files=[];opened=nil;title="";bodyText="";notice="";busy=false}
     private func unlock(){
         let token=generation,context=LAContext();busy=true
         Task{do{

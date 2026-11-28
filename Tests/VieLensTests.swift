@@ -328,4 +328,15 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(MemoryPortalIndex.prompt("2026-11-28"),MemoryPortalIndex.prompt("2026-11-28"))
         XCTAssertEqual(StoryDirection().voiceVolume,1)
     }
+    @MainActor func testEcosystemCreatureAssetsAndRollingYear(){
+        for item in MemoryCreature.allCases{
+            guard let asset=item.asset else{XCTFail("Missing name for \(item.rawValue)");continue}
+            XCTAssertNotNil(UIImage(named:asset),"Missing bundled \(asset)")
+        }
+        let range=LifeReflectionRange.rolling(LifeDate.date("2026-11-28")!)
+        XCTAssertTrue(range.contains("2026-11-28"))
+        XCTAssertFalse(range.contains("2026-11-29"))
+        XCTAssertEqual(LifeDate.calendar.dateComponents([.day],from:range.interval.start,to:range.interval.end).day,365)
+        XCTAssertTrue(MemorySearchView.tokens("Tìm ký ức Đà Lạt 2025").contains("da"))
+    }
 }

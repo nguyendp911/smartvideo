@@ -163,6 +163,7 @@ struct StoryFilmView:View{
     @State private var vertical=true
     @State private var seconds=4
     @State private var direction=StoryDirection()
+    @ObservedObject private var archive=StoryArchive.shared
     @State private var music:Data?
     @State private var musicName=""
     @State private var musicExtension="m4a"
@@ -187,6 +188,7 @@ struct StoryFilmView:View{
                     Slider(value:$direction.startScale,in:1...1.3)
                     Text("Keyframe cuối · \(direction.endScale,format:.number.precision(.fractionLength(2)))")
                     Slider(value:$direction.endScale,in:1...1.3)
+                    Button("Lưu phong cách dựng"){var item=archive.entry(story.id) ?? story;let draft=archive.drafts[story.id];item.direction=direction;do{try archive.save(item,draft:false);if var draft{draft.direction=direction;try archive.save(draft,draft:true)};notice="Đã lưu."}catch{notice=error.localizedDescription}}
                 }
                 Section("Sound Designer"){
                     Text("Giọng kể");Slider(value:$direction.voiceVolume,in:0...1)
@@ -200,7 +202,7 @@ struct StoryFilmView:View{
                 if let output{ShareLink(item:output){Label("Lưu / gửi tặng phim",systemImage:"square.and.arrow.up")}}
                 Text(notice).font(.caption)
             }.navigationTitle("Story Director").toolbar{Button("Đóng"){dismiss()}}
-        }.fileImporter(isPresented:$pickingMusic,allowedContentTypes:[.audio]){result in
+        }.onAppear{direction=archive.entry(story.id)?.direction ?? story.direction ?? StoryDirection()}.fileImporter(isPresented:$pickingMusic,allowedContentTypes:[.audio]){result in
             do{let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let data=try Data(contentsOf:url);guard data.count<=30_000_000 else{throw CameraError.unreadable};_ = try AVAudioPlayer(data:data);music=data;musicName=url.lastPathComponent;musicExtension=url.pathExtension.isEmpty ? "m4a":url.pathExtension;notice=""}catch{notice=error.localizedDescription}
         }
     }

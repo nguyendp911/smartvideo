@@ -4,15 +4,15 @@ import CoreImage
 import AVFoundation
 
 enum LifeReflectionRange:Identifiable{
-    case day(Date),week(Date),month(Date),year(Date)
-    var anchor:Date{switch self{case .day(let d),.week(let d),.month(let d),.year(let d):return d}}
-    var component:Calendar.Component{switch self{case .day:return .day;case .week:return .weekOfYear;case .month:return .month;case .year:return .year}}
-    var interval:DateInterval{LifeDate.calendar.dateInterval(of:component,for:anchor) ?? DateInterval(start:anchor,duration:86400)}
+    case day(Date),week(Date),month(Date),year(Date),rolling(Date)
+    var anchor:Date{switch self{case .day(let d),.week(let d),.month(let d),.year(let d),.rolling(let d):return d}}
+    var component:Calendar.Component{switch self{case .day:return .day;case .week:return .weekOfYear;case .month:return .month;case .year,.rolling:return .year}}
+    var interval:DateInterval{if case .rolling(let date)=self{let end=LifeDate.calendar.date(byAdding:.day,value:1,to:LifeDate.calendar.startOfDay(for:date)) ?? date;let start=LifeDate.calendar.date(byAdding:.day,value:-365,to:end) ?? end.addingTimeInterval(-365*86400);return DateInterval(start:start,end:end)};return LifeDate.calendar.dateInterval(of:component,for:anchor) ?? DateInterval(start:anchor,duration:86400)}
     var start:String{LifeDate.key(interval.start)}
     var end:String{LifeDate.key(interval.end)}
-    var id:String{"\(component)-\(start)"}
-    var title:String{switch self{case .day:return "Nhật ký ngày";case .week:return "Nhìn lại một tuần";case .month:return "Tạp chí tháng";case .year:return "Yearbook"}}
-    var storyID:String{switch self{case .week:return "week:"+start;case .day:return "period:"+start;case .month:return "period:"+String(start.prefix(7));case .year:return "period:"+String(start.prefix(4))}}
+    var id:String{storyID}
+    var title:String{switch self{case .day:return "Nhật ký ngày";case .week:return "Nhìn lại một tuần";case .month:return "Tạp chí tháng";case .year:return "Yearbook";case .rolling:return "365 Memories"}}
+    var storyID:String{switch self{case .week:return "week:"+start;case .day:return "period:"+start;case .month:return "period:"+String(start.prefix(7));case .year:return "period:"+String(start.prefix(4));case .rolling:return "rolling:"+start}}
     func contains(_ day:String)->Bool{day>=start && day<end}
 }
 struct LifeReflection:View{
