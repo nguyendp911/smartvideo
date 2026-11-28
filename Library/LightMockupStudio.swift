@@ -3,6 +3,8 @@ import CoreImage
 import UIKit
 import Vision
 import UniformTypeIdentifiers
+import CryptoKit
+import ImageIO
 
 enum LightBlendMode:String,Codable,CaseIterable,Identifiable{
     case natural="Ánh sáng & bóng",screen="Ánh sáng",multiply="Bóng đổ",soft="Soft Light"
@@ -29,6 +31,57 @@ struct LightAsset:Identifiable{
     let id:String
     let name:String
     let index:Int
+}
+struct LightingCollectionPackage:Codable{
+    let version:Int
+    let scene:[String]
+    let light:[String]
+    func decoded()throws->(Data,Data){
+        guard version==1,
+              scene.count<=10000,light.count<=10000,
+              let a=Data(base64Encoded:scene.joined()),let b=Data(base64Encoded:light.joined()),
+              !a.isEmpty,!b.isEmpty,a.count<=20_000_000,b.count<=10_000_000 else{throw CameraError.unreadable}
+        func dimensions(_ bytes:Data,_ columns:Int,_ rows:Int)throws{
+            guard let source=CGImageSourceCreateWithData(bytes as CFData,nil),
+                  let props=CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [String:Any],
+                  let w=props[kCGImagePropertyPixelWidth as String] as? Int,
+                  let h=props[kCGImagePropertyPixelHeight as String] as? Int,
+                  w>=columns*128,h>=rows*128,w<=8192,h<=8192,w*h<=24_000_000,
+                  w%columns==0,h%rows==0 else{throw CameraError.unreadable}
+        }
+        try dimensions(a,4,4);try dimensions(b,4,2)
+        return (a,b)
+    }
+}
+enum LightingPackStore{
+    static var root:URL{FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("VieLensLightingPacks",isDirectory:true)}
+    static func ids()->[String]{
+        ((try? FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:nil)) ?? [])
+            .filter{valid($0.lastPathComponent) && FileManager.default.fileExists(atPath:$0.appendingPathComponent("scenes.jpg").path) && FileManager.default.fileExists(atPath:$0.appendingPathComponent("lights.jpg").path)}
+            .map(\.lastPathComponent).sorted()
+    }
+    private static func valid(_ id:String)->Bool{id.count==64 && id.utf8.allSatisfy{(48...57).contains($0)||(97...102).contains($0)}}
+    static func atlas(_ id:String,scene:Bool)->CGImage?{
+        guard valid(id),let source=CGImageSourceCreateWithURL(root.appendingPathComponent(id,isDirectory:true).appendingPathComponent(scene ? "scenes.jpg":"lights.jpg") as CFURL,nil) else{return nil}
+        return CGImageSourceCreateImageAtIndex(source,0,nil)
+    }
+    static func install(_ bytes:Data)throws->String{
+        guard bytes.count<=45_000_000 else{throw CameraError.unreadable}
+        let (a,b)=try JSONDecoder().decode(LightingCollectionPackage.self,from:bytes).decoded()
+        var digest=SHA256();digest.update(data:a);digest.update(data:b)
+        let id=digest.finalize().map{String(format:"%02x",$0)}.joined()
+        if ids().contains(id){return id}
+        guard ids().count<12 else{throw CameraError.writeFailed}
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        let temp=root.appendingPathComponent(UUID().uuidString,isDirectory:true)
+        try FileManager.default.createDirectory(at:temp,withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:temp)}
+        try a.write(to:temp.appendingPathComponent("scenes.jpg"),options:[.atomic,.completeFileProtection])
+        try b.write(to:temp.appendingPathComponent("lights.jpg"),options:[.atomic,.completeFileProtection])
+        let target=root.appendingPathComponent(id,isDirectory:true)
+        try FileManager.default.moveItem(at:temp,to:target)
+        return id
+    }
 }
 enum LightAssets{
     static let scenes:[LightAsset]=[
@@ -60,16 +113,25 @@ enum LightAssets{
         .init(id:"blue_window",name:"Ánh cửa đêm",index:7)
     ]
     private static let cache=NSCache<NSString,UIImage>()
+    static func entries(scene:Bool,pack:String?)->[LightAsset]{
+        let list=scene ? scenes:textures
+        guard let pack else{return list}
+        return list.map{LightAsset(id:"pack:"+pack+":"+$0.id,name:$0.name,index:$0.index)}
+    }
     static func image(_ id:String,scene:Bool)->UIImage?{
         let key="\(scene):\(id)" as NSString
         if let cached=cache.object(forKey:key){return cached}
         let list=scene ? scenes:textures
-        guard let item=list.first(where:{$0.id==id}),let atlas=UIImage(named:scene ? "premium_scene_atlas":"premium_light_atlas")?.cgImage else{return nil}
+        let components=id.split(separator:":").map(String.init)
+        let imported=components.count==3 && components[0]=="pack"
+        let assetID=imported ? components[2]:id
+        let atlas=imported ? LightingPackStore.atlas(components[1],scene:scene):UIImage(named:scene ? "premium_scene_atlas":"premium_light_atlas")?.cgImage
+        guard let item=list.first(where:{$0.id==assetID}),let atlas else{return nil}
         let columns=4,rows=scene ? 4:2
         let w=atlas.width/columns,h=atlas.height/rows,margin=scene ? 3:0
         let r=CGRect(x:(item.index%columns)*w+margin,y:(item.index/columns)*h+margin,width:w-2*margin,height:h-2*margin)
         guard let cg=atlas.cropping(to:r) else{return nil}
-        let image=UIImage(cgImage:cg);cache.setObject(image,forKey:key,cost:cg.bytesPerRow*cg.height)
+        let image=UIImage(cgImage:cg);cache.totalCostLimit=32*1024*1024;cache.countLimit=72;cache.setObject(image,forKey:key,cost:cg.bytesPerRow*cg.height)
         return image
     }
 }
@@ -162,6 +224,9 @@ struct LightMockupPanel:View{
     @Binding var recipe:CreativeRecipe
     @State private var importing=false
     @State private var notice=""
+    @State private var packs=[String]()
+    @State private var pack:String?=nil
+    @State private var importingPack=false
     private var light:LightMockupRecipe{recipe.lighting ?? LightMockupRecipe()}
     private func binding<T>(_ key:WritableKeyPath<LightMockupRecipe,T>)->Binding<T>{
         Binding(get:{light[keyPath:key]},set:{var r=light;r[keyPath:key]=$0;recipe.lighting=r})
@@ -175,10 +240,12 @@ struct LightMockupPanel:View{
     var body:some View{
         VStack(alignment:.leading,spacing:12){
             Text("PREMIUM LIGHTING LAB").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
-            Text("Texture ánh sáng & bóng thật từ asset tạo sẵn").font(.caption).foregroundStyle(.secondary)
+            Text("Texture ánh sáng & bóng từ asset tạo sẵn").font(.caption).foregroundStyle(.secondary)
+            if !packs.isEmpty{Picker("Bộ asset",selection:$pack){Text("Tích hợp sẵn").tag(String?.none);ForEach(packs,id:\.self){id in Text("Bộ nhập "+String(id.prefix(6))).tag(Optional(id))}}}
+            Button("Nhập gói Lighting Collection JSON",systemImage:"folder.badge.plus"){importingPack=true}.font(.caption)
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:false)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:84,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Không").font(.caption2)}}.buttonStyle(.plain)
-                ForEach(LightAssets.textures){asset in
+                ForEach(LightAssets.entries(scene:false,pack:pack)){asset in
                     Button{choose(asset.id,scene:false)}label:{tile(asset,scene:false,selected:light.textureID==asset.id && light.customTexture==nil)}.buttonStyle(.plain)
                 }
             }}
@@ -199,7 +266,7 @@ struct LightMockupPanel:View{
             Text("Tách chủ thể bằng Vision trên máy, rồi ghép vào phông nền đã tạo. Bản hiện tại dùng cảnh nguồn 378 × 250 px; không dùng cho bản in lớn.").font(.caption2).foregroundStyle(.secondary)
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:true)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:116,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Nền gốc").font(.caption2)}}.buttonStyle(.plain)
-                ForEach(LightAssets.scenes){asset in Button{choose(asset.id,scene:true)}label:{tile(asset,scene:true,selected:light.sceneID==asset.id)}.buttonStyle(.plain)}
+                ForEach(LightAssets.entries(scene:true,pack:pack)){asset in Button{choose(asset.id,scene:true)}label:{tile(asset,scene:true,selected:light.sceneID==asset.id)}.buttonStyle(.plain)}
             }}
             if light.sceneID != nil{
                 control("Phóng phông nền",binding(\.sceneZoom),1...2.5)
@@ -208,7 +275,11 @@ struct LightMockupPanel:View{
             }
             Button("Xóa toàn bộ hiệu ứng ánh sáng & mockup",role:.destructive){recipe.lighting=nil}.font(.caption)
             Text(notice).font(.caption2).foregroundStyle(.secondary)
-        }.fileImporter(isPresented:$importing,allowedContentTypes:[.png,.jpeg,.heic,.image]){response in
+        }.onAppear{packs=LightingPackStore.ids()}
+        .fileImporter(isPresented:$importingPack,allowedContentTypes:[.json]){response in
+            do{let url=try response.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let data=try Data(contentsOf:url,options:.mappedIfSafe);let id=try LightingPackStore.install(data);packs=LightingPackStore.ids();pack=id;notice="Đã nhập bộ 16 cảnh và 8 texture."}catch{notice=error.localizedDescription}
+        }
+        .fileImporter(isPresented:$importing,allowedContentTypes:[.png,.jpeg,.heic,.image]){response in
             do{
                 let url=try response.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
                 let bytes=try Data(contentsOf:url,options:.mappedIfSafe)

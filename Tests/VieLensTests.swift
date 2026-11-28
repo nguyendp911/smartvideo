@@ -354,6 +354,8 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(CreativeEngine.fileExtension("HEIC"),"heic")
     }
     func testPremiumCollectionAndLightingAssets()throws{
+        XCTAssertEqual(LightAssets.entries(scene:true,pack:"fixture").first?.id,"pack:fixture:window_morning")
+        XCTAssertThrowsError(try LightingCollectionPackage(version:1,scene:["invalid"],light:["invalid"]).decoded())
         XCTAssertEqual(PremiumPresets.all.count,32)
         XCTAssertEqual(Set(PremiumPresets.all.map(\.id)).count,32)
         XCTAssertEqual(Set(PremiumPresets.all.map(\.collection)).count,8)
