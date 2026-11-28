@@ -512,4 +512,26 @@ final class VieLensTests:XCTestCase {
         let a=CompositionAnchor.fromFocus(x:0.85,y:0.5,width:400,height:200,crop:"1:1")
         XCTAssertEqual(a.x,1)
     }
+    func testMockupSceneCoverNeverLeavesGaps(){
+        let target=CGRect(x:17,y:11,width:420,height:760),source=CGRect(x:0,y:0,width:1500,height:900)
+        for zoom in [1.0,1.2,2.5,3.0]{for x in [-1.0,0,1.0]{for y in [-1.0,0,1.0]{
+            let r=LightMockupEngine.sceneRect(source:source,target:target,zoom:zoom,x:x,y:y)
+            XCTAssertLessThanOrEqual(r.minX,target.minX+0.0001);XCTAssertLessThanOrEqual(r.minY,target.minY+0.0001)
+            XCTAssertGreaterThanOrEqual(r.maxX,target.maxX-0.0001);XCTAssertGreaterThanOrEqual(r.maxY,target.maxY-0.0001)
+        }}}
+    }
+    func testMockupTextureFadeAndAlpha(){
+        let rect=CGRect(x:0,y:0,width:100,height:100)
+        let white=CIImage(color:CIColor.white).cropped(to:rect)
+        let faded=LightMockupEngine.softTexture(white,fade:0.2)
+        func alpha(_ image:CIImage,_ x:Int,_ y:Int)->UInt8{
+            var bytes=[UInt8](repeating:0,count:4)
+            bytes.withUnsafeMutableBytes{p in SemanticMaskEngine.context.render(image,toBitmap:p.baseAddress!,rowBytes:4,bounds:CGRect(x:x,y:y,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+            return bytes[3]
+        }
+        XCTAssertLessThan(alpha(faded,1,50),64)
+        XCTAssertGreaterThan(alpha(faded,50,50),245)
+        var recipe=LightMockupRecipe();recipe.scope = .subject;recipe.edgeFade=0.2
+        XCTAssertEqual(try! JSONDecoder().decode(LightMockupRecipe.self,from:JSONEncoder().encode(recipe)),recipe)
+    }
 }

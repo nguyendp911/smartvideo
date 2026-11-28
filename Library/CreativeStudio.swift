@@ -64,7 +64,7 @@ enum CreativeEngine {
         }
         if recipe.lighting != nil{
             let stamp=(try? url.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
-            guard let lit=LightMockupEngine.apply(result,original:image,recipe:recipe.lighting,key:url.path+"#"+String(stamp)) else{return nil}
+            guard let lit=LightMockupEngine.apply(result,original:image,recipe:recipe.lighting,key:url.path+"#"+String(stamp),document:recipe.masking?.first(where:{$0.source==maskKey}),sourceKey:maskKey) else{return nil}
             result=lit
         }
         switch recipe.rotation ?? 0{case 90:result=result.oriented(.left);case 180:result=result.oriented(.down);case 270:result=result.oriented(.right);default:break}
@@ -137,7 +137,7 @@ struct CreativeStudio:View {
                 Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
                 Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
-                if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng.").font(.caption).foregroundStyle(.orange)}
+                if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng. Nếu không tìm thấy chủ thể, hãy chỉnh mặt nạ hoặc bỏ phông nền.").font(.caption).foregroundStyle(.orange)}
                 if let current{
                     DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
                 }
@@ -158,7 +158,7 @@ struct CreativeStudio:View {
                         }.padding(12).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12))
                     }.buttonStyle(.plain)
                 }
-                DisclosureGroup("Lighting & Mockup Studio · 24 asset",isExpanded:$showLighting){LightMockupPanel(recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                DisclosureGroup("Lighting & Mockup Studio · 24 asset",isExpanded:$showLighting){LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true}).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
                 DisclosureGroup("Hậu kỳ chuyên sâu · Color Studio",isExpanded:$showManual){
                     VStack(alignment:.leading){
                         control("Phơi sáng",value:$recipe.exposure,range:-2...2)

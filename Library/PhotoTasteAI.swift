@@ -64,7 +64,7 @@ struct TasteSample:Codable,Equatable,Identifiable{
         clean.masking=nil;clean.lighting=nil;clean.crop="Gốc";clean.compositionAnchor=nil;clean.rotation=nil;clean.mirror=nil
         global=clean
         compositionCrop=recipe.crop
-        if var light=recipe.lighting,light.textureID != nil,light.sceneID==nil,light.customTexture==nil{light.x=0;light.y=0;light.angle=0;light.mirror=false;light.customName=nil;lightStyle=light}
+        if var light=recipe.lighting,light.textureID != nil,light.sceneID==nil,light.customScene==nil,light.customTexture==nil{light.x=0;light.y=0;light.angle=0;light.mirror=false;light.customName=nil;lightStyle=light}
         // Never retain replacement images, brush paths, object coordinates or source paths.
         let layers=recipe.masking?.first(where:{$0.source==source})?.layers ?? []
         regions=PhotoMaskKind.learnable.compactMap{kind in

@@ -10,6 +10,10 @@ enum LightBlendMode:String,Codable,CaseIterable,Identifiable{
     case natural="Ánh sáng & bóng",screen="Ánh sáng",multiply="Bóng đổ",soft="Soft Light"
     var id:String{rawValue}
 }
+enum LightingScope:String,Codable,CaseIterable,Identifiable{
+    case all="Toàn ảnh",subject="Chủ thể",background="Hậu cảnh"
+    var id:String{rawValue}
+}
 struct LightMockupRecipe:Codable,Equatable{
     var textureID:String?=nil
     var sceneID:String?=nil
@@ -26,6 +30,17 @@ struct LightMockupRecipe:Codable,Equatable{
     var sceneY=0.0
     var customTexture:Data?=nil
     var customName:String?=nil
+    var customScene:Data?=nil
+    var customSceneName:String?=nil
+    var scope:LightingScope?=nil
+    var edgeFade:Double?=nil
+    var sceneBlur:Double?=nil
+    var sceneExposure:Double?=nil
+    var sceneWarmth:Double?=nil
+    var matteFeather:Double?=nil
+    var matteInset:Double?=nil
+    var foregroundExposure:Double?=nil
+    var foregroundWarmth:Double?=nil
 }
 struct LightAsset:Identifiable{
     let id:String
@@ -137,7 +152,6 @@ enum LightAssets{
 }
 enum LightMockupEngine{
     private static let context=CIContext(options:[.cacheIntermediates:false])
-    private static let maskCache=NSCache<NSString,CIImage>()
     private static func unit(_ x:Double)->Double{max(0,min(1,x))}
     private static func cover(_ source:CIImage,rect:CGRect,zoom:Double,x:Double,y:Double,angle:Double=0,mirror:Bool=false)->CIImage{
         let box=source.extent
@@ -153,48 +167,102 @@ enum LightMockupEngine{
         let mask=CIImage(color:CIColor(red:v,green:v,blue:v,alpha:1)).cropped(to:rect)
         return foreground.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:background,kCIInputMaskImageKey:mask]).cropped(to:rect)
     }
-    private static func foregroundMask(_ image:CIImage,key:String?)->CIImage?{
+    // Pan only within the overscan of a cover-fit background. No stretched edge pixels.
+    static func sceneRect(source:CGRect,target:CGRect,zoom:Double,x:Double,y:Double)->CGRect{
+        let scale=max(target.width/max(1,source.width),target.height/max(1,source.height))*CGFloat(max(1,min(3,zoom)))
+        let w=source.width*scale,h=source.height*scale
+        let dx=max(0,(w-target.width)/2)*CGFloat(max(-1,min(1,x)))
+        let dy=max(0,(h-target.height)/2)*CGFloat(max(-1,min(1,y)))
+        return CGRect(x:target.midX-w/2+dx,y:target.midY-h/2+dy,width:w,height:h)
+    }
+    static func sceneCover(_ source:CIImage,target:CGRect,zoom:Double,x:Double,y:Double)->CIImage{
+        let r=sceneRect(source:source.extent,target:target,zoom:zoom,x:x,y:y)
+        return SemanticMaskEngine.fit(source,to:r).cropped(to:target)
+    }
+    static func softTexture(_ image:CIImage,fade:Double)->CIImage{
         let rect=image.extent
-        if let key,let found=maskCache.object(forKey:key as NSString){return fittedMask(found,to:rect)}
-        let scale=min(1,768/max(rect.width,rect.height))
-        let small=image.transformed(by:CGAffineTransform(translationX:-rect.minX,y:-rect.minY)).transformed(by:CGAffineTransform(scaleX:scale,y:scale))
-        guard let cg=context.createCGImage(small,from:small.extent.integral) else{return nil}
-        let request=VNGenerateForegroundInstanceMaskRequest()
-        let handler=VNImageRequestHandler(cgImage:cg,options:[:])
-        do{
-            try handler.perform([request])
-            guard let observation=request.results?.first,!observation.allInstances.isEmpty else{return nil}
-            let buffer=try observation.generateScaledMaskForImage(forInstances:observation.allInstances,from:handler)
-            let mask=CIImage(cvPixelBuffer:buffer)
-            if let key{maskCache.countLimit=8;maskCache.setObject(mask,forKey:key as NSString)}
-            return fittedMask(mask,to:rect)
-        }catch{return nil}
+        let width=min(rect.width,rect.height)*CGFloat(max(0,min(0.35,fade)))
+        guard width>0.5 else{return image}
+        func gradient(_ a:CGPoint,_ b:CGPoint)->CIImage{
+            CIFilter(name:"CILinearGradient",parameters:["inputPoint0":CIVector(cgPoint:a),"inputPoint1":CIVector(cgPoint:b),"inputColor0":CIColor.black,"inputColor1":CIColor.white])!.outputImage!.cropped(to:rect)
+        }
+        let edges=[
+            gradient(CGPoint(x:rect.minX,y:rect.midY),CGPoint(x:rect.minX+width,y:rect.midY)),
+            gradient(CGPoint(x:rect.maxX,y:rect.midY),CGPoint(x:rect.maxX-width,y:rect.midY)),
+            gradient(CGPoint(x:rect.midX,y:rect.minY),CGPoint(x:rect.midX,y:rect.minY+width)),
+            gradient(CGPoint(x:rect.midX,y:rect.maxY),CGPoint(x:rect.midX,y:rect.maxY-width))
+        ]
+        let mask=edges.dropFirst().reduce(edges[0]){a,b in a.applyingFilter("CIMultiplyCompositing",parameters:[kCIInputBackgroundImageKey:b]).cropped(to:rect)}
+        let clear=CIImage(color:CIColor(red:0,green:0,blue:0,alpha:0)).cropped(to:rect)
+        return image.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:mask]).cropped(to:rect)
     }
-    private static func fittedMask(_ mask:CIImage,to rect:CGRect)->CIImage{
-        let box=mask.extent
-        return mask.transformed(by:CGAffineTransform(translationX:-box.minX,y:-box.minY))
-            .transformed(by:CGAffineTransform(scaleX:rect.width/max(1,box.width),y:rect.height/max(1,box.height)))
-            .transformed(by:CGAffineTransform(translationX:rect.minX,y:rect.minY)).cropped(to:rect)
+    static func foregroundMask(_ image:CIImage,key:String,document:PhotoMaskDocument?,feather:Double,inset:Double)->CIImage?{
+        let r=image.extent
+        // Reuse the exact user-corrected mask including the learned model, brush strokes and threshold.
+        let layer=document?.layers.last(where:{$0.enabled && !$0.inverted && ($0.kind == .subject || $0.kind == .person)})
+        var matte:CIImage
+        if let layer{
+            guard let corrected=try? SemanticMaskEngine.mask(image,layer:layer,key:key) else{return nil}
+            matte=corrected
+        }else{
+            guard let raw=try? SemanticMaskEngine.rawSemantic(image,kind:.subject,key:key) else{return nil}
+            matte=SemanticMaskEngine.fit(raw,to:r)
+        }
+        // Process morphology at bounded resolution to avoid multi-megapixel radius costs.
+        let s=min(1,1536/max(r.width,r.height))
+        let work=CGRect(x:0,y:0,width:max(1,(r.width*s).rounded()),height:max(1,(r.height*s).rounded()))
+        matte=SemanticMaskEngine.fit(matte,to:work)
+        let short=min(work.width,work.height)
+        let shrink=max(-0.012,min(0.012,inset))*short
+        if abs(shrink)>0.1{
+            matte=matte.clampedToExtent().applyingFilter(shrink>0 ? "CIMorphologyMinimum":"CIMorphologyMaximum",parameters:[kCIInputRadiusKey:abs(shrink)]).cropped(to:work)
+        }
+        let softness=max(0,min(0.025,feather))*short
+        if softness>0.1{matte=matte.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:softness]).cropped(to:work)}
+        return SemanticMaskEngine.fit(matte,to:r)
     }
-    static func apply(_ image:CIImage,original:CIImage,recipe:LightMockupRecipe?,key:String?=nil)->CIImage?{
+    private static func tone(_ image:CIImage,exposure:Double,warmth:Double)->CIImage{
+        var r=image
+        if exposure != 0{r=r.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:exposure])}
+        if warmth != 0{r=r.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+warmth*2000,y:0)])}
+        return r.cropped(to:image.extent)
+    }
+    static func apply(_ image:CIImage,original:CIImage,recipe:LightMockupRecipe?,key:String?=nil,document:PhotoMaskDocument?=nil,sourceKey:String?=nil)->CIImage?{
         guard let r=recipe else{return image}
         let rect=image.extent
         var result=image
-        if let id=r.sceneID{
-            guard let cg=LightAssets.image(id,scene:true)?.cgImage,let mask=foregroundMask(original,key:key) else{return nil}
-            let background=cover(CIImage(cgImage:cg),rect:rect,zoom:max(1,r.sceneZoom),x:r.sceneX,y:r.sceneY)
-                .clampedToExtent().cropped(to:rect)
-            result=result.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:background,kCIInputMaskImageKey:fittedMask(mask,to:rect)]).cropped(to:rect)
+        let scope=r.scope ?? .all
+        let hasScene=r.sceneID != nil || r.customScene != nil
+        let hasTexture=r.textureID != nil || r.customTexture != nil
+        var matte:CIImage?
+        if hasScene || (scope != .all && hasTexture && r.opacity>0){
+            let stableKey=sourceKey ?? key ?? UUID().uuidString
+            guard let mask=foregroundMask(original,key:stableKey,document:document,feather:r.matteFeather ?? 0.0015,inset:r.matteInset ?? 0) else{return nil}
+            matte=mask
         }
-        guard r.opacity>0 else{return result}
+        if hasScene{
+            let scene:CIImage?
+            if let data=r.customScene{scene=CIImage(data:data,options:[.applyOrientationProperty:true])}
+            else if let id=r.sceneID,let cg=LightAssets.image(id,scene:true)?.cgImage{scene=CIImage(cgImage:cg)}
+            else{scene=nil}
+            guard let scene,let matte else{return nil}
+            var background=sceneCover(scene,target:rect,zoom:r.sceneZoom,x:r.sceneX,y:r.sceneY)
+            if let blur=r.sceneBlur,blur>0{
+                background=background.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:min(0.035,max(0,blur))*min(rect.width,rect.height)]).cropped(to:rect)
+            }
+            background=tone(background,exposure:r.sceneExposure ?? 0,warmth:r.sceneWarmth ?? 0)
+            let foreground=tone(result,exposure:r.foregroundExposure ?? 0,warmth:r.foregroundWarmth ?? 0)
+            result=foreground.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:background,kCIInputMaskImageKey:matte]).cropped(to:rect)
+        }
+        guard r.opacity>0,hasTexture else{return result}
         let texture:CIImage?
-        if let data=r.customTexture,let custom=CIImage(data:data,options:[.applyOrientationProperty:true]){texture=custom}
+        if let data=r.customTexture{texture=CIImage(data:data,options:[.applyOrientationProperty:true])}
         else if let id=r.textureID,let cg=LightAssets.image(id,scene:false)?.cgImage{texture=CIImage(cgImage:cg)}
         else{texture=nil}
-        guard let texture else{return result}
+        guard let texture else{return nil}
         let gray=texture.applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:0])
-        let placed=cover(gray,rect:rect,zoom:r.zoom,x:r.x,y:r.y,angle:r.angle,mirror:r.mirror)
-        // Neutral backing avoids a hard black rectangle where the texture is moved outside the canvas.
+        let placed=cover(softTexture(gray,fade:r.edgeFade ?? 0.12),rect:rect,zoom:r.zoom,x:r.x,y:r.y,angle:r.angle,mirror:r.mirror)
+        // Back transparent pixels with the correct neutral value for each blend mode.
         func backed(_ level:Double)->CIImage{
             let neutral=CIImage(color:CIColor(red:level,green:level,blue:level,alpha:1)).cropped(to:rect)
             return placed.composited(over:neutral).cropped(to:rect)
@@ -212,29 +280,39 @@ enum LightMockupEngine{
                 "inputRVector":CIVector(x:red,y:0,z:0,w:0),"inputGVector":CIVector(x:0,y:0.62,z:0,w:0),"inputBVector":CIVector(x:0,y:0,z:blue,w:0)])
             return mixed(layer.applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base]),base,amount:amount,rect:rect)
         }
+        let lit:CIImage
         switch r.blend{
-        case .natural:return sunlight(shadow(result,amount:r.opacity*0.68),amount:r.opacity*0.62)
-        case .screen:return sunlight(result,amount:r.opacity)
-        case .multiply:return shadow(result,amount:r.opacity)
-        case .soft:return mixed(backed(0.5).applyingFilter("CISoftLightBlendMode",parameters:[kCIInputBackgroundImageKey:result]),result,amount:r.opacity,rect:rect)
+        case .natural:lit=sunlight(shadow(result,amount:r.opacity*0.68),amount:r.opacity*0.62)
+        case .screen:lit=sunlight(result,amount:r.opacity)
+        case .multiply:lit=shadow(result,amount:r.opacity)
+        case .soft:lit=mixed(backed(0.5).applyingFilter("CISoftLightBlendMode",parameters:[kCIInputBackgroundImageKey:result]),result,amount:r.opacity,rect:rect)
         }
+        if scope != .all,let matte{
+            let selected=scope == .background ? matte.applyingFilter("CIColorInvert"):matte
+            return lit.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:result,kCIInputMaskImageKey:selected]).cropped(to:rect)
+        }
+        return lit
     }
+
 }
 struct LightMockupPanel:View{
     @Binding var recipe:CreativeRecipe
+    var onRefine:(()->Void)?=nil
+    private enum ImportKind:Equatable{case pack,texture,scene}
+    @State private var importKind=ImportKind.texture
     @State private var importing=false
     @State private var notice=""
     @State private var packs=[String]()
     @State private var pack:String?=nil
-    @State private var importingPack=false
+
     private var light:LightMockupRecipe{recipe.lighting ?? LightMockupRecipe()}
     private func binding<T>(_ key:WritableKeyPath<LightMockupRecipe,T>)->Binding<T>{
         Binding(get:{light[keyPath:key]},set:{var r=light;r[keyPath:key]=$0;recipe.lighting=r})
     }
     private func choose(_ id:String?,scene:Bool){
         var r=light
-        if scene{r.sceneID=id;r.sceneZoom=1;r.sceneX=0;r.sceneY=0}
-        else{r.textureID=id;r.customTexture=nil;r.customName=nil}
+        if scene{r.sceneID=id;r.customScene=nil;r.customSceneName=nil;r.sceneZoom=1;r.sceneX=0;r.sceneY=0}
+        else{r.textureID=id;r.customTexture=nil;r.customName=nil;r.x=0;r.y=0;r.zoom=1;r.angle=0;if let id{let base=id.split(separator:":").last.map(String.init) ?? id;r.blend=["lantern_glow","curtain_glow","blue_window"].contains(base) ? .screen:.natural}}
         recipe.lighting=r
     }
     var body:some View{
@@ -242,14 +320,14 @@ struct LightMockupPanel:View{
             Text("PREMIUM LIGHTING LAB").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
             Text("Texture ánh sáng & bóng từ asset tạo sẵn").font(.caption).foregroundStyle(.secondary)
             if !packs.isEmpty{Picker("Bộ asset",selection:$pack){Text("Tích hợp sẵn").tag(String?.none);ForEach(packs,id:\.self){id in Text("Bộ nhập "+String(id.prefix(6))).tag(Optional(id))}}}
-            Button("Nhập gói Lighting Collection JSON",systemImage:"folder.badge.plus"){importingPack=true}.font(.caption)
+            Button("Nhập gói Lighting Collection JSON",systemImage:"folder.badge.plus"){importKind = .pack;importing=true}.font(.caption)
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:false)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:84,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Không").font(.caption2)}}.buttonStyle(.plain)
                 ForEach(LightAssets.entries(scene:false,pack:pack)){asset in
                     Button{choose(asset.id,scene:false)}label:{tile(asset,scene:false,selected:light.textureID==asset.id && light.customTexture==nil)}.buttonStyle(.plain)
                 }
             }}
-            Button("Nhập texture PNG/JPEG từ Tệp",systemImage:"square.and.arrow.down"){importing=true}.font(.caption)
+            Button("Nhập texture PNG/JPEG từ Tệp",systemImage:"square.and.arrow.down"){importKind = .texture;importing=true}.font(.caption)
             if let name=light.customName{Text(name).font(.caption2).foregroundStyle(gold)}
             if light.textureID != nil || light.customTexture != nil{
                 Picker("Hòa trộn",selection:binding(\.blend)){ForEach(LightBlendMode.allCases){Text($0.rawValue).tag($0)}}
@@ -259,35 +337,65 @@ struct LightMockupPanel:View{
                 control("Vị trí ngang",binding(\.x),-1...1)
                 control("Vị trí dọc",binding(\.y),-1...1)
                 control("Góc xoay",binding(\.angle),-180...180)
+                Picker("Vùng chiếu sáng",selection:Binding(get:{light.scope ?? .all},set:{var r=light;r.scope=$0;recipe.lighting=r})){ForEach(LightingScope.allCases){Text($0.rawValue).tag($0)}}
+                control("Tan mềm mép texture",optional(\.edgeFade,0.12),0...0.35)
                 Toggle("Lật ngang ánh sáng",isOn:binding(\.mirror))
             }
             Divider()
             Text("MOCKUP BỐI CẢNH").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
-            Text("Tách chủ thể bằng Vision trên máy, rồi ghép vào phông nền đã tạo. Bản hiện tại dùng cảnh nguồn 378 × 250 px; không dùng cho bản in lớn.").font(.caption2).foregroundStyle(.secondary)
+            Text("Dùng mặt nạ chủ thể đã chỉnh nếu có; nếu không, Vision tách tự động. Cảnh tích hợp độ phân giải thấp; nên nhập phông nền riêng chất lượng cao.").font(.caption2).foregroundStyle(.secondary)
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:true)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:116,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Nền gốc").font(.caption2)}}.buttonStyle(.plain)
-                ForEach(LightAssets.entries(scene:true,pack:pack)){asset in Button{choose(asset.id,scene:true)}label:{tile(asset,scene:true,selected:light.sceneID==asset.id)}.buttonStyle(.plain)}
+                ForEach(LightAssets.entries(scene:true,pack:pack)){asset in Button{choose(asset.id,scene:true)}label:{tile(asset,scene:true,selected:light.sceneID==asset.id && light.customScene==nil)}.buttonStyle(.plain)}
             }}
-            if light.sceneID != nil{
-                control("Phóng phông nền",binding(\.sceneZoom),1...2.5)
-                control("Nền ngang",binding(\.sceneX),-0.6...0.6)
-                control("Nền dọc",binding(\.sceneY),-0.6...0.6)
+            Button("Nhập phông nền riêng · tối đa 4096 px",systemImage:"photo.badge.plus"){importKind = .scene;importing=true}.font(.caption)
+            if let name=light.customSceneName{Text(name).font(.caption2).foregroundStyle(gold)}
+            if light.sceneID != nil || light.customScene != nil{
+                control("Phóng phông nền",binding(\.sceneZoom),1...3)
+                control("Nền ngang",binding(\.sceneX),-1...1)
+                control("Nền dọc",binding(\.sceneY),-1...1)
+                control("Xóa phông",optional(\.sceneBlur,0),0...0.035)
+                control("Sáng phông nền",optional(\.sceneExposure,0),-1.5...1.5)
+                control("Nhiệt độ phông nền",optional(\.sceneWarmth,0),-1...1)
+                control("Sáng chủ thể",optional(\.foregroundExposure,0),-1...1)
+                control("Nhiệt độ chủ thể",optional(\.foregroundWarmth,0),-1...1)
+            }
+            if light.sceneID != nil || light.customScene != nil || (light.scope ?? .all) != .all{
+                control("Mềm biên chủ thể",optional(\.matteFeather,0.0015),0...0.025)
+                control("Thu / mở mép vùng chọn",optional(\.matteInset,0),-0.012...0.012)
+                if let onRefine{Button("Sửa mặt nạ chủ thể",systemImage:"paintbrush.pointed"){onRefine()}.font(.caption)}
+                Text("Tạo hoặc sửa mặt nạ Chủ thể / Người trong Masking Studio. Các nét cọ và AI đã học được dùng khi ghép.").font(.caption2).foregroundStyle(.secondary)
             }
             Button("Xóa toàn bộ hiệu ứng ánh sáng & mockup",role:.destructive){recipe.lighting=nil}.font(.caption)
             Text(notice).font(.caption2).foregroundStyle(.secondary)
         }.onAppear{packs=LightingPackStore.ids()}
-        .fileImporter(isPresented:$importingPack,allowedContentTypes:[.json]){response in
-            do{let url=try response.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let data=try Data(contentsOf:url,options:.mappedIfSafe);let id=try LightingPackStore.install(data);packs=LightingPackStore.ids();pack=id;notice="Đã nhập bộ 16 cảnh và 8 texture."}catch{notice=error.localizedDescription}
-        }
-        .fileImporter(isPresented:$importing,allowedContentTypes:[.png,.jpeg,.heic,.image]){response in
+        .fileImporter(isPresented:$importing,allowedContentTypes:importKind == .pack ? [.json]:[.image]){response in
             do{
                 let url=try response.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
                 let bytes=try Data(contentsOf:url,options:.mappedIfSafe)
-                guard bytes.count<=30_000_000,let cg=PhotoEngine.thumb(bytes,limit:1536),let jpeg=UIImage(cgImage:cg).jpegData(compressionQuality:0.9),jpeg.count<=4_000_000 else{throw CameraError.unreadable}
-                var r=light;r.textureID=nil;r.customTexture=jpeg;r.customName=url.lastPathComponent;recipe.lighting=r;notice="Đã nhập texture riêng; dữ liệu được lưu trong công thức chỉnh ảnh."
+                if importKind == .pack{
+                    let id=try LightingPackStore.install(bytes);packs=LightingPackStore.ids();pack=id;notice="Đã nhập bộ 16 cảnh và 8 texture.";return
+                }
+                let scene=importKind == .scene
+                guard bytes.count<=50_000_000,let cg=PhotoEngine.thumb(bytes,limit:scene ? 4096:3072) else{throw CameraError.unreadable}
+                var r=light
+                if scene{
+                    guard let jpeg=UIImage(cgImage:cg).jpegData(compressionQuality:0.94),jpeg.count<=16_000_000 else{throw CameraError.unreadable}
+                    r.sceneID=nil;r.customScene=jpeg;r.customSceneName=url.lastPathComponent;r.sceneZoom=1;r.sceneX=0;r.sceneY=0
+                }else{
+                    let alpha=[CGImageAlphaInfo.first,.last,.premultipliedFirst,.premultipliedLast].contains(cg.alphaInfo)
+                    let data=alpha ? UIImage(cgImage:cg).pngData():UIImage(cgImage:cg).jpegData(compressionQuality:0.94)
+                    guard let data,data.count<=24_000_000 else{throw CameraError.unreadable}
+                    r.textureID=nil;r.customTexture=data;r.customName=url.lastPathComponent;r.x=0;r.y=0;r.zoom=1;r.angle=0
+                }
+                recipe.lighting=r;notice="Đã nhập \(cg.width) × \(cg.height) px."
             }catch{notice=error.localizedDescription}
         }
     }
+    private func optional(_ key:WritableKeyPath<LightMockupRecipe,Double?>,_ fallback:Double)->Binding<Double>{
+        Binding(get:{light[keyPath:key] ?? fallback},set:{var r=light;r[keyPath:key]=$0;recipe.lighting=r})
+    }
+
     private func tile(_ item:LightAsset,scene:Bool,selected:Bool)->some View{
         VStack(alignment:.leading,spacing:5){
             if let image=LightAssets.image(item.id,scene:scene){
