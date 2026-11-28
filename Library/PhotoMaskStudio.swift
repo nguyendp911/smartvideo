@@ -21,6 +21,11 @@ struct PhotoMaskStudio:View{
     @State private var issue=""
     @State private var pickingSky=false
     @State private var importIssue=""
+    @ObservedObject private var skill=MaskSkillStore.shared
+    @State private var teach=true
+    @State private var training=false
+    @State private var resetSkill=false
+    @State private var originalDocument=PhotoMaskDocument(source:"")
     private var index:Int?{document.layers.firstIndex{$0.id==selected}}
     var body:some View{
         NavigationStack{
@@ -28,6 +33,7 @@ struct PhotoMaskStudio:View{
                 VStack(alignment:.leading,spacing:15){
                     Text("S E L E C T I V E  /  M A S K I N G").font(.caption2.monospaced()).foregroundStyle(gold)
                     previewPanel
+                    skillPanel
                     HStack{
                         Toggle("Mặt nạ đỏ",isOn:$overlay).toggleStyle(.switch).font(.caption)
                         Spacer()
@@ -48,14 +54,17 @@ struct PhotoMaskStudio:View{
                     Text("Mặt nạ áp dụng trước cắt/xoay ảnh và chỉ thuộc ảnh này. Các vùng AI có thể cần sửa cọ ở mép. Xem trước ở đây dùng ảnh gốc với chỉnh cục bộ; Photo Lab kết hợp thêm preset và ánh sáng toàn ảnh.").font(.caption2).foregroundStyle(.secondary)
                 }.padding(14)
             }.navigationTitle("Masking Studio").navigationBarTitleDisplayMode(.inline).toolbar{
-                ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}}
-                ToolbarItem(placement:.confirmationAction){Button("Áp dụng"){var docs=recipe.masking ?? [];docs.removeAll{$0.source==document.source};if !document.layers.isEmpty{docs.append(document)};recipe.masking=docs.isEmpty ? nil:docs;dismiss()}.disabled(busy || !issue.isEmpty)}
+                ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}.disabled(training)}
+                ToolbarItem(placement:.confirmationAction){Button(training ? "Đang học…" : "Áp dụng"){applyAndLearn()}.disabled(busy || training || !issue.isEmpty)}
             }
         }.onAppear{
             let key=SemanticMaskEngine.sourceKey(url)
             document=recipe.masking?.first(where:{$0.source==key}) ?? PhotoMaskDocument(source:key)
+            originalDocument=document
             selected=document.layers.last?.id
         }
+        .interactiveDismissDisabled(training)
+        .confirmationDialog("Xóa dữ liệu huấn luyện vùng chọn?",isPresented:$resetSkill){Button("Xóa hồ sơ học",role:.destructive){skill.reset()}}
         .fileImporter(isPresented:$pickingSky,allowedContentTypes:[.image]){result in
             do{
                 guard let i=index,document.layers[i].kind == .sky else{return}
@@ -73,6 +82,37 @@ struct PhotoMaskStudio:View{
                 if !Task.isCancelled{preview=image;busy=false}
             }catch{if !Task.isCancelled{issue=error.localizedDescription;busy=false}}
         }
+    }
+    private var skillPanel:some View{
+        VStack(alignment:.leading,spacing:8){
+            Label("Adaptive Skill Learning",systemImage:"brain").font(.headline)
+            Toggle("Học từ vùng sửa đã xác nhận",isOn:$skill.enabled)
+            if skill.enabled{
+                Toggle("Dùng nét cọ lần này để dạy AI",isOn:$teach).font(.caption)
+                ForEach([PhotoMaskKind.sky,.subject,.background]){kind in
+                    let count=skill.profile.examples.filter{$0.kind==kind}.count
+                    HStack{Text(kind.rawValue);Spacer();Text("\(count) ảnh đã sửa").monospacedDigit();if skill.model(kind) != nil{Image(systemName:"checkmark.seal.fill").foregroundStyle(.green)}}
+                        .font(.caption)
+                }
+                if let model=skill.model(.sky){
+                    Text("Sai số trên mẫu sửa giữ lại: "+String(format:"%.3f → %.3f",model.baselineLoss,model.validationLoss)).font(.caption2)
+                }
+            }
+            Text("Chỉ dạy AI khi cọ thêm/bớt sửa lỗi nhận diện, không dùng khi tô vùng vì mục đích nghệ thuật. Cần ít nhất 3 ảnh, có cả nhãn thêm và bớt, và kiểm tra cải thiện trên ảnh giữ lại. Không gửi dữ liệu lên mạng.").font(.caption2).foregroundStyle(.secondary)
+            if !skill.issue.isEmpty{Text(skill.issue).font(.caption).foregroundStyle(.orange)}
+            Button("Đặt lại dữ liệu học",role:.destructive){resetSkill=true}.font(.caption)
+        }.padding(10).background(.white.opacity(0.055),in:RoundedRectangle(cornerRadius:10)).disabled(training)
+    }
+    private func applyAndLearn(){
+        let final=document
+        var docs=recipe.masking ?? [];docs.removeAll{$0.source==final.source};if !final.layers.isEmpty{docs.append(final)};recipe.masking=docs.isEmpty ? nil:docs
+        let changed=final.layers.contains{layer in
+            guard [.sky,.subject,.background].contains(layer.kind),layer.enabled,!layer.inverted,!layer.strokes.isEmpty else{return false}
+            return originalDocument.layers.first(where:{$0.id==layer.id})?.strokes != layer.strokes
+        }
+        guard skill.enabled,teach,changed else{dismiss();return}
+        training=true
+        Task{await skill.learn(url:url,document:final);training=false;dismiss()}
     }
     private struct PreviewKey:Equatable{let document:PhotoMaskDocument;let selected:UUID?;let overlay:Bool}
     private var previewPanel:some View{
@@ -107,6 +147,10 @@ struct PhotoMaskStudio:View{
         VStack(alignment:.leading,spacing:10){
             TextField("Tên mặt nạ",text:$document.layers[i].name).textFieldStyle(.roundedBorder)
             Toggle("Đảo vùng chọn",isOn:$document.layers[i].inverted)
+            if [.sky,.subject,.background].contains(document.layers[i].kind){
+                if document.layers[i].learnedCorrection != nil{Button("So sánh: dùng AI gốc"){checkpoint();document.layers[i].learnedCorrection=nil}}
+                else if let model=skill.model(document.layers[i].kind){Button("Dùng AI đã học"){checkpoint();document.layers[i].learnedCorrection=model}}
+            }
             control("Cường độ vùng",value:$document.layers[i].strength,range:0...1)
             control("Làm mềm viền",value:$document.layers[i].feather,range:0...0.05)
             if [.sky,.subject,.background,.luminance].contains(document.layers[i].kind){
@@ -164,7 +208,8 @@ struct PhotoMaskStudio:View{
     private func redo(){if let next=redoStack.popLast(){undoStack.append(document);document=next;if !document.layers.contains(where:{$0.id==selected}){selected=document.layers.last?.id}}}
     private func add(_ kind:PhotoMaskKind){
         checkpoint()
-        let layer=PhotoMaskLayer(name:kind.rawValue+" \(document.layers.count+1)",kind:kind)
+        var layer=PhotoMaskLayer(name:kind.rawValue+" \(document.layers.count+1)",kind:kind)
+        layer.learnedCorrection=skill.model(kind)
         document.layers.append(layer);selected=layer.id;overlay=true;painting=kind == .brush
     }
 }

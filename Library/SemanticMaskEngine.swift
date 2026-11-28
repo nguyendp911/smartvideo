@@ -46,6 +46,7 @@ struct PhotoMaskLayer:Codable,Identifiable,Equatable{
     var strokes:[MaskStroke]=[]
     var grade=LocalGrade()
     var replacement:Data?=nil
+    var learnedCorrection:MaskCorrectionModel?=nil
 }
 struct PhotoMaskDocument:Codable,Equatable{
     var source:String
@@ -131,6 +132,10 @@ enum SemanticMaskEngine{
         cache.countLimit=12;cache.setObject(result,forKey:cacheKey)
         return result
     }
+    static func rawSemantic(_ image:CIImage,kind:PhotoMaskKind,key:String)throws->CIImage{
+        let base=try semantic(image,kind:kind,key:key)
+        return kind == .background ? base.applyingFilter("CIColorInvert"):base
+    }
     static func mask(_ original:CIImage,layer:PhotoMaskLayer,key:String)throws->CIImage{
         let scaled=resized(original,limit:1536)
         let w=max(1,Int(scaled.extent.width.rounded())),h=max(1,Int(scaled.extent.height.rounded()))
@@ -138,8 +143,8 @@ enum SemanticMaskEngine{
         var base:CIImage
         switch layer.kind{
         case .sky,.subject,.background:
-            base=fit(try semantic(original,kind:layer.kind,key:key),to:rect)
-            if layer.kind == .background{base=base.applyingFilter("CIColorInvert")}
+            base=fit(try rawSemantic(original,kind:layer.kind,key:key),to:rect)
+            if let model=layer.learnedCorrection{base=MaskCorrectionPixels.refine(image:scaled,base:base,model:model)}
             if layer.threshold != 0.5{
                 base=base.applyingFilter("CIColorControls",parameters:[kCIInputBrightnessKey:0.5-layer.threshold,kCIInputContrastKey:1.4])
             }

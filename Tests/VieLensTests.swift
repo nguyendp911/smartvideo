@@ -438,4 +438,30 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(profile.samples.count,2)
         XCTAssertEqual(TasteScene.classify(["beach","person"]),.beach)
     }
+    func testMaskSkillLearnsFromCorrectionsOnHeldOutImages()throws{
+        func example(_ key:String)->MaskTrainingExample{
+            let p=MaskTrainingPoint(features:[0.42,0.2,0.4,0.9,0.5,0.7,0.85,0.6,0.8,0.02,0.45],positive:true)
+            let n=MaskTrainingPoint(features:[0.58,0.6,0.5,0.2,0.43,0.4,0.3,0.45,0.25,0.35,0.55],positive:false)
+            return MaskTrainingExample(key:key,kind:.sky,points:Array(repeating:p,count:24)+Array(repeating:n,count:24))
+        }
+        var profile=MaskSkillProfile()
+        profile.ingest([example("a"),example("b")])
+        XCTAssertNil(profile.models[PhotoMaskKind.sky.rawValue])
+        profile.ingest([example("c")])
+        let model=try XCTUnwrap(profile.models[PhotoMaskKind.sky.rawValue])
+        XCTAssertLessThan(model.validationLoss,model.baselineLoss)
+        XCTAssertGreaterThan(model.probability(example("new").points[0]),0.42)
+        XCTAssertLessThan(model.probability(example("new").points[47]),0.58)
+        profile.ingest([example("a")]);XCTAssertEqual(profile.examples.count,3)
+        XCTAssertNil(profile.models[PhotoMaskKind.subject.rawValue])
+        XCTAssertEqual(try JSONDecoder().decode(MaskSkillProfile.self,from:JSONEncoder().encode(profile)),profile)
+    }
+    func testMaskCorrectionBrushLabelsLastStrokeWins(){
+        let point=MaskPoint(x:0.5,y:0.2)
+        let a=MaskStroke(size:0.4,points:[point]),b=MaskStroke(subtract:true,size:0.1,points:[point])
+        let labels=MaskCorrectionPixels.labels(width:100,height:100,strokes:[a,b])
+        XCTAssertEqual(labels[79*100+49],0)
+        XCTAssertEqual(labels[79*100+60],1)
+        XCTAssertEqual(labels[10],-1)
+    }
 }
