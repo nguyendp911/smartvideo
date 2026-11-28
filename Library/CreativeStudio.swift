@@ -34,6 +34,7 @@ struct CreativeRecipe:Codable,Equatable {
     var lighting:LightMockupRecipe?=nil
     var masking:[PhotoMaskDocument]?=nil
     var proColor:ProColorRecipe?=nil
+    var effects:PremiumEffects?=nil
 }
 enum CreativeEngine {
     private static let context=CIContext(options:[.cacheIntermediates:false])
@@ -45,7 +46,17 @@ enum CreativeEngine {
         guard bounds.width.isFinite,bounds.height.isFinite,bounds.width>0,bounds.height>0,bounds.width*bounds.height<=70_000_000 else{return nil}
         let image:CIImage
         if thumbnailOnly,recipe.masking==nil,recipe.lighting==nil,recipe.crop=="Gốc",let cg=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:max(1,maxSize*2)] as CFDictionary){image=CIImage(cgImage:cg)}else{image=full}
-        let initial=PremiumColorEngine.apply(image,id:recipe.premiumID,strength:recipe.premiumStrength ?? 0.8)
+        let e=recipe.effects ?? PremiumEffects()
+        let restored=PremiumEffectsEngine.restore(image,e:e)
+        var strength=recipe.premiumStrength ?? 0.8
+        var pro=recipe.proColor
+        if e.adaptivePreset || pro?.reference != nil{
+            if let small=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:512] as CFDictionary){
+                if e.adaptivePreset{strength=PremiumEffectsEngine.adaptiveStrength(strength,features:EditingFeatures.analyze(small))}
+                if pro?.reference != nil,let stats=ProColorStatistics.analyze(small){pro?.reference?.source=stats}
+            }
+        }
+        let initial=PremiumColorEngine.apply(restored,id:recipe.premiumID,strength:strength)
         var result=initial.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
             .applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:recipe.contrast,kCIInputSaturationKey:recipe.saturation])
         if recipe.warmth != 0 {result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+recipe.warmth*2000,y:0)])}
@@ -63,7 +74,7 @@ enum CreativeEngine {
         case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
         default:break
         }
-        result=ProColorEngine.apply(result,recipe:recipe.proColor)
+        result=ProColorEngine.apply(result,recipe:pro)
         let maskKey=SemanticMaskEngine.sourceKey(url)
         if let pro=recipe.proColor,pro.skinSmooth>0{
             // Require an explicitly chosen mask, never smooth the entire photograph.
@@ -76,6 +87,7 @@ enum CreativeEngine {
         if let document=recipe.masking?.first(where:{$0.source==maskKey}){
             do{result=try SemanticMaskEngine.apply(result,original:image,document:document,key:maskKey)}catch{return nil}
         }
+        result=PremiumEffectsEngine.apply(result,original:image,e:e,document:recipe.masking?.first(where:{$0.source==maskKey}),key:maskKey)
         if recipe.lighting != nil{
             let stamp=(try? url.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
             guard let lit=LightMockupEngine.apply(result,original:image,recipe:recipe.lighting,key:url.path+"#"+String(stamp),document:recipe.masking?.first(where:{$0.source==maskKey}),sourceKey:maskKey) else{return nil}
@@ -93,6 +105,7 @@ enum CreativeEngine {
             result=result.cropped(to:inside)
         }
         result=MasterImageQuality.downsample(result,maxSize:maxSize)
+        if e.upscale>1{result=PremiumEffectsEngine.upscale(result,factor:e.upscale,maxSize:maxSize)}
         guard let cg=context.createCGImage(result,from:result.extent.integral,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!) else{return nil}
         let data=NSMutableData(),type=format=="PNG" ? UTType.png:format=="HEIC" ? UTType.heic:UTType.jpeg
         guard let dest=CGImageDestinationCreateWithData(data,type.identifier as CFString,1,nil) else{return nil}
@@ -136,6 +149,12 @@ struct CreativeStudio:View {
     @State private var panel=PhotoLabPanel.light
     @State private var expandedPreview=false
     @State private var pickingPointColor=false
+    @State private var healing=false
+    @State private var healSource:MaskPoint?
+    @State private var healRadius=0.012
+    @State private var detailSection="Chi tiết"
+    @State private var lightSection="Cơ bản"
+    @State private var currentColorSection="Cơ bản"
     @State private var showTaste=true
     @State private var showWorkflow=true
     @State private var tasteScene=TasteScene.auto
@@ -186,9 +205,10 @@ struct CreativeStudio:View {
             }
         }
         .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
-        .onChange(of:selected){_,_ in tasteScene = .auto;pickingPointColor=false}
+        .onChange(of:selected){_,_ in tasteScene = .auto;pickingPointColor=false;healing=false;healSource=nil}
+        .onChange(of:useOriginal){_,_ in healing=false;healSource=nil;pickingPointColor=false}
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
-        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;if var e=reusable.effects{e.spots=[:];reusable.effects=e};guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
         .task(id:activeKey){
             guard let current else{return}
             let key=activeKey,r=recipe,url=vault.picture(current,original:useOriginal)
@@ -211,13 +231,26 @@ struct CreativeStudio:View {
                 }else{Image(systemName:"photo").font(.largeTitle).foregroundStyle(.secondary)}
             }.frame(maxWidth:.infinity).frame(height:height).clipped()
                 .overlay{
-                    if pickingPointColor,let preview,let cg=preview.cgImage,!originalPreview{
+                    if (pickingPointColor || healing),let preview,let cg=preview.cgImage,!originalPreview{
                         GeometryReader{g in
                             let fit=PhotoLabLayout.fittedSize(image:preview.size,inside:g.size)
                             Color.clear.contentShape(Rectangle())
                                 .frame(width:fit.width,height:fit.height)
                                 .gesture(SpatialTapGesture().onEnded{v in
-                                    guard fit.width>0,fit.height>0,previewReady,let color=ProColorEngine.sample(cg,x:v.location.x/fit.width,y:v.location.y/fit.height) else{return}
+                                    guard fit.width>0,fit.height>0,previewReady else{return}
+                                    let x=Double(v.location.x/fit.width),y=Double(v.location.y/fit.height)
+                                    if healing{
+                                        guard let shot=current,recipe.crop=="Gốc",(recipe.rotation ?? 0)==0,recipe.mirror != true else{healing=false;healSource=nil;return}
+                                        let point=MaskPoint(x:x,y:y)
+                                        if let a=healSource{
+                                            let key=SemanticMaskEngine.sourceKey(vault.picture(shot,original:useOriginal))
+                                            var e=recipe.effects ?? PremiumEffects()
+                                            if (e.spots[key]?.count ?? 0)<64{e.spots[key,default:[]].append(HealingSpot(source:a,target:point,radius:healRadius));recipe.effects=e}
+                                            healSource=nil;healing=false
+                                        }else{healSource=point}
+                                        return
+                                    }
+                                    guard let color=ProColorEngine.sample(cg,x:x,y:y) else{return}
                                     var p=recipe.proColor ?? ProColorRecipe()
                                     let hues:[Double]=[0,0.075,0.16,0.33,0.50,0.62,0.75,0.90]
                                     while p.bands.count<8{p.bands.append(ProColorBand(hue:hues[p.bands.count]))}
@@ -225,7 +258,7 @@ struct CreativeStudio:View {
                                     if p.bands.count==8{p.bands.append(band)}else{p.bands[8]=band}
                                     recipe.proColor=p;pickingPointColor=false
                                 }).position(x:g.size.width/2,y:g.size.height/2)
-                        }.overlay(alignment:.top){Text("Chạm vào màu cần chỉnh").font(.caption).padding(7).background(.black.opacity(0.8),in:Capsule()).padding(5).allowsHitTesting(false)}
+                        }.overlay(alignment:.top){Text(healing ? (healSource==nil ? "Chạm vùng nguồn sạch":"Chạm điểm cần sửa"):"Chạm vào màu cần chỉnh").font(.caption).padding(7).background(.black.opacity(0.8),in:Capsule()).padding(5).allowsHitTesting(false)}
                     }
                 }
                 .overlay(alignment:.topTrailing){
@@ -253,7 +286,7 @@ struct CreativeStudio:View {
         ScrollView(.horizontal,showsIndicators:false){
             HStack(spacing:5){
                 ForEach(PhotoLabPanel.allCases){item in
-                    Button{panel=item;originalPreview=false;pickingPointColor=false}label:{
+                    Button{panel=item;originalPreview=false;pickingPointColor=false;healing=false;healSource=nil}label:{
                         VStack(spacing:4){
                             Image(systemName:item.icon).font(.system(size:17,weight:.medium))
                             Text(item.rawValue).font(.caption2.weight(.medium)).lineLimit(1)
@@ -268,24 +301,38 @@ struct CreativeStudio:View {
     @ViewBuilder private var panelContent:some View{
         switch panel{
         case .light:
+                        Picker("Ánh sáng",selection:$lightSection){Text("Cơ bản").tag("Cơ bản");Text("Studio").tag("Studio")}.pickerStyle(.segmented)
+                        if lightSection == "Studio"{PremiumEffectsPanel(recipe:$recipe,group:.lighting,openMask:{showMaskStudio=true})}else{
                         control("Phơi sáng",value:$recipe.exposure,range:-2...2)
                         control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
                         control("Vùng sáng",value:optional(\.highlights),range:-1...0)
                         control("Vùng tối",value:optional(\.shadows),range:-0.5...1)
+                        }
         case .color:
+                        Picker("Màu",selection:$currentColorSection){Text("Cơ bản").tag("Cơ bản");Text("Premium").tag("Premium")}.pickerStyle(.segmented)
+                        if currentColorSection == "Cơ bản"{
                         control("Bão hòa",value:$recipe.saturation,range:0...2)
                         control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
                         control("Sắc thái xanh / hồng",value:optional(\.tint),range:-1...1)
                         control("Màu thông minh",value:optional(\.vibrance),range:-1...1)
                         Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
-                        ProColorPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe,pickColor:{originalPreview=false;pickingPointColor.toggle()})
+                        }else{
+                        PremiumEffectsPanel(recipe:$recipe,group:.color)
+                        ProColorPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe,pickColor:{originalPreview=false;healing=false;healSource=nil;pickingPointColor.toggle()})
+                        }
         case .detail:
+                        Picker("Chi tiết",selection:$detailSection){ForEach(["Chi tiết","Chân dung","Phục hồi","Kiểm tra"],id:\.self){Text($0).tag($0)}}.pickerStyle(.segmented)
+                        if detailSection == "Chi tiết"{
                         control("Độ nét",value:optional(\.sharpness),range:0...1)
                         control("Khử nhiễu",value:optional(\.noise),range:0...1)
                         control("Tối viền",value:optional(\.vignette),range:0...2)
+                        }else if detailSection == "Chân dung"{
                         ProRetouchPanel(recipe:$recipe,openMask:{showMaskStudio=true})
                         if (recipe.proColor?.skinSmooth ?? 0)>0,let current,recipe.masking?.first(where:{$0.source==SemanticMaskEngine.sourceKey(vault.picture(current,original:useOriginal))})?.layers.contains(where:{$0.enabled && !$0.inverted && ($0.kind == .face || $0.kind == .brush)}) != true{Text("Chưa có vùng khuôn mặt hoặc cọ. Làm đều chưa tác động lên ảnh.").font(.caption).foregroundStyle(.orange)}
+                        PremiumEffectsPanel(recipe:$recipe,group:.portrait,openMask:{showMaskStudio=true},heal:{originalPreview=false;pickingPointColor=false;healSource=nil;healing.toggle()},healRadius:$healRadius,sourceKey:current.map{SemanticMaskEngine.sourceKey(vault.picture($0,original:useOriginal))})
+                        }else if detailSection == "Phục hồi"{PremiumEffectsPanel(recipe:$recipe,group:.restoration)}else{
                         ProQualityPanel(result:preview,url:current.map{vault.picture($0,original:useOriginal)},ready:previewReady).id(qualityRevision)
+                        }
         case .crop:
                         Picker("Tỷ lệ cắt ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
                         if recipe.crop != "Gốc"{
@@ -314,6 +361,7 @@ struct CreativeStudio:View {
         case .mockup:
                 LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true},reviewNeeded:currentBackgroundNeedsReview,canReview:previewReady && !originalPreview,onReview:approveBackground)
         case .ai:
+                if let current{PremiumEditCandidates(url:vault.picture(current,original:useOriginal),recipe:$recipe,sampleCount:taste.profile.samples.count,learned:taste.profile).id(vault.picture(current,original:useOriginal))}
                 if let current{
                     DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
                 }

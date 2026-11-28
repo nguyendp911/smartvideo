@@ -710,4 +710,27 @@ final class VieLensTests:XCTestCase {
         }
         XCTAssertEqual(pixel(input),pixel(result))
     }
+    func testPremiumEffectsRecipeAndGeometry()throws{
+        let rect=CGRect(x:0,y:0,width:120,height:80)
+        let image=CIImage(color:CIColor(red:0.4,green:0.3,blue:0.2)).cropped(to:rect)
+        var e=PremiumEffects();e.softbox=0.7;e.spots["private"]=[HealingSpot(source:MaskPoint(x:0.3,y:0.3),target:MaskPoint(x:0.7,y:0.7),radius:0.02)]
+        XCTAssertTrue(e.styleOnly.spots.isEmpty)
+        XCTAssertEqual(try JSONDecoder().decode(PremiumEffects.self,from:JSONEncoder().encode(e)),e)
+        let output=PremiumEffectsEngine.apply(image,original:image,e:e,document:nil,key:"private")
+        XCTAssertEqual(output.extent,rect)
+        XCTAssertEqual(PremiumEffectsEngine.upscale(image,factor:2,maxSize:400).extent.size,CGSize(width:240,height:160))
+        XCTAssertEqual(PremiumEffectsEngine.upscale(image,factor:2,maxSize:120).extent.size,rect.size)
+    }
+    func testPremiumEffectsDirectionalGradientAndAdaptive(){
+        let r=CGRect(x:0,y:0,width:100,height:100)
+        let g=PremiumEffectsEngine.gradient(r,direction:0,softness:0.3)
+        func sample(_ x:Int)->UInt8{
+            var p=[UInt8](repeating:0,count:4)
+            p.withUnsafeMutableBytes{v in SemanticMaskEngine.context.render(g,toBitmap:v.baseAddress!,rowBytes:4,bounds:CGRect(x:x,y:50,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+            return p[0]
+        }
+        XCTAssertLessThan(sample(10),sample(90))
+        let bright=EditingFeatures(brightness:0.8,contrast:0.2,dark:0,bright:0.8,saturation:0.7,edge:0.1,aspect:1)
+        XCTAssertLessThan(PremiumEffectsEngine.adaptiveStrength(0.8,features:bright),0.8)
+    }
 }

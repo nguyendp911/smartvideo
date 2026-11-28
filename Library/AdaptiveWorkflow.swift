@@ -109,7 +109,7 @@ struct WorkflowPlan{
         // Use the same preset family for training; don't confuse a LUT change with exposure correction.
         let similar=samples.filter{$0.global.premiumID==taste?.global.premiumID && $0.global.film==taste?.global.film}
         var r=taste?.applying(to:existing,source:source,verified:[]) ?? f.baseline()
-        r.crop=existing.crop;r.compositionAnchor=existing.compositionAnchor;r.rotation=existing.rotation;r.mirror=existing.mirror;r.lighting=existing.lighting;r.masking=existing.masking
+        r.crop=existing.crop;r.compositionAnchor=existing.compositionAnchor;r.rotation=existing.rotation;r.mirror=existing.mirror;r.lighting=existing.lighting;r.masking=existing.masking;r.proColor=existing.proColor;r.effects=existing.effects
         var learned:[LearnedEditParameter]=[]
         for parameter in LearnedEditParameter.allCases{
             let examples=similar.compactMap{s in s.context.features.map{($0,parameter.value(s.global))}}
