@@ -38,6 +38,7 @@ struct LifeCalendar:View{
                         Button("Hôm nay"){month=Date();day=LifeDate.key(Date())}.font(.caption)
                     }
                     dayPanel
+                    CalendarExtras(day:day,shots:shots,vault:vault)
                     GroupBox("Nhìn lại"){
                         VStack(alignment:.leading,spacing:12){
                             Button("Tạp chí tháng",systemImage:"book.closed"){reflection = .month(month)}
@@ -100,7 +101,7 @@ struct LifeCalendar:View{
                 Text(String(LifeDate.calendar.component(.day,from:date))).font(.system(size:13,weight:key==day ? .bold:.medium))
                 HStack(spacing:2){
                     if !milestones.isEmpty{Image(systemName:"star.fill").font(.system(size:8)).foregroundStyle(gold)}
-                    if entry != nil{Image(systemName:"book.fill").font(.system(size:8)).foregroundStyle(entry?.mood?.calendarColor ?? gold)}
+                    if entry != nil{Image("botanical_flower").resizable().scaledToFit().frame(width:12,height:12)}
                     if !items.isEmpty{Text("\(items.count)").font(.system(size:9,weight:.medium))}
                 }
             }.foregroundStyle(.white)

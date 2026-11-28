@@ -27,6 +27,12 @@ struct Timeline: View {
     @ObservedObject private var stories=StoryArchive.shared
     @ObservedObject private var life=LifeArchive.shared
     @State private var showToday=false
+    @State private var showGardens=false
+    @State private var showPortal=false
+    @State private var showThreads=false
+    @State private var showFocus=false
+    @State private var showSecret=false
+    @State private var showMemorySignature=false
     @State private var pathMode:LifePathMode?
     @State private var showLifeBackup=false
     @State private var showChapters=false
@@ -137,6 +143,12 @@ struct Timeline: View {
         }
         .sheet(isPresented:$showFilters) { filterSheet }
         .sheet(isPresented:$showVines){VineCollectionView()}
+        .sheet(isPresented:$showGardens){PersonalGardensView(shots:active,vault:model.vault)}
+        .fullScreenCover(isPresented:$showPortal){MemoryPortalView(shots:active,vault:model.vault)}
+        .sheet(isPresented:$showThreads){MemoryThreadsView(shots:active,vault:model.vault)}
+        .fullScreenCover(isPresented:$showFocus){TimelineFocusView(shots:filtered,vault:model.vault)}
+        .sheet(isPresented:$showSecret){SecretLetterView()}
+        .sheet(isPresented:$showMemorySignature){MemorySignatureView(shots:active,vault:model.vault)}
         .sheet(item:$pathMode){LifePathView(shots:active,vault:model.vault,mode:$0)}
         .sheet(isPresented:$showLifeBackup){LifeBackupView()}
         .sheet(isPresented:$showToday){LifeToday(model:model,camera:{showToday=false;dismiss()},timeline:{day in showToday=false;resetFilters();period=day ?? "";showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue})}
@@ -217,6 +229,14 @@ struct Timeline: View {
             }
             Spacer(minLength:4)
             Menu {
+                Menu("Living Ecosystem",systemImage:"leaf.fill"){
+                    Button("Khu vườn riêng",systemImage:"heart.fill"){showGardens=true}
+                    Button("Memory Portal",systemImage:"door.left.hand.open"){showPortal=true}
+                    Button("Memory Threads",systemImage:"link"){showThreads=true}
+                    Button("Timeline Focus",systemImage:"arrow.up.left.and.arrow.down.right"){showFocus=true}
+                    Button("Secret Letter",systemImage:"lock.envelope"){showSecret=true}
+                    Button("Memory Signature & hình nền",systemImage:"signature"){showMemorySignature=true}
+                }
                 Button("Hôm nay của tôi",systemImage:"sun.max"){showToday=true}
                 Button("Life Journey",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){pathMode = .journey}
                 Button("Memory River",systemImage:"water.waves"){pathMode = .river}

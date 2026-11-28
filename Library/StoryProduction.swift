@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 import AVFoundation
 import UIKit
 import Vision
@@ -92,26 +93,40 @@ enum StorySubjectCutout{
         }catch{return nil}
     }
 }
+struct StoryDirection:Codable,Equatable{
+    var motion="zoom"
+    var transition="dissolve"
+    var opening=""
+    var ending=""
+    var signature=""
+    var typography="Hiện đại"
+    var voiceVolume=1.0
+    var ambientVolume=0.18
+    var musicVolume=0.22
+    var startScale=1.0
+    var endScale=1.075
+}
 enum StoryFilmExporter{
-    static func export(story:StoryEntry,shots:[Shot],vault:Vault,vertical:Bool,seconds:Int)async throws->URL{
+    static func export(story:StoryEntry,shots:[Shot],vault:Vault,vertical:Bool,seconds:Int,direction:StoryDirection = StoryDirection(),music:Data?=nil)async throws->URL{
         let items=Array(shots.prefix(60))
         guard !items.isEmpty else{throw CameraError.unreadable}
         let narration=story.audio
         let voiceLength=narration.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 0
         let per=max(seconds,Int(ceil(voiceLength/Double(items.count))))
-        let title=story.title.isEmpty ? "Miền ký ức":story.title
+        let title=direction.opening.isEmpty ? (story.title.isEmpty ? "Miền ký ức":story.title):direction.opening
         let captions=Dictionary(uniqueKeysWithValues:items.map{shot in
             let text=story.captions[shot.id.uuidString] ?? (shot.id==items.first?.id ? String(story.body.prefix(180)):TimelineIndex.label(shot.day))
-            return (shot.id,text)
+            let ending=shot.id==items.last?.id ? [direction.ending,direction.signature].filter{!$0.isEmpty}.joined(separator:"\n"):""
+            return (shot.id,ending.isEmpty ? text:text+"\n"+ending)
         })
-        let video=try await MemoryMovie.make(items,vault:vault,width:vertical ? 1080:1920,height:vertical ? 1920:1080,seconds:max(1,per),title:title,motion:.zoom,transition:.dissolve,captions:captions)
-        guard narration != nil || (story.soundscape ?? .none) != .none else{return video}
+        let video=try await MemoryMovie.make(items,vault:vault,width:vertical ? 1080:1920,height:vertical ? 1920:1080,seconds:max(1,per),title:title,motion:direction.motion=="pan" ? .pan:direction.motion=="still" ? .still:.zoom,transition:direction.transition=="cut" ? .cut:direction.transition=="fade" ? .fade:.dissolve,captions:captions,direction:direction)
+        guard narration != nil || (story.soundscape ?? .none) != .none || music != nil else{return video}
         do{
-            let output=try await mix(video:video,voice:narration,sound:story.soundscape ?? .none)
+            let output=try await mix(video:video,voice:narration,sound:story.soundscape ?? .none,music:music,direction:direction)
             try? FileManager.default.removeItem(at:video);return output
         }catch{try? FileManager.default.removeItem(at:video);throw error}
     }
-    private static func mix(video:URL,voice:Data?,sound:StorySoundscape)async throws->URL{
+    private static func mix(video:URL,voice:Data?,sound:StorySoundscape,music:Data?,direction:StoryDirection)async throws->URL{
         let source=AVURLAsset(url:video),duration=try await source.load(.duration)
         let comp=AVMutableComposition()
         guard let original=try await source.loadTracks(withMediaType:.video).first,let track=comp.addMutableTrack(withMediaType:.video,preferredTrackID:kCMPersistentTrackID_Invalid) else{throw CameraError.writeFailed}
@@ -119,7 +134,7 @@ enum StoryFilmExporter{
         track.preferredTransform=try await original.load(.preferredTransform)
         var params=[AVAudioMixInputParameters](),temp=[URL]()
         defer{for u in temp{try? FileManager.default.removeItem(at:u)}}
-        for (data,ext,loop,volume) in [(voice,"m4a",false,Float(1)),(sound.generate(),"wav",true,Float(0.18))]{
+        for (data,ext,loop,volume) in [(voice,"m4a",false,Float(direction.voiceVolume)),(sound.generate(),"wav",true,Float(direction.ambientVolume)),(music,"audio",true,Float(direction.musicVolume))]{
             guard let data else{continue}
             let url=try CreativeEngine.exportURL(data,extension:ext);temp.append(url)
             let asset=AVURLAsset(url:url),length=try await asset.load(.duration)
@@ -147,6 +162,10 @@ struct StoryFilmView:View{
     @Environment(\.dismiss) private var dismiss
     @State private var vertical=true
     @State private var seconds=4
+    @State private var direction=StoryDirection()
+    @State private var music:Data?
+    @State private var musicName=""
+    @State private var pickingMusic=false
     @State private var working=false
     @State private var output:URL?
     @State private var notice=""
@@ -156,12 +175,32 @@ struct StoryFilmView:View{
                 Text(story.title.isEmpty ? "Phim ký ức":story.title).font(.headline)
                 Toggle("Dọc 9:16",isOn:$vertical)
                 Picker("Giây tối thiểu mỗi ảnh",selection:$seconds){ForEach([2,4,6,8],id:\.self){Text("\($0)").tag($0)}}
+                Section("Story Director"){
+                    TextField("Lời mở đầu",text:$direction.opening)
+                    TextField("Lời kết",text:$direction.ending)
+                    TextField("Chữ ký",text:$direction.signature)
+                    Picker("Typography",selection:$direction.typography){ForEach(["Hiện đại","Cổ điển","Máy đánh chữ"],id:\.self){Text($0).tag($0)}}
+                    Picker("Chuyển động",selection:$direction.motion){Text("Tĩnh").tag("still");Text("Phóng").tag("zoom");Text("Lia").tag("pan")}
+                    Picker("Chuyển cảnh",selection:$direction.transition){Text("Cắt").tag("cut");Text("Mờ").tag("fade");Text("Hòa trộn").tag("dissolve")}
+                    Text("Keyframe đầu · \(direction.startScale,format:.number.precision(.fractionLength(2)))")
+                    Slider(value:$direction.startScale,in:1...1.3)
+                    Text("Keyframe cuối · \(direction.endScale,format:.number.precision(.fractionLength(2)))")
+                    Slider(value:$direction.endScale,in:1...1.3)
+                }
+                Section("Sound Designer"){
+                    Text("Giọng kể");Slider(value:$direction.voiceVolume,in:0...1)
+                    Text("Môi trường");Slider(value:$direction.ambientVolume,in:0...1)
+                    Button("Chọn nhạc từ Tệp"){pickingMusic=true}
+                    if music != nil{Text(musicName);Text("Âm lượng nhạc");Slider(value:$direction.musicVolume,in:0...1);Button("Bỏ nhạc",role:.destructive){music=nil;musicName=""}}
+                }
                 Text("1080p · tối đa 60 ảnh · tiêu đề, chú thích, lời kể và âm thanh môi trường. Tự tăng thời lượng để không cắt lời kể.").font(.caption)
-                Button("Xuất phim story"){working=true;notice="";let v=vertical,s=seconds;Task{do{output=try await Task.detached(priority:.userInitiated){try await StoryFilmExporter.export(story:story,shots:shots,vault:vault,vertical:v,seconds:s)}.value;notice="Đã xuất phim."}catch{notice=error.localizedDescription};working=false}}.disabled(working || shots.isEmpty)
+                Button("Xuất phim story"){working=true;notice="";let v=vertical,s=seconds,d=direction,m=music;Task{do{output=try await Task.detached(priority:.userInitiated){try await StoryFilmExporter.export(story:story,shots:shots,vault:vault,vertical:v,seconds:s,direction:d,music:m)}.value;notice="Đã xuất phim."}catch{notice=error.localizedDescription};working=false}}.disabled(working || shots.isEmpty)
                 if working{ProgressView()}
                 if let output{ShareLink(item:output){Label("Lưu / gửi tặng phim",systemImage:"square.and.arrow.up")}}
                 Text(notice).font(.caption)
-            }.navigationTitle("Memory Gift").toolbar{Button("Đóng"){dismiss()}}
+            }.navigationTitle("Story Director").toolbar{Button("Đóng"){dismiss()}}
+        }.fileImporter(isPresented:$pickingMusic,allowedContentTypes:[.audio]){result in
+            do{let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}};let data=try Data(contentsOf:url);guard data.count<=30_000_000 else{throw CameraError.unreadable};_ = try AVAudioPlayer(data:data);music=data;musicName=url.lastPathComponent;notice=""}catch{notice=error.localizedDescription}
         }
     }
 }

@@ -318,4 +318,14 @@ final class VieLensTests:XCTestCase {
         XCTAssertLessThan(GardenRenderQuality.automatic.rate(lowPower:true),GardenRenderQuality.automatic.rate(lowPower:false))
         XCTAssertEqual(GardenDaylight.title(hour:18),"Hoàng hôn")
     }
+    func testMemoryEcosystemRulesAndDirection()throws{
+        let dna=MemoryDNA(photos:12,stories:1,voices:1,favorites:1,milestones:1,chapters:1,letters:1)
+        XCTAssertEqual(dna.creatures.count,8)
+        let empty=MemoryDNA(photos:0,stories:0,voices:0,favorites:0,milestones:0,chapters:0,letters:0)
+        XCTAssertTrue(empty.creatures.isEmpty)
+        let data=EcosystemData(gardens:[PersonalGarden(title:"Gia đình",kind:.family)])
+        XCTAssertEqual(try JSONDecoder().decode(EcosystemData.self,from:JSONEncoder().encode(data)),data)
+        XCTAssertEqual(MemoryPortalIndex.prompt("2026-11-28"),MemoryPortalIndex.prompt("2026-11-28"))
+        XCTAssertEqual(StoryDirection().voiceVolume,1)
+    }
 }

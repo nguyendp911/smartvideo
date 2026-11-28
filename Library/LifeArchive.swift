@@ -52,6 +52,7 @@ struct LifePackage:Codable{
     var letters:[FutureMemoryLetter]=[]
     var chapters:[LifeChapter]=[]
     var gardenUsageDays:Set<String>?=nil
+    var ecosystem:EcosystemData?=nil
 }
 @MainActor final class LifeArchive:ObservableObject{
     static let shared=LifeArchive()
@@ -93,6 +94,17 @@ struct LifePackage:Codable{
             p.letters += incoming.letters.filter{l.insert($0.id).inserted}
             p.chapters += incoming.chapters.filter{c.insert($0.id).inserted}
             p.gardenUsageDays=(p.gardenUsageDays ?? []).union(incoming.gardenUsageDays ?? [])
+            if let source=incoming.ecosystem{
+                var e=p.ecosystem ?? EcosystemData()
+                for g in source.gardens{
+                    if let index=e.gardens.firstIndex(where:{$0.id==g.id}){e.gardens[index].usage.formUnion(g.usage)}
+                    else{e.gardens.append(g)}
+                }
+                let threads=Set(e.threads.map(\.id)),countdowns=Set(e.countdowns.map(\.id))
+                e.threads += source.threads.filter{!threads.contains($0.id)}
+                e.countdowns += source.countdowns.filter{!countdowns.contains($0.id)}
+                p.ecosystem=e
+            }
         }
     }
 }

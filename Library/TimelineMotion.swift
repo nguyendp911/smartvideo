@@ -233,6 +233,7 @@ struct TimelineStoryTree:View{
                     }.accessibilityLabel("Trình diễn ảnh ngày này").disabled(day.items.isEmpty)
                 }
                 storyButton(.group(day))
+                MemoryDNAChips(day:day.key,shots:day.items,vault:vault,archive:archive,life:life)
                 ForEach(life.milestones(day.key)){milestone in VStack(alignment:.leading,spacing:3){Label(milestone.title,systemImage:milestone.icon).font(.caption.weight(.semibold)).foregroundStyle(vine.bloom);if !milestone.note.isEmpty{Text(milestone.note).font(.caption2).foregroundStyle(.secondary)}}.padding(8).frame(maxWidth:.infinity,alignment:.leading).background(vine.bloom.opacity(0.12),in:RoundedRectangle(cornerRadius:8))}
                 if !day.items.isEmpty{StoryStrip(shots:day.items,vault:vault,accent:vine.bloom,archive:archive,open:open,story:{storyTarget = .photo($0)})}
                 if let note=MemorySync.cover(day.items,entry:archive.entry("period:"+day.key))?.note,!note.isEmpty{Text(note).font(.caption).foregroundStyle(.secondary).lineLimit(3)}

@@ -201,7 +201,7 @@ enum MovieTransition:String,CaseIterable {
     case cut="Cắt thẳng",fade="Mờ dần",dissolve="Hòa ảnh"
 }
 enum MemoryMovie {
-    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String,motion:MovieMotion = .still,transition:MovieTransition = .cut,captions:[UUID:String]=[:]) async throws->URL{
+    static func make(_ shots:[Shot],vault:Vault,width:Int,height:Int,seconds:Int,title:String,motion:MovieMotion = .still,transition:MovieTransition = .cut,captions:[UUID:String]=[:],direction:StoryDirection?=nil) async throws->URL{
         guard !shots.isEmpty else{throw CameraError.unreadable}
         let url=FileManager.default.temporaryDirectory.appendingPathComponent("VieLens-"+UUID().uuidString+".mp4")
         let writer=try AVAssetWriter(outputURL:url,fileType:.mp4)
@@ -225,7 +225,8 @@ enum MemoryMovie {
                     im.draw(in:CGRect(x:(size.width-w)/2,y:(size.height-h)/2,width:w,height:h))
                     let caption=captions[shot.id] ?? TimelineIndex.label(shot.day)
                     let line=i==0 && !title.isEmpty ? (captions.isEmpty ? title:title+"\n"+caption):caption
-                    let font=UIFont.systemFont(ofSize:CGFloat(width)*0.033,weight:.semibold)
+                    let point=CGFloat(width)*0.033
+                    let font: UIFont = direction?.typography=="Cổ điển" ? (UIFont(name:"Georgia",size:point) ?? .systemFont(ofSize:point)) : direction?.typography=="Máy đánh chữ" ? .monospacedSystemFont(ofSize:point,weight:.medium):.systemFont(ofSize:point,weight:.semibold)
                     let attrs:[NSAttributedString.Key:Any]=[.font:font,.foregroundColor:UIColor.white,.backgroundColor:UIColor.black.withAlphaComponent(0.6)]
                     (line as NSString).draw(in:CGRect(x:CGFloat(width)*0.04,y:CGFloat(height)*0.87,width:CGFloat(width)*0.92,height:CGFloat(height)*0.13),withAttributes:attrs)
                 }
@@ -254,7 +255,7 @@ enum MemoryMovie {
                         guard let ctx=CGContext(data:CVPixelBufferGetBaseAddress(pixel),width:width,height:height,bitsPerComponent:8,bytesPerRow:CVPixelBufferGetBytesPerRow(pixel),space:CGColorSpaceCreateDeviceRGB(),bitmapInfo:CGBitmapInfo.byteOrder32Little.rawValue | CGImageAlphaInfo.premultipliedFirst.rawValue) else{throw CameraError.writeFailed}
                         let w=CGFloat(width),h=CGFloat(height),full=CGRect(x:0,y:0,width:w,height:h)
                         ctx.setFillColor(UIColor.black.cgColor);ctx.fill(full)
-                        let scale:CGFloat=motion == .zoom ? 1+0.075*CGFloat(p) : (motion == .pan ? 1.08:1)
+                        let scale:CGFloat=motion == .zoom ? CGFloat((direction?.startScale ?? 1)+((direction?.endScale ?? 1.075)-(direction?.startScale ?? 1))*p) : (motion == .pan ? 1.08:1)
                         let shift:CGFloat=motion == .pan ? (CGFloat(p)-0.5)*w*0.07:0
                         let rect=CGRect(x:(w-w*scale)/2+shift,y:(h-h*scale)/2,width:w*scale,height:h*scale)
                         if transition == .dissolve,let previous,j<fadeFrames{
