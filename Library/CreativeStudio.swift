@@ -123,14 +123,13 @@ struct CreativeStudio:View {
     @State private var showVersionName=false
     @State private var useOriginal=false
     @State private var originalPreview=false
-    @State private var showPremium=true
+    @State private var panel=PhotoLabPanel.light
+    @State private var expandedPreview=false
     @State private var showTaste=true
     @State private var showWorkflow=true
     @State private var tasteScene=TasteScene.auto
     @ObservedObject private var taste=PhotoTasteStore.shared
-    @State private var showLighting=false
     @State private var showMaskStudio=false
-    @State private var showManual=false
     @State private var previewError=false
     @State private var renderedKey:PreviewKey?
     @State private var previewSource:URL?
@@ -139,25 +138,116 @@ struct CreativeStudio:View {
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
     private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
     var body:some View{
-        ScrollView{
-            VStack(spacing:14){
-                if originalPreview,let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1400).scaledToFit().frame(maxHeight:410)}
-                else if let preview,let current,previewSource==vault.picture(current,original:useOriginal){Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
-                else if let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1000).scaledToFit().frame(height:250)}
-                Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
-                Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
-                if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
-                if !previewReady && !previewError && !originalPreview{ProgressView("Đang cập nhật ảnh…").font(.caption)}
-                if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng. Nếu không tìm thấy chủ thể, hãy chỉnh mặt nạ hoặc bỏ phông nền.").font(.caption).foregroundStyle(.orange)}
-                if let current{
-                    DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+        GeometryReader{geometry in
+            VStack(spacing:0){
+                previewArea(height:PhotoLabLayout.previewHeight(geometry.size.height,expanded:expandedPreview))
+                if !expandedPreview{
+                    toolStrip
+                    ScrollView{
+                        VStack(alignment:.leading,spacing:12){
+                            panelContent
+                        }.padding(.horizontal,14).padding(.vertical,12).frame(maxWidth:.infinity,alignment:.leading)
+                    }.id(panel).scrollIndicators(.hidden)
                 }
-                if let current{
-                    DisclosureGroup("Personal Style AI · Gu màu của tôi",isExpanded:$showTaste){
-                        PhotoTastePanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:$tasteScene,store:taste).padding(.top,8)
-                    }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+            }.frame(maxWidth:.infinity,maxHeight:.infinity,alignment:.top).background(night)
+        }.navigationTitle("Photo Lab").navigationBarTitleDisplayMode(.inline)
+        .toolbar{
+            ToolbarItem(placement:.primaryAction){
+                Button("Xuất",systemImage:"square.and.arrow.up"){expandedPreview=false;panel = .export}.disabled(working || shots.isEmpty)
+            }
+        }
+        .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
+        .onChange(of:selected){_,_ in tasteScene = .auto}
+        .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
+        .task(id:activeKey){
+            guard let current else{return}
+            let key=activeKey,r=recipe,url=vault.picture(current,original:useOriginal)
+            if previewSource != url{preview=nil;previewSource=url};previewError=false;renderedKey=nil
+            do{try await Task.sleep(for:.milliseconds(180))}catch{return}
+            let data=await PhotoPreviewWorker.shared.photo(url,recipe:r,maxSize:1600,thumbnail:false)
+            if !Task.isCancelled,activeKey==key{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil;renderedKey=key}
+        }
+    }
+    private func previewArea(height:CGFloat)->some View{
+        VStack(spacing:5){
+            ZStack{
+                Color.black
+                if originalPreview,let current{
+                    DiskImage(url:vault.picture(current,original:useOriginal),limit:1600).scaledToFit()
+                }else if let preview,let current,previewSource==vault.picture(current,original:useOriginal){
+                    Image(uiImage:preview).resizable().scaledToFit()
+                }else if let current{
+                    DiskImage(url:vault.picture(current,original:useOriginal),limit:1000).scaledToFit()
+                }else{Image(systemName:"photo").font(.largeTitle).foregroundStyle(.secondary)}
+            }.frame(maxWidth:.infinity).frame(height:height).clipped()
+                .overlay(alignment:.topTrailing){
+                    Button{expandedPreview.toggle()}label:{Image(systemName:expandedPreview ? "arrow.down.right.and.arrow.up.left":"arrow.up.left.and.arrow.down.right").frame(width:44,height:44).background(.black.opacity(0.65),in:Circle())}
+                        .accessibilityLabel(expandedPreview ? "Thu ảnh":"Xem ảnh lớn").padding(6)
                 }
-                DisclosureGroup("Bộ preset Premium · 32 màu",isExpanded:$showPremium){PremiumPresetPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+            HStack(spacing:10){
+                Button{originalPreview.toggle()}label:{
+                    Label(originalPreview ? "Ảnh gốc":"Đã chỉnh",systemImage:"rectangle.split.2x1").font(.caption.weight(.semibold))
+                }.buttonStyle(.bordered).tint(originalPreview ? Color.secondary:gold).accessibilityLabel("So sánh trước và sau")
+                Spacer(minLength:0)
+                if !previewReady && !previewError && !originalPreview{ProgressView().controlSize(.small);Text("Đang cập nhật").font(.caption2).foregroundStyle(.secondary)}
+                if previewError{Image(systemName:"exclamationmark.triangle.fill").foregroundStyle(.orange).accessibilityLabel("Không thể kết xuất ảnh")}
+                if shots.count>1{
+                    Button{selected=max(0,selected-1)}label:{Image(systemName:"chevron.left").frame(width:30,height:36)}.disabled(selected==0).accessibilityLabel("Ảnh trước")
+                    Text("\(selected+1)/\(shots.count)").font(.caption.monospacedDigit())
+                    Button{selected=min(shots.count-1,selected+1)}label:{Image(systemName:"chevron.right").frame(width:30,height:36)}.disabled(selected+1>=shots.count).accessibilityLabel("Ảnh sau")
+                }
+            }.padding(.horizontal,12)
+            if previewError{Text("Không thể kết xuất. Kiểm tra mặt nạ hoặc mockup.").font(.caption2).foregroundStyle(.orange).lineLimit(2).padding(.horizontal,12)}
+        }.padding(.bottom,5)
+    }
+    private var toolStrip:some View{
+        ScrollView(.horizontal,showsIndicators:false){
+            HStack(spacing:5){
+                ForEach(PhotoLabPanel.allCases){item in
+                    Button{panel=item;originalPreview=false}label:{
+                        VStack(spacing:4){
+                            Image(systemName:item.icon).font(.system(size:17,weight:.medium))
+                            Text(item.rawValue).font(.caption2.weight(.medium)).lineLimit(1)
+                        }.frame(minWidth:58,minHeight:48).padding(.horizontal,5)
+                            .foregroundStyle(panel==item ? Color.black:Color.white.opacity(0.85))
+                            .background(panel==item ? gold:Color.white.opacity(0.06),in:RoundedRectangle(cornerRadius:10))
+                    }.buttonStyle(.plain).accessibilityAddTraits(panel==item ? .isSelected:[])
+                }
+            }.padding(.horizontal,12).padding(.vertical,6)
+        }.background(.black.opacity(0.28))
+    }
+    @ViewBuilder private var panelContent:some View{
+        switch panel{
+        case .light:
+                        control("Phơi sáng",value:$recipe.exposure,range:-2...2)
+                        control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
+                        control("Vùng sáng",value:optional(\.highlights),range:-1...0)
+                        control("Vùng tối",value:optional(\.shadows),range:-0.5...1)
+        case .color:
+                        control("Bão hòa",value:$recipe.saturation,range:0...2)
+                        control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
+                        control("Sắc thái xanh / hồng",value:optional(\.tint),range:-1...1)
+                        control("Màu thông minh",value:optional(\.vibrance),range:-1...1)
+                        Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
+        case .detail:
+                        control("Độ nét",value:optional(\.sharpness),range:0...1)
+                        control("Khử nhiễu",value:optional(\.noise),range:0...1)
+                        control("Tối viền",value:optional(\.vignette),range:0...2)
+        case .crop:
+                        Picker("Tỷ lệ cắt ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
+                        if recipe.crop != "Gốc"{
+                            if let current{
+                                Button("AI căn bố cục",systemImage:"viewfinder"){let u=vault.picture(current,original:useOriginal),crop=recipe.crop;Task{let result=await Task.detached(priority:.userInitiated){CompositionEngine.proposal(url:u,crop:crop)}.value;if let result,recipe.crop==crop,self.current?.id==current.id{recipe.compositionAnchor=result}}}.disabled((recipe.rotation ?? 0) != 0 || recipe.mirror == true)
+                            }
+                            control("Căn ngang",value:Binding(get:{recipe.compositionAnchor?.x ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.x=$0;recipe.compositionAnchor=a}),range:0...1)
+                            control("Căn dọc",value:Binding(get:{recipe.compositionAnchor?.y ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.y=$0;recipe.compositionAnchor=a}),range:0...1)
+                            Button("Căn giữa"){recipe.compositionAnchor=nil}.font(.caption)
+                        }
+                        HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
+        case .presets:
+                PremiumPresetPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe)
+        case .mask:
                 if let current{
                     let source=vault.picture(current,original:useOriginal),key=SemanticMaskEngine.sourceKey(source)
                     let layers=recipe.masking?.first(where:{$0.source==key})?.layers.count ?? 0
@@ -169,31 +259,20 @@ struct CreativeStudio:View {
                         }.padding(12).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12))
                     }.buttonStyle(.plain)
                 }
-                DisclosureGroup("Lighting & Mockup Studio · 24 asset",isExpanded:$showLighting){LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true}).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
-                DisclosureGroup("Hậu kỳ chuyên sâu · Color Studio",isExpanded:$showManual){
-                    VStack(alignment:.leading){
-                        control("Phơi sáng",value:$recipe.exposure,range:-2...2)
-                        control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
-                        control("Bão hòa",value:$recipe.saturation,range:0...2)
-                        control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
-                        control("Vùng sáng",value:optional(\.highlights),range:-1...0)
-                        control("Vùng tối",value:optional(\.shadows),range:-0.5...1)
-                        control("Sắc thái xanh / hồng",value:optional(\.tint),range:-1...1)
-                        control("Màu thông minh",value:optional(\.vibrance),range:-1...1)
-                        control("Độ nét",value:optional(\.sharpness),range:0...1)
-                        control("Khử nhiễu",value:optional(\.noise),range:0...1)
-                        control("Tối viền",value:optional(\.vignette),range:0...2)
-                        Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
-                        Picker("Tỷ lệ cắt ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
-                        if recipe.crop != "Gốc"{
-                            if let current{
-                                Button("AI căn bố cục",systemImage:"viewfinder"){let u=vault.picture(current,original:useOriginal),crop=recipe.crop;Task{let result=await Task.detached(priority:.userInitiated){CompositionEngine.proposal(url:u,crop:crop)}.value;if let result,recipe.crop==crop,self.current?.id==current.id{recipe.compositionAnchor=result}}}.disabled((recipe.rotation ?? 0) != 0 || recipe.mirror == true)
-                            }
-                            control("Căn ngang",value:Binding(get:{recipe.compositionAnchor?.x ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.x=$0;recipe.compositionAnchor=a}),range:0...1)
-                            control("Căn dọc",value:Binding(get:{recipe.compositionAnchor?.y ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.y=$0;recipe.compositionAnchor=a}),range:0...1)
-                            Button("Căn giữa"){recipe.compositionAnchor=nil}.font(.caption)
-                        }
-                        HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
+        case .mockup:
+                LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true})
+        case .ai:
+                if let current{
+                    DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                }
+                if let current{
+                    DisclosureGroup("Personal Style AI · Gu màu của tôi",isExpanded:$showTaste){
+                        PhotoTastePanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:$tasteScene,store:taste).padding(.top,8)
+                    }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                }
+        case .history:
+                Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
+                if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
                         HStack{
                             Button("Lưu preset"){versionName="";showVersionName=true}.disabled(!previewReady || working)
                             Spacer()
@@ -208,8 +287,7 @@ struct CreativeStudio:View {
                                 Button("Xóa lịch sử preset",role:.destructive){history=[];persistVersions()}
                             }
                         }
-                    }
-                }
+        case .export:
                 GroupBox("Export Studio"){
                     VStack{
                         Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("HEIC").tag("HEIC");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
@@ -222,19 +300,6 @@ struct CreativeStudio:View {
                     }
                 }
                 Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Các phiên bản đã đặt tên lưu công thức chỉnh sửa và ID ảnh trên thiết bị.").font(.caption).foregroundStyle(.secondary)
-            }.padding()
-        }.navigationTitle("Premium Photo Lab")
-        .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
-        .onChange(of:selected){_,_ in tasteScene = .auto}
-        .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
-        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
-        .task(id:activeKey){
-            guard let current else{return}
-            let key=activeKey,r=recipe,url=vault.picture(current,original:useOriginal)
-            if previewSource != url{preview=nil;previewSource=url};previewError=false;renderedKey=nil
-            do{try await Task.sleep(for:.milliseconds(180))}catch{return}
-            let data=await PhotoPreviewWorker.shared.photo(url,recipe:r,maxSize:1600,thumbnail:false)
-            if !Task.isCancelled,activeKey==key{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil;renderedKey=key}
         }
     }
     private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int;let original:Bool}

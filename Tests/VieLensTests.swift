@@ -629,4 +629,17 @@ final class VieLensTests:XCTestCase {
         p.pinned=[.world,.world,.today,.calendar,.backup,.restore]
         XCTAssertEqual(TimelineToolPreferences.decode(try JSONEncoder().encode(p)).pinned,[.world,.today,.calendar,.backup])
     }
+    func testFixedPhotoLabLayoutAndMaskFit(){
+        XCTAssertEqual(PhotoLabPanel.allCases.count,10)
+        for h:CGFloat in [280,480,650,900]{
+            let preview=PhotoLabLayout.previewHeight(h)
+            XCTAssertGreaterThan(preview,0)
+            XCTAssertLessThan(preview,h*0.5)
+            XCTAssertGreaterThan(PhotoLabLayout.previewHeight(h,expanded:true),preview)
+        }
+        let portrait=PhotoLabLayout.fittedSize(image:CGSize(width:100,height:200),inside:CGSize(width:320,height:240))
+        XCTAssertEqual(portrait.width,120);XCTAssertEqual(portrait.height,240)
+        let landscape=PhotoLabLayout.fittedSize(image:CGSize(width:200,height:100),inside:CGSize(width:320,height:240))
+        XCTAssertEqual(landscape.width,320);XCTAssertEqual(landscape.height,160)
+    }
 }

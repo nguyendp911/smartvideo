@@ -29,17 +29,18 @@ struct PhotoMaskStudio:View{
     private var index:Int?{document.layers.firstIndex{$0.id==selected}}
     var body:some View{
         NavigationStack{
-            ScrollView{
-                VStack(alignment:.leading,spacing:15){
-                    Text("S E L E C T I V E  /  M A S K I N G").font(.caption2.monospaced()).foregroundStyle(gold)
-                    previewPanel
-                    skillPanel
+            GeometryReader{geometry in
+                VStack(spacing:8){
+                    previewPanel.frame(height:PhotoLabLayout.previewHeight(geometry.size.height))
                     HStack{
                         Toggle("Mặt nạ đỏ",isOn:$overlay).toggleStyle(.switch).font(.caption)
                         Spacer()
                         Button{undo()}label:{Image(systemName:"arrow.uturn.backward")}.disabled(undoStack.isEmpty)
                         Button{redo()}label:{Image(systemName:"arrow.uturn.forward")}.disabled(redoStack.isEmpty)
                     }
+                    .padding(.horizontal,14)
+                    ScrollView{
+                    VStack(alignment:.leading,spacing:12){
                     Menu{ForEach(PhotoMaskKind.allCases){kind in Button(kind.rawValue,systemImage:kind.symbol){add(kind)}}}label:{Label("Tạo mặt nạ",systemImage:"plus.circle.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent)
                     ForEach(document.layers){layer in
                         HStack{
@@ -49,10 +50,13 @@ struct PhotoMaskStudio:View{
                         }.padding(10).background(selected==layer.id ? gold.opacity(0.13):.white.opacity(0.05),in:RoundedRectangle(cornerRadius:10))
                     }
                     if let i=index{layerControls(i)}
+                    DisclosureGroup("Adaptive Skill Learning"){skillPanel}
                     if !issue.isEmpty{Text(issue).font(.caption).foregroundStyle(.orange)}
                     if !importIssue.isEmpty{Text(importIssue).font(.caption).foregroundStyle(.orange)}
                     Text("Mặt nạ áp dụng trước cắt/xoay ảnh và chỉ thuộc ảnh này. Các vùng AI có thể cần sửa cọ ở mép. Xem trước ở đây dùng ảnh gốc với chỉnh cục bộ; Photo Lab kết hợp thêm preset và ánh sáng toàn ảnh.").font(.caption2).foregroundStyle(.secondary)
-                }.padding(14)
+                    }.padding(.horizontal,14).padding(.bottom,14)
+                    }.scrollIndicators(.hidden)
+                }.frame(maxHeight:.infinity,alignment:.top)
             }.navigationTitle("Masking Studio").navigationBarTitleDisplayMode(.inline).toolbar{
                 ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}.disabled(training)}
                 ToolbarItem(placement:.confirmationAction){Button(training ? "Đang học…" : "Áp dụng"){applyAndLearn()}.disabled(busy || training || !issue.isEmpty)}
@@ -119,7 +123,9 @@ struct PhotoMaskStudio:View{
     private var previewPanel:some View{
         Group{
             if let preview{
-                GeometryReader{g in
+                GeometryReader{outer in
+                    let fitted=PhotoLabLayout.fittedSize(image:preview.size,inside:outer.size)
+                    GeometryReader{g in
                     ZStack{
                         Image(uiImage:preview).resizable().scaledToFit()
                         if painting{
@@ -140,8 +146,10 @@ struct PhotoMaskStudio:View{
                             })
                         }
                     }
-                }.aspectRatio(preview.size.width/max(1,preview.size.height),contentMode:.fit)
-            }else{DiskImage(url:url,limit:1200).scaledToFit().frame(maxHeight:350)}
+                    }.frame(width:fitted.width,height:fitted.height)
+                    .position(x:outer.size.width/2,y:outer.size.height/2)
+                }
+            }else{DiskImage(url:url,limit:1200).scaledToFit()}
         }.clipShape(RoundedRectangle(cornerRadius:10)).overlay(alignment:.topTrailing){if busy{ProgressView().padding(9).background(.black.opacity(0.55),in:Circle()).padding(6)}}
     }
     private func layerControls(_ i:Int)->some View{
