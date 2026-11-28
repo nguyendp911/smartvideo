@@ -612,4 +612,21 @@ final class VieLensTests:XCTestCase {
         XCTAssertLessThan(h2-h,m2-m)
         XCTAssertLessThanOrEqual(h2,1.001)
     }
+    func testTimelineToolCatalogAndPreferences()throws{
+        XCTAssertEqual(Set(TimelineTool.allCases.map(\.id)).count,TimelineTool.allCases.count)
+        XCTAssertEqual(TimelineTool.allCases.count,34)
+        XCTAssertTrue(TimelineTool.photoLab.matches("hau ky"))
+        XCTAssertTrue(TimelineTool.jump.matches("di den thang"))
+        XCTAssertTrue(TimelineTool.backup.matches("backup"))
+        XCTAssertFalse(TimelineTool.calendar.matches("mockup"))
+        var p=TimelineToolPreferences()
+        p.toggle(.world);XCTAssertEqual(p.pinned.count,4)
+        p.toggle(.today);p.toggle(.world)
+        XCTAssertEqual(p.pinned.last,.world)
+        p.used(.photoLab);p.used(.calendar);p.used(.photoLab)
+        XCTAssertEqual(p.recent,[.photoLab,.calendar])
+        XCTAssertEqual(TimelineToolPreferences.decode(try JSONEncoder().encode(p)),p)
+        p.pinned=[.world,.world,.today,.calendar,.backup,.restore]
+        XCTAssertEqual(TimelineToolPreferences.decode(try JSONEncoder().encode(p)).pinned,[.world,.today,.calendar,.backup])
+    }
 }

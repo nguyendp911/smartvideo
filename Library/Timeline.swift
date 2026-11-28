@@ -27,6 +27,12 @@ struct Timeline: View {
     @ObservedObject private var stories=StoryArchive.shared
     @ObservedObject private var life=LifeArchive.shared
     @State private var showToday=false
+    @State private var showControlCenter=false
+    @State private var pendingTool:TimelineTool?
+    @State private var showPhotoLab=false
+    @State private var labShots:[Shot]=[]
+    @AppStorage("timeline.tools.v1") private var toolData=Data()
+    private var toolPreferences:Binding<TimelineToolPreferences>{Binding(get:{TimelineToolPreferences.decode(toolData)},set:{if let bytes=try? JSONEncoder().encode($0){toolData=bytes}})}
     @State private var showGardens=false
     @State private var showPortal=false
     @State private var showThreads=false
@@ -143,6 +149,17 @@ struct Timeline: View {
         .fullScreenCover(isPresented:$pair,onDismiss:{ clearSelection() }) {
             CompareView(shots:selectedShots,vault:model.vault)
         }
+        .fullScreenCover(isPresented:$showControlCenter,onDismiss:{
+            if let tool=pendingTool{pendingTool=nil;launchTool(tool)}
+        }){
+            TimelineControlCenter(preferences:toolPreferences,available:toolAvailable,open:{tool in pendingTool=tool;showControlCenter=false},selectedCount:chosen.count)
+        }
+        .fullScreenCover(isPresented:$showPhotoLab){
+            NavigationStack{
+                CreativeStudio(shots:labShots,vault:model.vault)
+                    .toolbar{ToolbarItem(placement:.cancellationAction){Button("Đóng"){showPhotoLab=false}}}
+            }
+        }
         .sheet(isPresented:$showFilters) { filterSheet }
         .sheet(isPresented:$showVines){VineCollectionView()}
         .sheet(isPresented:$showGardens){PersonalGardensView(shots:active,vault:model.vault)}
@@ -232,45 +249,73 @@ struct Timeline: View {
                 Text("\(active.count) ảnh  ·  \(Set(active.map(\.day)).count) ngày lưu giữ").font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength:4)
-            Menu {
-                Menu("Living Ecosystem",systemImage:"leaf.fill"){
-                    Button("Khu vườn riêng",systemImage:"heart.fill"){showGardens=true}
-                    Button("Memory Portal",systemImage:"door.left.hand.open"){showPortal=true}
-                    Button("Memory Threads",systemImage:"link"){showThreads=true}
-                    Button("Timeline Focus",systemImage:"arrow.up.left.and.arrow.down.right"){showFocus=true}
-                    Button("Secret Letter",systemImage:"lock.envelope"){showSecret=true}
-                    Button("Memory Signature & hình nền",systemImage:"signature"){showMemorySignature=true}
-                    Button("Memory Search",systemImage:"magnifyingglass"){showMemorySearch=true}
-                    Button("Memory Box & Echo",systemImage:"shippingbox"){showMemoryBox=true}
-                }
-                Button("Hôm nay của tôi",systemImage:"sun.max"){showToday=true}
-                Button("Life Journey",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){pathMode = .journey}
-                Button("Memory River",systemImage:"water.waves"){pathMode = .river}
-                Button("Sao lưu nhật ký & cuộc đời",systemImage:"externaldrive"){showLifeBackup=true}
-                Button("Life Chapters",systemImage:"book.pages"){showChapters=true}
-                Button("Memory Intelligence",systemImage:"sparkles"){showIntelligence=true}
-                Button("Thư tương lai",systemImage:"envelope"){showLetters=true}
-                Button("Memory World",systemImage:"sparkles.rectangle.stack"){showWorld=true}
-                Button("Khám phá ký ức",systemImage:"clock.arrow.circlepath"){showDiscovery=true}
-                Button("Memory Podcast",systemImage:"waveform"){showPodcast=true}
-                Button("Vine Designer",systemImage:"paintpalette"){showGardenDesigner=true}
-                Button("Story Studio",systemImage:"book.closed"){showStoryLibrary=true}
-                Button("Bộ sưu tập dây leo",systemImage:"leaf.fill"){showVines=true}
-                Button("Signature Studio",systemImage:"sparkles"){showSignature=true}
-                Button("Thiết kế Timeline",systemImage:"paintbrush.pointed"){showDesigner=true}
-                Button("Đi đến tháng/năm",systemImage:"calendar.badge.clock"){showJump=true}
-                Button("Nhập ảnh",systemImage:"photo.badge.plus") { importing=true }
-                Button("Lịch ảnh",systemImage:"calendar") {showCalendar=true}
-                Button("Ngày này qua các năm",systemImage:"clock.arrow.circlepath"){resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false}
-                Button("Cây thời gian",systemImage:"point.topleft.down.to.point.bottomright.curvepath"){clearSelection();showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue}
-                Button("Slide ký ức",systemImage:"rectangle.on.rectangle"){clearSelection();showAlbums=false;presentationValue=TimelinePresentation.slides.rawValue}
-                Button("Trình chiếu",systemImage:"play.rectangle"){slideShots=filtered;slideshow=true}.disabled(filtered.isEmpty || scope == .trash)
-                Button("So sánh hai ảnh",systemImage:"rectangle.split.2x1") { showAlbums=false;clearSelection();compare=true }
-                Button("Sao lưu vào Tệp",systemImage:"square.and.arrow.up") { transfer = .backup;pickFolder=true }
-                Button("Phục hồi từ thư mục",systemImage:"arrow.counterclockwise") { transfer = .restore;pickFolder=true }
-            } label: { circleIcon("ellipsis") }.disabled(working)
+            Button{pendingTool=nil;showControlCenter=true}label:{circleIcon("square.grid.2x2")}.accessibilityLabel("Trung tâm công cụ").disabled(working)
             Button { dismiss() } label: { circleIcon("camera") }.accessibilityLabel("Về máy ảnh")
         }.padding(.horizontal,18).padding(.vertical,12)
+    }
+    private func toolAvailable(_ tool:TimelineTool)->Bool{
+        guard !working else{return false}
+        switch tool{
+        case .photoLab:return scope != .trash && (!selectedShots.isEmpty || !filtered.isEmpty)
+        case .slideshow:return scope != .trash && !filtered.isEmpty
+        case .compare:return scope != .trash && filtered.count>=2
+        default:return true
+        }
+    }
+    private func launchTool(_ tool:TimelineTool){
+        guard toolAvailable(tool) else{return}
+        var prefs=toolPreferences.wrappedValue;prefs.used(tool);toolPreferences.wrappedValue=prefs
+        switch tool{
+        case .photoLab:
+            labShots=selectedShots.isEmpty ? Array(filtered.prefix(1)):selectedShots.filter{$0.deleted==nil}
+            if !labShots.isEmpty{showPhotoLab=true}
+        case .signature:showSignature=true
+        case .gardens:showGardens=true
+        case .portal:showPortal=true
+        case .threads:showThreads=true
+        case .focus:showFocus=true
+        case .secret:showSecret=true
+        case .memorySignature:showMemorySignature=true
+        case .search:showMemorySearch=true
+        case .box:showMemoryBox=true
+        case .today:showToday=true
+        case .journey:pathMode = .journey
+        case .river:pathMode = .river
+        case .lifeBackup:showLifeBackup=true
+        case .chapters:showChapters=true
+        case .intelligence:showIntelligence=true
+        case .letters:showLetters=true
+        case .world:showWorld=true
+        case .discovery:showDiscovery=true
+        case .podcast:showPodcast=true
+        case .gardenDesigner:showGardenDesigner=true
+        case .story:showStoryLibrary=true
+        case .vines:showVines=true
+        case .designer:showDesigner=true
+        case .jump:showJump=true
+        case .importPhotos:importing=true
+        case .calendar:showCalendar=true
+        case .anniversary:resetFilters();anniversary=TimelineIndex.todaySuffix();scale = .day;showAlbums=false
+        case .tree:clearSelection();showAlbums=false;presentationValue=TimelinePresentation.tree.rawValue
+        case .slides:clearSelection();showAlbums=false;presentationValue=TimelinePresentation.slides.rawValue
+        case .slideshow:slideShots=filtered;slideshow=true
+        case .compare:showAlbums=false;clearSelection();compare=true
+        case .backup:transfer = .backup;pickFolder=true
+        case .restore:transfer = .restore;pickFolder=true
+        }
+    }
+    private var quickTools:some View{
+        let tools=TimelineToolPreferences.decode(toolData).pinned
+        return HStack(spacing:5){
+            ForEach(tools){tool in
+                Button{launchTool(tool)}label:{
+                    VStack(spacing:4){
+                        Image(systemName:tool.icon).font(.system(size:17,weight:.medium)).foregroundStyle(layout.accent)
+                        Text(tool.title).font(.system(size:10,weight:.medium)).lineLimit(1).minimumScaleFactor(0.8)
+                    }.frame(maxWidth:.infinity,minHeight:43).contentShape(Rectangle())
+                }.buttonStyle(.plain).disabled(!toolAvailable(tool)).opacity(toolAvailable(tool) ? 1:0.38)
+            }
+        }.padding(4).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
     }
     private func circleIcon(_ icon: String) -> some View {
         Image(systemName:icon).font(.system(size:17,weight:.medium)).frame(width:42,height:42)
@@ -286,16 +331,8 @@ struct Timeline: View {
                 Button { showFilters=true } label: { circleIcon(hasFilters ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease") }.accessibilityLabel("Bộ lọc")
                 Button { if selecting || compare {clearSelection()} else {showAlbums=false;selecting=true} } label: { circleIcon(selecting || compare ? "xmark" : "checkmark.circle") }.accessibilityLabel("Chọn ảnh")
             }
-            if showAlbums || presentation == .gallery {
-            Button {showSignature=true} label:{
-                HStack{
-                    Image(systemName:"sparkles").foregroundStyle(layout.accent)
-                    Text("Signature Studio").font(.subheadline.weight(.semibold))
-                    Spacer()
-                    Text("Ký ức · Sáng tạo").font(.caption).foregroundStyle(.secondary)
-                    Image(systemName:"chevron.right").font(.caption)
-                }.padding(10).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:11))
-            }.buttonStyle(.plain)
+            if !selecting && !compare && scope != .trash && !TimelineToolPreferences.decode(toolData).pinned.isEmpty{
+                quickTools
             }
             if !showAlbums {
                 if !selecting && !compare && scope != .trash{
@@ -532,6 +569,7 @@ struct Timeline: View {
             Text(compare ? "\(chosen.count)/2 ảnh" : "\(chosen.count) đã chọn").font(.caption.weight(.semibold)).foregroundStyle(gold)
             Spacer(minLength:2)
             if !compare {
+                if scope != .trash{Button{launchTool(.photoLab)}label:{Image(systemName:"slider.horizontal.3")}.disabled(chosen.isEmpty || working).accessibilityLabel("Hậu kỳ ảnh đã chọn")}
                 Button("Tất cả") { chosen.formUnion(filtered.map(\.id)) }.font(.caption)
                 Menu {
                     if scope != .trash {

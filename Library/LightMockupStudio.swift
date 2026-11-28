@@ -159,9 +159,10 @@ enum LightMockupEngine{
             vec3 c=base.rgb;
             vec3 light=clamp(illumination.rgb,0.0,1.0);
             float y=dot(c,vec3(0.2126,0.7152,0.0722));
-            float shoulder=1.0-smoothstep(0.55,1.0,y);
-            vec3 gain=c*light*(amount*0.85*shoulder);
-            return vec4(c+gain,base.a);
+            float headroom=1.0-clamp(y,0.0,1.0);
+            float shoulder=headroom*headroom*headroom;
+            vec3 gain=max(c,vec3(0.0))*light*(amount*0.85*shoulder);
+            return vec4(c+min(gain,max(vec3(0.0),vec3(1.0)-c)),base.a);
         }
         """)
     static func restrainedLight(_ base:CIImage,_ illumination:CIImage,amount:Double)->CIImage{
