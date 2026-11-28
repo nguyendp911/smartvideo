@@ -191,10 +191,14 @@ struct MaskSkillProfile:Codable,Equatable{
         let incoming=await Task.detached(priority:.utility){MaskCorrectionPixels.examples(url:url,document:document)}.value
         guard enabled,token==generation,!incoming.isEmpty else{return}
         // Fit off the main thread; serialize writes against reset/toggle and other training jobs.
-        let snapshot=profile
-        let next=await Task.detached(priority:.utility){var next=snapshot;next.ingest(incoming);return next}.value
-        guard enabled,token==generation,profile==snapshot else{return}
-        do{try FileManager.default.createDirectory(at:file.deletingLastPathComponent(),withIntermediateDirectories:true);try JSONEncoder().encode(next).write(to:file,options:[.atomic,.completeFileProtection]);profile=next}catch{issue=error.localizedDescription}
+        while enabled,token==generation,issue.isEmpty{
+            let snapshot=profile
+            let next=await Task.detached(priority:.utility){var next=snapshot;next.ingest(incoming);return next}.value
+            guard enabled,token==generation,!Task.isCancelled else{return}
+            if profile != snapshot{continue}
+            do{try FileManager.default.createDirectory(at:file.deletingLastPathComponent(),withIntermediateDirectories:true);try JSONEncoder().encode(next).write(to:file,options:[.atomic,.completeFileProtection]);profile=next}catch{issue=error.localizedDescription}
+            return
+        }
     }
     func reset(){
         generation=UUID()

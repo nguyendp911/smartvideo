@@ -78,8 +78,8 @@ struct PhotoMaskStudio:View{
             busy=true;issue=""
             do{
                 try await Task.sleep(for:.milliseconds(160))
-                let image=try await Task.detached(priority:.userInitiated){try SemanticMaskEngine.preview(url,document:d,selected:s,overlay:o)}.value
-                if !Task.isCancelled{preview=image;busy=false}
+                let bytes=try await PhotoPreviewWorker.shared.mask(url,document:d,selected:s,overlay:o)
+                if !Task.isCancelled{preview=UIImage(data:bytes);busy=false}
             }catch{if !Task.isCancelled{issue=error.localizedDescription;busy=false}}
         }
     }
@@ -104,6 +104,7 @@ struct PhotoMaskStudio:View{
         }.padding(10).background(.white.opacity(0.055),in:RoundedRectangle(cornerRadius:10)).disabled(training)
     }
     private func applyAndLearn(){
+        guard !busy,!training,issue.isEmpty else{return}
         let final=document
         var docs=recipe.masking ?? [];docs.removeAll{$0.source==final.source};if !final.layers.isEmpty{docs.append(final)};recipe.masking=docs.isEmpty ? nil:docs
         let changed=final.layers.filter{layer in

@@ -138,6 +138,8 @@ struct AdaptiveWorkflowPanel:View{
     @State private var candidateAnchor:CompositionAnchor?
     @State private var candidateLight:LightMockupRecipe?
     @State private var token=UUID()
+    @State private var inputRecipe:CreativeRecipe?
+    @State private var appliedRecipe:CreativeRecipe?
     var body:some View{
         VStack(alignment:.leading,spacing:9){
             Label("Adaptive AI Core",systemImage:"brain").font(.headline)
@@ -150,17 +152,19 @@ struct AdaptiveWorkflowPanel:View{
                 if let crop=candidateCrop{Toggle("Đề xuất tỷ lệ cắt "+crop,isOn:$useCrop)}
                 if candidateLight != nil{Toggle("Dùng công thức ánh sáng đã học",isOn:$useLighting)}
                 if !regions.isEmpty{Toggle("Tạo lại mặt nạ AI: "+regions.map{$0.kind.rawValue}.joined(separator:", "),isOn:$useMasks)}
-                Button("Áp dụng quy trình"){apply(plan)}.buttonStyle(.borderedProminent)
+                Button("Áp dụng quy trình"){apply(plan)}.buttonStyle(.borderedProminent).disabled(inputRecipe != recipe)
+                if inputRecipe != recipe{Text("Ảnh đã thay đổi. Hãy phân tích lại trước khi áp dụng.").font(.caption).foregroundStyle(.orange)}
             }
-            if let previous{Button("Hoàn tác đề xuất AI"){recipe=previous;self.previous=nil}}
+            if let previous{Button("Hoàn tác đề xuất AI"){recipe=previous;self.previous=nil;appliedRecipe=nil}.disabled(appliedRecipe != recipe)}
             if !issue.isEmpty{Text(issue).font(.caption).foregroundStyle(.secondary)}
             Text("Mô hình hồi quy từng thông số chỉ dùng khi sai số tuyệt đối trên ảnh giữ lại giảm ít nhất 5%. Đây là mức độ khớp với chỉnh sửa của bạn, không phải điểm chất lượng nghệ thuật.").font(.caption2).foregroundStyle(.secondary)
         }.onChange(of:url){_,_ in clear()}.onChange(of:scene){_,_ in clear()}.onChange(of:taste.generation){_,_ in clear()}
     }
-    private func clear(){token=UUID();plan=nil;previous=nil;busy=false;regions=[];candidateCrop=nil;candidateAnchor=nil;candidateLight=nil;useCrop=false;useLighting=false;useMasks=false;issue=""}
+    private func clear(){token=UUID();plan=nil;previous=nil;inputRecipe=nil;appliedRecipe=nil;busy=false;regions=[];candidateCrop=nil;candidateAnchor=nil;candidateLight=nil;useCrop=false;useLighting=false;useMasks=false;issue=""}
     private func analyze(){
         clear();busy=true
         let id=token,u=url,s=scene,p=taste.enabled ? taste.profile:TasteProfile(),r=recipe
+        inputRecipe=r
         Task{
             let result=await Task.detached(priority:.userInitiated){()->(WorkflowPlan?,[TasteRegion],String?,LightMockupRecipe?,CompositionAnchor?) in
                 guard let c=TasteContext.analyze(u,override:s),let plan=WorkflowPlan.make(context:c,profile:p,source:SemanticMaskEngine.sourceKey(u),existing:r) else{return (nil,[],nil,nil,nil)}
@@ -183,6 +187,7 @@ struct AdaptiveWorkflowPanel:View{
         }
     }
     private func apply(_ plan:WorkflowPlan){
+        guard inputRecipe==recipe else{return}
         previous=recipe;var next=plan.recipe
         if useCrop,let candidateCrop{next.crop=candidateCrop;next.compositionAnchor=candidateAnchor}
         if useLighting,let candidateLight{next.lighting=candidateLight}
@@ -194,6 +199,6 @@ struct AdaptiveWorkflowPanel:View{
             }
             if !doc.layers.isEmpty{docs.removeAll{$0.source==key};docs.append(doc);next.masking=docs}
         }
-        recipe=next;self.plan=nil;issue="Đã áp dụng. Kiểm tra và tinh chỉnh trước khi lưu."
+        recipe=next;appliedRecipe=next;self.plan=nil;issue="Đã áp dụng. Kiểm tra và tinh chỉnh trước khi lưu."
     }
 }

@@ -551,4 +551,16 @@ final class VieLensTests:XCTestCase {
         XCTAssertGreaterThan(pixel(25)[0],245);XCTAssertLessThan(pixel(25)[2],10)
         XCTAssertGreaterThan(pixel(75)[2],245);XCTAssertLessThan(pixel(75)[0],10)
     }
+    func testPreviewThumbnailBoundAndOriginalExport()throws{
+        let source=try patch(),url=try CreativeEngine.exportURL(source,extension:"jpg")
+        defer{try? FileManager.default.removeItem(at:url)}
+        var r=CreativeRecipe();r.premiumID="sea.01"
+        let preview=try XCTUnwrap(CreativeEngine.render(url,recipe:r,maxSize:120,format:"JPEG",quality:0.9,metadata:false,thumbnailOnly:true))
+        let output=try XCTUnwrap(CreativeEngine.render(url,recipe:r,maxSize:100000,format:"PNG",quality:1,metadata:false))
+        let previewImage=try XCTUnwrap(UIImage(data:preview)?.cgImage),full=try XCTUnwrap(UIImage(data:output)?.cgImage)
+        XCTAssertLessThanOrEqual(max(previewImage.width,previewImage.height),120)
+        XCTAssertEqual(full.width,420);XCTAssertEqual(full.height,300)
+        XCTAssertEqual(try Data(contentsOf:url),source)
+        XCTAssertNil(CreativeEngine.render(url,recipe:r,maxSize:0,format:"JPEG",quality:0.9,metadata:false))
+    }
 }

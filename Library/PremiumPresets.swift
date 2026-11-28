@@ -145,10 +145,9 @@ struct PremiumPresetPanel:View{
             let list=items
             for p in list{
                 if Task.isCancelled{return}
-                let image=await Task.detached(priority:.utility){()->UIImage? in
-                    var r=CreativeRecipe();r.premiumID=p.id;r.premiumStrength=0.8
-                    return CreativeEngine.render(url,recipe:r,maxSize:260,format:"JPEG",quality:0.85,metadata:false).flatMap{UIImage(data:$0)}
-                }.value
+                var r=CreativeRecipe();r.premiumID=p.id;r.premiumStrength=0.8
+                let bytes=await PhotoPreviewWorker.shared.photo(url,recipe:r,maxSize:260,thumbnail:true)
+                let image=bytes.flatMap{UIImage(data:$0)}
                 if Task.isCancelled{return}
                 if let image{previews[p.id]=image}
             }

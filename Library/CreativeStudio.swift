@@ -37,9 +37,11 @@ struct CreativeRecipe:Codable,Equatable {
 enum CreativeEngine {
     private static let context=CIContext(options:[.cacheIntermediates:false])
     static func fileExtension(_ format:String)->String{format=="PNG" ? "png":format=="HEIC" ? "heic":"jpg"}
-    static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool)->Data?{
+    static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool,thumbnailOnly:Bool=false)->Data?{
         guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
-              let image=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]) else{return nil}
+              let full=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]),maxSize>0 else{return nil}
+        let image:CIImage
+        if thumbnailOnly,recipe.masking==nil,recipe.lighting==nil,recipe.crop=="Gốc",let cg=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:max(1,maxSize*2)] as CFDictionary){image=CIImage(cgImage:cg)}else{image=full}
         let initial=PremiumColorEngine.apply(image,id:recipe.premiumID,strength:recipe.premiumStrength ?? 0.8)
         var result=initial.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
             .applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:recipe.contrast,kCIInputSaturationKey:recipe.saturation])
@@ -126,17 +128,22 @@ struct CreativeStudio:View {
     @State private var showMaskStudio=false
     @State private var showManual=false
     @State private var previewError=false
+    @State private var renderedKey:PreviewKey?
+    @State private var previewSource:URL?
+    private var activeKey:PreviewKey{PreviewKey(recipe:recipe,index:selected,original:useOriginal)}
+    private var previewReady:Bool{renderedKey==activeKey && preview != nil && !previewError}
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
     private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
     var body:some View{
         ScrollView{
             VStack(spacing:14){
                 if originalPreview,let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1400).scaledToFit().frame(maxHeight:410)}
-                else if let preview{Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
-                else if let current{DiskImage(url:vault.picture(current),limit:1000).scaledToFit().frame(height:250)}
+                else if let preview,let current,previewSource==vault.picture(current,original:useOriginal){Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
+                else if let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1000).scaledToFit().frame(height:250)}
                 Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
                 Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
+                if !previewReady && !previewError && !originalPreview{ProgressView("Đang cập nhật ảnh…").font(.caption)}
                 if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng. Nếu không tìm thấy chủ thể, hãy chỉnh mặt nạ hoặc bỏ phông nền.").font(.caption).foregroundStyle(.orange)}
                 if let current{
                     DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
@@ -184,7 +191,7 @@ struct CreativeStudio:View {
                         }
                         HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
                         HStack{
-                            Button("Lưu preset"){var reusable=recipe;reusable.masking=nil;if let data=try? JSONEncoder().encode(reusable){savedPreset=data};versionName="";showVersionName=true}
+                            Button("Lưu preset"){versionName="";showVersionName=true}.disabled(!previewReady || working)
                             Spacer()
                             Button("Dùng preset"){if let r=try? JSONDecoder().decode(CreativeRecipe.self,from:savedPreset){var next=r;next.masking=recipe.masking;recipe=next}}
                             Button("Đặt lại"){recipe=CreativeRecipe()}
@@ -216,13 +223,14 @@ struct CreativeStudio:View {
         .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
         .onChange(of:selected){_,_ in tasteScene = .auto}
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
-        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
-        .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
+        .task(id:activeKey){
             guard let current else{return}
-            let r=recipe,url=vault.picture(current,original:useOriginal)
+            let key=activeKey,r=recipe,url=vault.picture(current,original:useOriginal)
+            if previewSource != url{preview=nil;previewSource=url};previewError=false;renderedKey=nil
             do{try await Task.sleep(for:.milliseconds(180))}catch{return}
-            let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:1600,format:"JPEG",quality:0.93,metadata:false)}.value
-            if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil}
+            let data=await PhotoPreviewWorker.shared.photo(url,recipe:r,maxSize:1600,thumbnail:false)
+            if !Task.isCancelled,activeKey==key{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil;renderedKey=key}
         }
     }
     private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int;let original:Bool}
@@ -240,6 +248,7 @@ struct CreativeStudio:View {
         taste.record(sample,token:token)
     }
     @MainActor private func export()async{
+        guard previewReady,!working else{return}
         working=true;outputs=[];notice=""
         defer{working=false}
         let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault,original=useOriginal
@@ -252,7 +261,7 @@ struct CreativeStudio:View {
             }).value{outputs.append(url);if learned==nil || shot.id==chosen{learned=shot}}
         }
         notice="Đã xuất \(outputs.count)/\(shots.count) ảnh."
-        if let shot=learned{await learnTaste(photo:shot.id,url:v.picture(shot,original:original),recipe:r,scene:scene,token:token)}
+        if let shot=learned,shot.id==chosen{await learnTaste(photo:shot.id,url:v.picture(shot,original:original),recipe:r,scene:scene,token:token)}
     }
 }
 struct CollageStudio:View {
@@ -462,7 +471,7 @@ struct MemoryCinema:View {
                 }
                 catch{notice=error.localizedDescription}
                 working=false
-            }}.disabled(working || shots.isEmpty)
+            }}.disabled(working || shots.isEmpty || !previewReady)
             if working{ProgressView("Đang mã hóa video…")}
             if let output{ShareLink(item:output){Label("Lưu / Chia sẻ MP4",systemImage:"square.and.arrow.up")}}
             Text(notice).font(.caption)
