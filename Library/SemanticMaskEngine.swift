@@ -45,6 +45,7 @@ struct PhotoMaskLayer:Codable,Identifiable,Equatable{
     var angle=0.0
     var strokes:[MaskStroke]=[]
     var grade=LocalGrade()
+    var replacement:Data?=nil
 }
 struct PhotoMaskDocument:Codable,Equatable{
     var source:String
@@ -69,8 +70,9 @@ enum SemanticMaskEngine{
     }()
     static var skyAvailable:Bool{skyModel != nil}
     static func sourceKey(_ url:URL)->String{
-        // Vault photo files have UUID-based names. Path is included to prevent accidental reuse.
-        url.standardizedFileURL.path
+        let parent=url.deletingLastPathComponent().lastPathComponent
+        if UUID(uuidString:parent) != nil{return parent+"/"+url.lastPathComponent}
+        return url.standardizedFileURL.path
     }
     private static func normalized(_ image:CIImage)->CIImage{
         image.transformed(by:CGAffineTransform(translationX:-image.extent.minX,y:-image.extent.minY))
@@ -121,7 +123,8 @@ enum SemanticMaskEngine{
         let canonical=kind == .background ? PhotoMaskKind.subject:kind
         let cacheKey=(key+"#"+canonical.rawValue) as NSString
         if let saved=cache.object(forKey:cacheKey){return saved}
-        let mask=try canonical == .sky ? sky(image):subject(image)
+        let mask:CIImage
+        if canonical == .sky{mask=try sky(image)}else{mask=try subject(image)}
         // Store a concrete bitmap, not a graph that retains original images.
         guard let cg=context.createCGImage(mask,from:mask.extent) else{throw PhotoMaskError.invalidOutput}
         let result=CIImage(cgImage:cg)
@@ -171,6 +174,7 @@ enum SemanticMaskEngine{
             guard let cg=drawn.cgImage else{throw PhotoMaskError.unreadable};base=CIImage(cgImage:cg)
         }
         if layer.feather>0{base=base.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:short*layer.feather]).cropped(to:rect)}
+        base=base.applyingFilter("CIColorClamp",parameters:["inputMinComponents":CIVector(x:0,y:0,z:0,w:0),"inputMaxComponents":CIVector(x:1,y:1,z:1,w:1)])
         return fit(base,to:original.extent)
     }
     static func grade(_ input:CIImage,_ g:LocalGrade)->CIImage{
@@ -190,7 +194,13 @@ enum SemanticMaskEngine{
         for layer in document.layers where layer.enabled && layer.strength>0{
             var matte=try mask(original,layer:layer,key:key)
             if layer.strength<1{let t=CGFloat(layer.strength);matte=matte.applyingFilter("CIColorMatrix",parameters:["inputRVector":CIVector(x:t,y:0,z:0,w:0),"inputGVector":CIVector(x:0,y:t,z:0,w:0),"inputBVector":CIVector(x:0,y:0,z:t,w:0)])}
-            image=grade(image,layer.grade).applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:matte]).cropped(to:input.extent)
+            var region=image
+            if layer.kind == .sky,let bytes=layer.replacement,let raw=CIImage(data:bytes,options:[.applyOrientationProperty:true]){
+                let rect=input.extent,sky=normalized(raw),s=max(rect.width/sky.extent.width,rect.height/sky.extent.height)
+                let scaled=sky.transformed(by:CGAffineTransform(scaleX:s,y:s))
+                region=scaled.transformed(by:CGAffineTransform(translationX:rect.midX-scaled.extent.midX,y:rect.midY-scaled.extent.midY)).cropped(to:rect)
+            }
+            image=grade(region,layer.grade).applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:matte]).cropped(to:input.extent)
         }
         return image
     }

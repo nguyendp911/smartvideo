@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
+import ImageIO
 
 struct PhotoMaskStudio:View{
     let url:URL
@@ -17,6 +19,8 @@ struct PhotoMaskStudio:View{
     @State private var redoStack:[PhotoMaskDocument]=[]
     @State private var busy=false
     @State private var issue=""
+    @State private var pickingSky=false
+    @State private var importIssue=""
     private var index:Int?{document.layers.firstIndex{$0.id==selected}}
     var body:some View{
         NavigationStack{
@@ -40,16 +44,25 @@ struct PhotoMaskStudio:View{
                     }
                     if let i=index{layerControls(i)}
                     if !issue.isEmpty{Text(issue).font(.caption).foregroundStyle(.orange)}
+                    if !importIssue.isEmpty{Text(importIssue).font(.caption).foregroundStyle(.orange)}
                     Text("Mặt nạ áp dụng trước cắt/xoay ảnh và chỉ thuộc ảnh này. Các vùng AI có thể cần sửa cọ ở mép. Xem trước ở đây dùng ảnh gốc với chỉnh cục bộ; Photo Lab kết hợp thêm preset và ánh sáng toàn ảnh.").font(.caption2).foregroundStyle(.secondary)
                 }.padding(14)
             }.navigationTitle("Masking Studio").navigationBarTitleDisplayMode(.inline).toolbar{
                 ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}}
-                ToolbarItem(placement:.confirmationAction){Button("Áp dụng"){recipe.masking=document.layers.isEmpty ? nil:document;dismiss()}.disabled(busy || !issue.isEmpty)}
+                ToolbarItem(placement:.confirmationAction){Button("Áp dụng"){var docs=recipe.masking ?? [];docs.removeAll{$0.source==document.source};if !document.layers.isEmpty{docs.append(document)};recipe.masking=docs.isEmpty ? nil:docs;dismiss()}.disabled(busy || !issue.isEmpty)}
             }
         }.onAppear{
             let key=SemanticMaskEngine.sourceKey(url)
-            document=recipe.masking?.source==key ? recipe.masking! : PhotoMaskDocument(source:key)
+            document=recipe.masking?.first(where:{$0.source==key}) ?? PhotoMaskDocument(source:key)
             selected=document.layers.last?.id
+        }
+        .fileImporter(isPresented:$pickingSky,allowedContentTypes:[.image]){result in
+            do{
+                guard let i=index,document.layers[i].kind == .sky else{return}
+                let url=try result.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
+                guard let bytes=try? Data(contentsOf:url,options:.mappedIfSafe),bytes.count<=50_000_000,let cg=PhotoEngine.thumb(bytes,limit:3000),let data=UIImage(cgImage:cg).jpegData(compressionQuality:0.94) else{throw PhotoMaskError.unreadable}
+                checkpoint();document.layers[i].replacement=data;importIssue="";overlay=false
+            }catch{importIssue=error.localizedDescription}
         }
         .task(id:PreviewKey(document:document,selected:selected,overlay:overlay)){
             let d=document,s=selected,o=overlay
@@ -111,6 +124,14 @@ struct PhotoMaskStudio:View{
                 control("Kích thước cọ",value:$brushSize,range:0.015...0.3)
                 Button("Xóa nét cọ"){checkpoint();document.layers[i].strokes=[]}
                 Text("Vuốt trực tiếp trên ảnh. Màu đỏ là vùng chọn. Tắt chế độ vẽ để cuộn.").font(.caption2)
+            }
+            if document.layers[i].kind == .sky{
+                Divider()
+                Button("Thay bầu trời từ ảnh trong Tệp",systemImage:"cloud.sun"){pickingSky=true}
+                if document.layers[i].replacement != nil{
+                    Text("Ảnh bầu trời đã nhập · chỉ ghép trong mặt nạ").font(.caption)
+                    Button("Bỏ bầu trời thay thế",role:.destructive){checkpoint();document.layers[i].replacement=nil}
+                }
             }
             Divider()
             Text("HẬU KỲ RIÊNG VÙNG").font(.caption2.monospaced()).foregroundStyle(gold)
