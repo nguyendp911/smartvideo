@@ -35,6 +35,7 @@ struct DiskImage:View {
     let url:URL
     var limit=1200
     @State private var picture:UIImage?
+    @State private var loadedPath:URL?
     var body:some View {
         Group {
             if let picture {Image(uiImage:picture).resizable()}

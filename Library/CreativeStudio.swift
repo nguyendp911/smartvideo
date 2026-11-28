@@ -28,6 +28,9 @@ struct CreativeRecipe:Codable,Equatable {
     var rotation:Int?=nil
     var mirror:Bool?=nil
     var film:String?=nil
+    var premiumID:String?=nil
+    var premiumStrength:Double?=nil
+    var lighting:LightMockupRecipe?=nil
 }
 enum CreativeEngine {
     private static let context=CIContext(options:[.cacheIntermediates:false])
@@ -35,7 +38,8 @@ enum CreativeEngine {
     static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool)->Data?{
         guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
               let image=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]) else{return nil}
-        var result=image.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
+        let initial=PremiumColorEngine.apply(image,id:recipe.premiumID,strength:recipe.premiumStrength ?? 0.8)
+        var result=initial.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
             .applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:recipe.contrast,kCIInputSaturationKey:recipe.saturation])
         if recipe.warmth != 0 {result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+recipe.warmth*2000,y:0)])}
         let highlight=recipe.highlights ?? 0,shadow=recipe.shadows ?? 0
@@ -51,6 +55,11 @@ enum CreativeEngine {
         case "Chrome":result=result.applyingFilter("CIPhotoEffectChrome")
         case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
         default:break
+        }
+        if recipe.lighting != nil{
+            let stamp=(try? url.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
+            guard let lit=LightMockupEngine.apply(result,original:image,recipe:recipe.lighting,key:url.path+"#"+String(stamp)) else{return nil}
+            result=lit
         }
         switch recipe.rotation ?? 0{case 90:result=result.oriented(.left);case 180:result=result.oriented(.down);case 270:result=result.oriented(.right);default:break}
         if recipe.mirror == true{result=result.transformed(by:CGAffineTransform(scaleX:-1,y:1))}
@@ -103,6 +112,10 @@ struct CreativeStudio:View {
     @State private var showVersionName=false
     @State private var useOriginal=false
     @State private var originalPreview=false
+    @State private var showPremium=true
+    @State private var showLighting=false
+    @State private var showManual=false
+    @State private var previewError=false
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
     private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
     var body:some View{
@@ -114,7 +127,10 @@ struct CreativeStudio:View {
                 Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
                 Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
-                GroupBox("Color Studio"){
+                if previewError{Text("Không thể kết xuất ảnh hiện tại. Nếu đang ghép nền, hãy chọn ảnh có chủ thể rõ hoặc bỏ mockup.").font(.caption).foregroundStyle(.orange)}
+                DisclosureGroup("Bộ preset Premium · 32 màu",isExpanded:$showPremium){PremiumPresetPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                DisclosureGroup("Lighting & Mockup Studio · 24 asset",isExpanded:$showLighting){LightMockupPanel(recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                DisclosureGroup("Hậu kỳ chuyên sâu · Color Studio",isExpanded:$showManual){
                     VStack(alignment:.leading){
                         control("Phơi sáng",value:$recipe.exposure,range:-2...2)
                         control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
@@ -159,7 +175,7 @@ struct CreativeStudio:View {
                 }
                 Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Các phiên bản đã đặt tên lưu công thức chỉnh sửa và ID ảnh trên thiết bị.").font(.caption).foregroundStyle(.secondary)
             }.padding()
-        }.navigationTitle("Creative Studio")
+        }.navigationTitle("Premium Photo Lab")
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
         .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions()};Button("Hủy",role:.cancel){}}
         .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
@@ -167,7 +183,7 @@ struct CreativeStudio:View {
             let r=recipe,url=vault.picture(current,original:useOriginal)
             do{try await Task.sleep(for:.milliseconds(180))}catch{return}
             let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:1600,format:"JPEG",quality:0.93,metadata:false)}.value
-            if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)}}
+            if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil}
         }
     }
     private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int;let original:Bool}

@@ -353,4 +353,27 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(image.height,420)
         XCTAssertEqual(CreativeEngine.fileExtension("HEIC"),"heic")
     }
+    func testPremiumCollectionAndLightingAssets()throws{
+        XCTAssertEqual(PremiumPresets.all.count,32)
+        XCTAssertEqual(Set(PremiumPresets.all.map(\.id)).count,32)
+        XCTAssertEqual(Set(PremiumPresets.all.map(\.collection)).count,8)
+        XCTAssertEqual(LightAssets.scenes.count,16)
+        XCTAssertEqual(LightAssets.textures.count,8)
+        for asset in LightAssets.scenes{XCTAssertNotNil(LightAssets.image(asset.id,scene:true))}
+        for asset in LightAssets.textures{XCTAssertNotNil(LightAssets.image(asset.id,scene:false))}
+        let preset=try XCTUnwrap(PremiumPresets.find("sea.01"))
+        XCTAssertEqual(PremiumColorEngine.cube(preset,strength:0.8).count,32*32*32*4*MemoryLayout<Float>.size)
+        let url=try CreativeEngine.exportURL(patch(),extension:"jpg")
+        defer{try? FileManager.default.removeItem(at:url)}
+        let baseline=try XCTUnwrap(CreativeEngine.render(url,recipe:CreativeRecipe(),maxSize:420,format:"PNG",quality:1,metadata:false))
+        var recipe=CreativeRecipe()
+        recipe.premiumID="sea.01";recipe.premiumStrength=0.8
+        let colored=try XCTUnwrap(CreativeEngine.render(url,recipe:recipe,maxSize:420,format:"PNG",quality:1,metadata:false))
+        XCTAssertNotEqual(baseline,colored)
+        var light=LightMockupRecipe();light.textureID="window_sun";light.opacity=0.6
+        recipe.lighting=light
+        let lit=try XCTUnwrap(CreativeEngine.render(url,recipe:recipe,maxSize:420,format:"PNG",quality:1,metadata:false))
+        XCTAssertNotEqual(colored,lit)
+        XCTAssertEqual(try JSONDecoder().decode(CreativeRecipe.self,from:JSONEncoder().encode(recipe)),recipe)
+    }
 }
