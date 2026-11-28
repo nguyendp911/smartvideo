@@ -44,6 +44,25 @@ struct LightMockupRecipe:Codable,Equatable{
     var matteCorrection:MaskCorrectionModel?=nil
     var preserveLightColor:Bool?=nil
 }
+extension LightMockupRecipe{
+    var hasBackground:Bool{sceneID != nil || customScene != nil}
+    mutating func clearBackground(){sceneID=nil;customScene=nil;customSceneName=nil}
+    mutating func chooseLight(_ id:String?){
+        clearBackground()
+        textureID=id;customTexture=nil;customName=nil;x=0;y=0;zoom=1;angle=0;mirror=false
+        scope = .all;edgeFade=0.12;opacity=0.45
+        if let id{let name=id.split(separator:":").last.map(String.init) ?? id;blend=["lantern_glow","curtain_glow","blue_window"].contains(name) ? .screen:.natural}
+    }
+}
+enum MockupSection:String,CaseIterable,Identifiable{
+    case light="Ánh sáng",overlay="PNG",background="Thay nền"
+    var id:String{rawValue}
+}
+struct BackgroundReviewKey:Equatable{
+    let source:String
+    let lighting:LightMockupRecipe
+    let mask:PhotoMaskDocument?
+}
 struct LightAsset:Identifiable{
     let id:String
     let name:String
@@ -129,6 +148,13 @@ enum LightAssets{
         .init(id:"curtain_glow",name:"Đèn dây xuyên rèm",index:6),
         .init(id:"blue_window",name:"Ánh cửa đêm",index:7)
     ]
+    static func lightEquivalent(_ scene:String?)->String?{
+        guard let scene else{return nil}
+        let names=["window_morning":"window_sun","lace_window":"curtain_glow","golden_lantern":"lantern_glow","rainy_night":"blue_window","venetian_blinds":"blinds","coastal_arch":"arch_light","fairy_curtain":"curtain_glow","wall_lantern":"lantern_glow","palm_shadows":"palm_light","golden_curtain":"curtain_glow","arched_window":"arch_light"]
+        let parts=scene.split(separator:":").map(String.init)
+        guard let last=parts.last,let mapped=names[last] else{return nil}
+        return parts.count==3 && parts[0]=="pack" ? "pack:"+parts[1]+":"+mapped:mapped
+    }
     private static let cache=NSCache<NSString,UIImage>()
     static func entries(scene:Bool,pack:String?)->[LightAsset]{
         let list=scene ? scenes:textures
@@ -215,6 +241,11 @@ enum LightMockupEngine{
         let clear=CIImage(color:CIColor(red:0,green:0,blue:0,alpha:0)).cropped(to:rect)
         return image.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:mask]).cropped(to:rect)
     }
+    static func unionMasks(_ masks:[CIImage],in rect:CGRect)->CIImage?{
+        let fitted=masks.map{SemanticMaskEngine.fit($0,to:rect)}
+        guard let first=fitted.first else{return nil}
+        return fitted.dropFirst().reduce(first){a,b in a.applyingFilter("CIMaximumCompositing",parameters:[kCIInputBackgroundImageKey:b]).cropped(to:rect)}
+    }
     static func foregroundMask(_ image:CIImage,key:String,document:PhotoMaskDocument?,feather:Double,inset:Double,correction:MaskCorrectionModel?=nil)->CIImage?{
         let r=image.extent
         // Reuse the exact user-corrected mask including the learned model, brush strokes and threshold.
@@ -224,9 +255,19 @@ enum LightMockupEngine{
             guard let corrected=try? SemanticMaskEngine.mask(image,layer:layer,key:key) else{return nil}
             matte=corrected
         }else{
+            // Union automatic foreground + person masks. Explicit user-edited masks
+            // above remain authoritative, especially subtract strokes.
             var auto=PhotoMaskLayer(name:"Chủ thể ghép nền",kind:.subject);auto.feather=0;auto.learnedCorrection=correction
-            guard let raw=try? SemanticMaskEngine.mask(image,layer:auto,key:key) else{return nil}
-            matte=raw
+            var person=PhotoMaskLayer(name:"Người",kind:.person);person.feather=0
+            var candidates:[CIImage]=[]
+            for layer in [auto,person]{
+                if let mask=try? SemanticMaskEngine.mask(image,layer:layer,key:key){
+                    let coverage=maskCoverage(mask)
+                    if coverage.isFinite,coverage>0.001,coverage<0.995{candidates.append(mask)}
+                }
+            }
+            guard let combined=unionMasks(candidates,in:r) else{return nil}
+            matte=combined
         }
         // Process morphology at bounded resolution to avoid multi-megapixel radius costs.
         let s=min(1,1536/max(r.width,r.height))
@@ -329,6 +370,10 @@ enum LightMockupEngine{
 struct LightMockupPanel:View{
     @Binding var recipe:CreativeRecipe
     var onRefine:(()->Void)?=nil
+    var reviewNeeded=false
+    var canReview=false
+    var onReview:(()->Void)?=nil
+    @State private var section=MockupSection.light
     private enum ImportKind:Equatable{case pack,texture,scene}
     @State private var importKind=ImportKind.texture
     @ObservedObject private var maskSkill=MaskSkillStore.shared
@@ -344,23 +389,28 @@ struct LightMockupPanel:View{
     private func choose(_ id:String?,scene:Bool){
         var r=light
         if scene{r.sceneID=id;r.customScene=nil;r.customSceneName=nil;r.sceneZoom=1;r.sceneX=0;r.sceneY=0}
-        else{r.textureID=id;r.customTexture=nil;r.customName=nil;r.x=0;r.y=0;r.zoom=1;r.angle=0;if let id{let base=id.split(separator:":").last.map(String.init) ?? id;r.blend=["lantern_glow","curtain_glow","blue_window"].contains(base) ? .screen:.natural}}
+        else{r.chooseLight(id)}
         r.matteCorrection=maskSkill.model(.subject)
         recipe.lighting=r
     }
     var body:some View{
         VStack(alignment:.leading,spacing:12){
+            Picker("Loại mockup",selection:$section){ForEach(MockupSection.allCases){Text($0.rawValue).tag($0)}}.pickerStyle(.segmented)
             Text("PREMIUM LIGHTING LAB").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
-            Text("Texture ánh sáng & bóng từ asset tạo sẵn").font(.caption).foregroundStyle(.secondary)
+            Text(section == .background ? "Thay nền thật sự: kiểm tra tay, tóc, quần áo và vật đang cầm trước khi xuất.":section == .overlay ? "PNG trong suốt, không tách chủ thể.":"Nắng và bóng đổ trên ảnh gốc, không thay nền.").font(.caption).foregroundStyle(.secondary)
             if !packs.isEmpty{Picker("Bộ asset",selection:$pack){Text("Tích hợp sẵn").tag(String?.none);ForEach(packs,id:\.self){id in Text("Bộ nhập "+String(id.prefix(6))).tag(Optional(id))}}}
             Button("Nhập gói Lighting Collection JSON",systemImage:"folder.badge.plus"){importKind = .pack;importing=true}.font(.caption)
+            if section == .light{
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:false)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:84,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Không").font(.caption2)}}.buttonStyle(.plain)
                 ForEach(LightAssets.entries(scene:false,pack:pack)){asset in
                     Button{choose(asset.id,scene:false)}label:{tile(asset,scene:false,selected:light.textureID==asset.id && light.customTexture==nil)}.buttonStyle(.plain)
                 }
             }}
-            Button("Nhập texture PNG/JPEG từ Tệp",systemImage:"square.and.arrow.down"){importKind = .texture;importing=true}.font(.caption)
+            }
+            if section != .background{
+            Button(section == .overlay ? "Nhập PNG tiền cảnh":"Nhập texture ánh sáng PNG/JPEG",systemImage:"square.and.arrow.down"){importKind = .texture;importing=true}.font(.caption)
+            if section == .overlay && light.customTexture != nil{Button("Dùng lớp phủ PNG"){var r=light;r.clearBackground();r.scope = .all;r.blend = .overlay;r.opacity=1;r.edgeFade=0;recipe.lighting=r}.font(.caption)}
             if let name=light.customName{Text(name).font(.caption2).foregroundStyle(gold)}
             if light.textureID != nil || light.customTexture != nil{
                 Picker("Hòa trộn",selection:binding(\.blend)){ForEach(LightBlendMode.allCases){Text($0.rawValue).tag($0)}}
@@ -376,16 +426,25 @@ struct LightMockupPanel:View{
                 control("Tan mềm mép texture",optional(\.edgeFade,light.blend == .overlay ? 0:0.12),0...0.35)
                 Toggle("Lật ngang ánh sáng",isOn:binding(\.mirror))
             }
+            }
+            if section == .background{
             Divider()
-            Text("MOCKUP BỐI CẢNH").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
-            Text("Dùng mặt nạ chủ thể đã chỉnh nếu có; nếu không, Vision tách tự động. Cảnh tích hợp độ phân giải thấp; nên nhập phông nền riêng chất lượng cao.").font(.caption2).foregroundStyle(.secondary)
+            Text("THAY PHÔNG NỀN").font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundStyle(gold)
+            Text("Phông nền tích hợp có độ phân giải thấp. Đây là thay nền, không phải chiếu sáng.").font(.caption2).foregroundStyle(.secondary)
             ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:9){
                 Button{choose(nil,scene:true)}label:{VStack{Image(systemName:"nosign").font(.title2).frame(width:116,height:82).background(.white.opacity(0.06),in:RoundedRectangle(cornerRadius:9));Text("Nền gốc").font(.caption2)}}.buttonStyle(.plain)
                 ForEach(LightAssets.entries(scene:true,pack:pack)){asset in Button{choose(asset.id,scene:true)}label:{tile(asset,scene:true,selected:light.sceneID==asset.id && light.customScene==nil)}.buttonStyle(.plain)}
             }}
             Button("Nhập phông nền riêng · tối đa 4096 px",systemImage:"photo.badge.plus"){importKind = .scene;importing=true}.font(.caption)
             if let name=light.customSceneName{Text(name).font(.caption2).foregroundStyle(gold)}
-            if light.sceneID != nil || light.customScene != nil{
+            if light.hasBackground{
+                if let equivalent=LightAssets.lightEquivalent(light.sceneID){
+                    Button("Chỉ dùng nắng / bóng, giữ nền gốc",systemImage:"sun.max"){var r=light;r.chooseLight(equivalent);recipe.lighting=r;section = .light}.buttonStyle(.borderedProminent)
+                }
+                if reviewNeeded{
+                    Text("Chưa xác nhận chất lượng ghép của ảnh này. Kiểm tra ảnh phía trên; nếu mất tay, tóc hoặc vật cầm, sửa mặt nạ trước.").font(.caption).foregroundStyle(.orange)
+                    if let onReview{Button("Xác nhận đã kiểm tra ảnh ghép",systemImage:"checkmark.seal"){onReview()}.buttonStyle(.bordered).disabled(!canReview)}
+                }else{Label("Đã xác nhận ảnh ghép",systemImage:"checkmark.circle").font(.caption).foregroundStyle(.green)}
                 control("Phóng phông nền",binding(\.sceneZoom),1...3)
                 control("Nền ngang",binding(\.sceneX),-1...1)
                 control("Nền dọc",binding(\.sceneY),-1...1)
@@ -395,7 +454,8 @@ struct LightMockupPanel:View{
                 control("Sáng chủ thể",optional(\.foregroundExposure,0),-1...1)
                 control("Nhiệt độ chủ thể",optional(\.foregroundWarmth,0),-1...1)
             }
-            if light.sceneID != nil || light.customScene != nil || (light.scope ?? .all) != .all{
+            }
+            if light.hasBackground || (light.scope ?? .all) != .all{
                 control("Mềm biên chủ thể",optional(\.matteFeather,0.0015),0...0.025)
                 control("Thu / mở mép vùng chọn",optional(\.matteInset,0),-0.012...0.012)
                 if let onRefine{Button("Sửa mặt nạ chủ thể",systemImage:"paintbrush.pointed"){onRefine()}.font(.caption)}
@@ -403,7 +463,7 @@ struct LightMockupPanel:View{
             }
             Button("Xóa toàn bộ hiệu ứng ánh sáng & mockup",role:.destructive){recipe.lighting=nil}.font(.caption)
             Text(notice).font(.caption2).foregroundStyle(.secondary)
-        }.onAppear{packs=LightingPackStore.ids()}
+        }.onAppear{packs=LightingPackStore.ids();section=light.hasBackground ? .background:light.blend == .overlay ? .overlay:.light}
         .fileImporter(isPresented:$importing,allowedContentTypes:importKind == .pack ? [.json]:[.image]){response in
             do{
                 let url=try response.get(),access=url.startAccessingSecurityScopedResource();defer{if access{url.stopAccessingSecurityScopedResource()}}
@@ -422,7 +482,8 @@ struct LightMockupPanel:View{
                     let data=alpha ? UIImage(cgImage:cg).pngData():UIImage(cgImage:cg).jpegData(compressionQuality:0.94)
                     guard let data,data.count<=24_000_000 else{throw CameraError.unreadable}
                     r.textureID=nil;r.customTexture=data;r.customName=url.lastPathComponent;r.x=0;r.y=0;r.zoom=1;r.angle=0
-                    if alpha{r.blend = .overlay;r.edgeFade=0;r.opacity=1}
+                    r.clearBackground();r.scope = .all
+                    if section == .overlay{r.blend = .overlay;r.edgeFade=0;r.opacity=1}else{r.blend = .natural;r.edgeFade=0.12;r.opacity=0.45}
                 }
                 r.matteCorrection=maskSkill.model(.subject)
                 recipe.lighting=r;notice="Đã nhập \(cg.width) × \(cg.height) px."

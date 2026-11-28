@@ -642,4 +642,32 @@ final class VieLensTests:XCTestCase {
         let landscape=PhotoLabLayout.fittedSize(image:CGSize(width:200,height:100),inside:CGSize(width:320,height:240))
         XCTAssertEqual(landscape.width,320);XCTAssertEqual(landscape.height,160)
     }
+    func testSafeWindowLightDoesNotReplaceBackground(){
+        var r=LightMockupRecipe();r.sceneID="window_morning";r.scope = .subject
+        r.chooseLight(LightAssets.lightEquivalent(r.sceneID))
+        XCTAssertFalse(r.hasBackground)
+        XCTAssertEqual(r.textureID,"window_sun");XCTAssertEqual(r.scope,.all)
+        XCTAssertEqual(r.blend,.natural)
+        XCTAssertEqual(LightAssets.lightEquivalent("pack:abc:window_morning"),"pack:abc:window_sun")
+        XCTAssertNil(LightAssets.lightEquivalent("beach_sunset"))
+    }
+    func testForegroundUnionKeepsBothRegions()throws{
+        let rect=CGRect(x:0,y:0,width:100,height:100)
+        let black=CIImage(color:CIColor.black).cropped(to:rect)
+        let white=CIImage(color:CIColor.white)
+        let a=white.cropped(to:CGRect(x:10,y:20,width:20,height:20)).composited(over:black).cropped(to:rect)
+        let b=white.cropped(to:CGRect(x:60,y:20,width:20,height:20)).composited(over:black).cropped(to:rect)
+        let union=try XCTUnwrap(LightMockupEngine.unionMasks([a,b],in:rect))
+        XCTAssertEqual(LightMockupEngine.maskCoverage(union),0.08,accuracy:0.005)
+        XCTAssertNil(LightMockupEngine.unionMasks([],in:rect))
+    }
+    func testBackgroundReviewInvalidatedByMaskOrSceneChange(){
+        var r=LightMockupRecipe();r.sceneID="window_morning"
+        var doc=PhotoMaskDocument(source:"test")
+        let first=BackgroundReviewKey(source:"test",lighting:r,mask:doc)
+        doc.layers.append(PhotoMaskLayer(name:"Chủ thể",kind:.subject))
+        XCTAssertNotEqual(first,BackgroundReviewKey(source:"test",lighting:r,mask:doc))
+        r.sceneID="lace_window"
+        XCTAssertNotEqual(first,BackgroundReviewKey(source:"test",lighting:r,mask:nil))
+    }
 }

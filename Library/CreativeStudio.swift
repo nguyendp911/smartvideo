@@ -131,10 +131,27 @@ struct CreativeStudio:View {
     @ObservedObject private var taste=PhotoTasteStore.shared
     @State private var showMaskStudio=false
     @State private var previewError=false
+    @State private var backgroundReviews:[String:BackgroundReviewKey]=[:]
     @State private var renderedKey:PreviewKey?
     @State private var previewSource:URL?
     private var activeKey:PreviewKey{PreviewKey(recipe:recipe,index:selected,original:useOriginal)}
     private var previewReady:Bool{renderedKey==activeKey && preview != nil && !previewError}
+    private func reviewKey(_ shot:Shot)->BackgroundReviewKey?{
+        guard let lighting=recipe.lighting,lighting.hasBackground else{return nil}
+        let source=SemanticMaskEngine.sourceKey(vault.picture(shot,original:useOriginal))
+        return BackgroundReviewKey(source:source,lighting:lighting,mask:recipe.masking?.first(where:{$0.source==source}))
+    }
+    private var currentBackgroundNeedsReview:Bool{
+        guard let shot=current,let key=reviewKey(shot) else{return false}
+        return backgroundReviews[key.source] != key
+    }
+    private var allBackgroundsReviewed:Bool{
+        shots.allSatisfy{shot in guard let key=reviewKey(shot) else{return true};return backgroundReviews[key.source]==key}
+    }
+    private func approveBackground(){
+        guard previewReady,!originalPreview,let shot=current,let key=reviewKey(shot) else{return}
+        backgroundReviews[key.source]=key
+    }
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
     private var current:Shot?{shots.indices.contains(selected) ? shots[selected]:nil}
     var body:some View{
@@ -198,6 +215,7 @@ struct CreativeStudio:View {
                     Button{selected=min(shots.count-1,selected+1)}label:{Image(systemName:"chevron.right").frame(width:30,height:36)}.disabled(selected+1>=shots.count).accessibilityLabel("Ảnh sau")
                 }
             }.padding(.horizontal,12)
+            if currentBackgroundNeedsReview && !previewError{Text("Thay nền chưa được xác nhận · kiểm tra chủ thể trong Mockup").font(.caption2).foregroundStyle(.orange).lineLimit(2).padding(.horizontal,12)}
             if previewError{Text("Không thể kết xuất. Kiểm tra mặt nạ hoặc mockup.").font(.caption2).foregroundStyle(.orange).lineLimit(2).padding(.horizontal,12)}
         }.padding(.bottom,5)
     }
@@ -260,7 +278,7 @@ struct CreativeStudio:View {
                     }.buttonStyle(.plain)
                 }
         case .mockup:
-                LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true})
+                LightMockupPanel(recipe:$recipe,onRefine:{showMaskStudio=true},reviewNeeded:currentBackgroundNeedsReview,canReview:previewReady && !originalPreview,onReview:approveBackground)
         case .ai:
                 if let current{
                     DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
@@ -293,7 +311,8 @@ struct CreativeStudio:View {
                         Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("HEIC").tag("HEIC");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
                         Picker("Cạnh dài tối đa",selection:$maxSize){Text("1080 px").tag(1080);Text("2048 px").tag(2048);Text("4096 px").tag(4096);Text("Gốc").tag(100000)}
                         if format != "PNG"{control("Chất lượng nén",value:$quality,range:0.5...1);Toggle("Giữ thông số EXIF (không GPS)",isOn:$metadata)}
-                        Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty || !previewReady)
+                        if !allBackgroundsReviewed{Text("Kiểm tra và xác nhận ảnh ghép cho từng ảnh trước khi xuất.").font(.caption).foregroundStyle(.orange);Button("Về Mockup"){panel = .mockup}}
+                        Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty || !previewReady || !allBackgroundsReviewed)
                         if working{ProgressView()}
                         if !outputs.isEmpty{ShareLink(items:outputs){Label("Chia sẻ / Lưu tệp",systemImage:"square.and.arrow.up")}}
                         Text(notice).font(.caption).foregroundStyle(.secondary)
@@ -317,7 +336,7 @@ struct CreativeStudio:View {
         taste.record(sample,token:token)
     }
     @MainActor private func export()async{
-        guard previewReady,!working else{return}
+        guard previewReady,!working,allBackgroundsReviewed else{return}
         working=true;outputs=[];notice=""
         defer{working=false}
         let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault,original=useOriginal
