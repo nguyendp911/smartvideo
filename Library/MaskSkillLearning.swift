@@ -125,7 +125,7 @@ enum MaskCorrectionPixels{
         guard let image=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]),image.extent.width>0,image.extent.height>0 else{return []}
         let key=SemanticMaskEngine.sourceKey(url)
         let digest=SHA256.hash(data:Data(key.utf8)).map{String(format:"%02x",$0)}.joined()
-        return [PhotoMaskKind.sky,.subject,.background].compactMap{kind in
+        return PhotoMaskKind.learnable.compactMap{kind in
             guard let layer=document.layers.last(where:{$0.kind==kind && $0.enabled && !$0.inverted && !$0.strokes.isEmpty}),
                   let base=try? SemanticMaskEngine.rawSemantic(image,kind:kind,key:key) else{return nil}
             let g=grid(image:image,base:base)
@@ -167,8 +167,8 @@ struct MaskSkillProfile:Codable,Equatable{
             examples.removeAll{$0.key==e.key && $0.kind==e.kind}
             examples.insert(e,at:0)
         }
-        examples=Array(examples.prefix(36))
-        for kind in [PhotoMaskKind.sky,.subject,.background]{
+        examples=PhotoMaskKind.learnable.flatMap{kind in Array(examples.filter{$0.kind==kind}.prefix(12))}
+        for kind in PhotoMaskKind.learnable{
             models[kind.rawValue]=MaskCorrectionModel.validated(Array(examples.filter{$0.kind==kind}.prefix(12)))
         }
     }

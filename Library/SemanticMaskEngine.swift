@@ -5,9 +5,11 @@ import Vision
 import UIKit
 
 enum PhotoMaskKind:String,CaseIterable,Codable,Identifiable{
-    case sky="Bầu trời",subject="Chủ thể",background="Hậu cảnh",brush="Cọ vẽ",linear="Gradient tuyến tính",radial="Gradient tròn",luminance="Vùng sáng tối"
+    case sky="Bầu trời",subject="Chủ thể",background="Hậu cảnh",person="Người",face="Khuôn mặt (xấp xỉ)",eyes="Mắt",lips="Môi",brush="Cọ vẽ",linear="Gradient tuyến tính",radial="Gradient tròn",luminance="Vùng sáng tối"
     var id:String{rawValue}
-    var symbol:String{switch self{case .sky:return "cloud.sun";case .subject:return "person.crop.rectangle";case .background:return "rectangle.dashed";case .brush:return "paintbrush.pointed";case .linear:return "line.diagonal";case .radial:return "circle.dotted";case .luminance:return "sun.max"}}
+    static var learnable:[Self]{[.sky,.subject,.background,.person,.face,.eyes,.lips]}
+    var canLearn:Bool{Self.learnable.contains(self)}
+    var symbol:String{switch self{case .sky:return "cloud.sun";case .subject:return "person.crop.rectangle";case .background:return "rectangle.dashed";case .person:return "person.fill";case .face:return "face.smiling";case .eyes:return "eye";case .lips:return "mouth";case .brush:return "paintbrush.pointed";case .linear:return "line.diagonal";case .radial:return "circle.dotted";case .luminance:return "sun.max"}}
 }
 struct MaskPoint:Codable,Equatable{var x:Double;var y:Double}
 struct MaskStroke:Codable,Equatable,Identifiable{
@@ -29,6 +31,8 @@ struct LocalGrade:Codable,Equatable{
     var sharpness=0.0
     var preset:String?=nil
     var presetStrength=0.8
+    var noiseReduction:Double?=nil
+    var smoothing:Double?=nil
 }
 struct PhotoMaskLayer:Codable,Identifiable,Equatable{
     var id=UUID()
@@ -125,7 +129,7 @@ enum SemanticMaskEngine{
         let cacheKey=(key+"#"+canonical.rawValue) as NSString
         if let saved=cache.object(forKey:cacheKey){return saved}
         let mask:CIImage
-        if canonical == .sky{mask=try sky(image)}else{mask=try subject(image)}
+        if canonical == .sky{mask=try sky(image)}else if canonical == .subject{mask=try subject(image)}else{mask=try PortraitSemanticMasks.mask(image,kind:canonical)}
         // Store a concrete bitmap, not a graph that retains original images.
         guard let cg=context.createCGImage(mask,from:mask.extent) else{throw PhotoMaskError.invalidOutput}
         let result=CIImage(cgImage:cg)
@@ -142,7 +146,7 @@ enum SemanticMaskEngine{
         let rect=CGRect(x:0,y:0,width:w,height:h),short=min(rect.width,rect.height)
         var base:CIImage
         switch layer.kind{
-        case .sky,.subject,.background:
+        case .sky,.subject,.background,.person,.face,.eyes,.lips:
             base=fit(try rawSemantic(original,kind:layer.kind,key:key),to:rect)
             if let model=layer.learnedCorrection{base=MaskCorrectionPixels.refine(image:scaled,base:base,model:model)}
             if layer.threshold != 0.5{
@@ -190,6 +194,8 @@ enum SemanticMaskEngine{
         if g.highlights != 0 || g.shadows != 0{image=image.applyingFilter("CIHighlightShadowAdjust",parameters:["inputHighlightAmount":1+g.highlights,"inputShadowAmount":g.shadows])}
         if g.clarity != 0{image=image.applyingFilter("CIUnsharpMask",parameters:[kCIInputRadiusKey:8,kCIInputIntensityKey:g.clarity])}
         if g.dehaze != 0{image=image.applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:1+g.dehaze*0.25,kCIInputSaturationKey:1+g.dehaze*0.15])}
+        if let n=g.noiseReduction,n>0{image=image.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":n*0.10,"inputSharpness":0.4])}
+        if let n=g.smoothing,n>0{let soft=image.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":n*0.08,"inputSharpness":0.1]);let matte=CIImage(color:CIColor(red:n,green:n,blue:n,alpha:1)).cropped(to:input.extent);image=soft.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:matte]).cropped(to:input.extent)}
         if g.sharpness>0{image=image.applyingFilter("CISharpenLuminance",parameters:[kCIInputSharpnessKey:g.sharpness])}
         return image
     }

@@ -89,7 +89,7 @@ struct PhotoMaskStudio:View{
             Toggle("Học từ vùng sửa đã xác nhận",isOn:$skill.enabled)
             if skill.enabled{
                 Toggle("Dùng nét cọ lần này để dạy AI",isOn:$teach).font(.caption)
-                ForEach([PhotoMaskKind.sky,.subject,.background]){kind in
+                ForEach(PhotoMaskKind.learnable){kind in
                     let count=skill.profile.examples.filter{$0.kind==kind}.count
                     HStack{Text(kind.rawValue);Spacer();Text("\(count) ảnh đã sửa").monospacedDigit();if skill.model(kind) != nil{Image(systemName:"checkmark.seal.fill").foregroundStyle(.green)}}
                         .font(.caption)
@@ -107,7 +107,7 @@ struct PhotoMaskStudio:View{
         let final=document
         var docs=recipe.masking ?? [];docs.removeAll{$0.source==final.source};if !final.layers.isEmpty{docs.append(final)};recipe.masking=docs.isEmpty ? nil:docs
         let changed=final.layers.filter{layer in
-            guard [.sky,.subject,.background].contains(layer.kind),layer.enabled,!layer.inverted,!layer.strokes.isEmpty else{return false}
+            guard layer.kind.canLearn,layer.enabled,!layer.inverted,!layer.strokes.isEmpty else{return false}
             return originalDocument.layers.first(where:{$0.id==layer.id})?.strokes != layer.strokes
         }
         guard skill.enabled,teach,!changed.isEmpty else{dismiss();return}
@@ -147,13 +147,13 @@ struct PhotoMaskStudio:View{
         VStack(alignment:.leading,spacing:10){
             TextField("Tên mặt nạ",text:$document.layers[i].name).textFieldStyle(.roundedBorder)
             Toggle("Đảo vùng chọn",isOn:$document.layers[i].inverted)
-            if [.sky,.subject,.background].contains(document.layers[i].kind){
+            if document.layers[i].kind.canLearn{
                 if document.layers[i].learnedCorrection != nil{Button("So sánh: dùng AI gốc"){checkpoint();document.layers[i].learnedCorrection=nil}}
                 else if let model=skill.model(document.layers[i].kind){Button("Dùng AI đã học"){checkpoint();document.layers[i].learnedCorrection=model}}
             }
             control("Cường độ vùng",value:$document.layers[i].strength,range:0...1)
             control("Làm mềm viền",value:$document.layers[i].feather,range:0...0.05)
-            if [.sky,.subject,.background,.luminance].contains(document.layers[i].kind){
+            if document.layers[i].kind.canLearn || document.layers[i].kind == .luminance{
                 control("Ngưỡng chọn vùng",value:$document.layers[i].threshold,range:0.15...0.85)
             }
             if [.linear,.radial].contains(document.layers[i].kind){
@@ -194,6 +194,8 @@ struct PhotoMaskStudio:View{
             control("Clarity",value:$document.layers[i].grade.clarity,range:0...1)
             control("Giảm mù (tương phản/màu)",value:$document.layers[i].grade.dehaze,range:-1...1)
             control("Độ nét",value:$document.layers[i].grade.sharpness,range:0...1)
+            control("Khử nhiễu cục bộ",value:Binding(get:{document.layers[i].grade.noiseReduction ?? 0},set:{document.layers[i].grade.noiseReduction=$0}),range:0...1)
+            control("Làm mềm chi tiết",value:Binding(get:{document.layers[i].grade.smoothing ?? 0},set:{document.layers[i].grade.smoothing=$0}),range:0...1)
             Button("Đặt lại thông số vùng"){checkpoint();document.layers[i].grade=LocalGrade()}
         }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
     }

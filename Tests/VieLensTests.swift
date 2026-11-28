@@ -484,4 +484,23 @@ final class VieLensTests:XCTestCase {
         XCTAssertGreaterThan(average(raised),average(base)+0.1)
         XCTAssertLessThan(average(lowered),average(base)-0.1)
     }
+    func testAdaptiveEditingRegressorAndCompositionLearning()throws{
+        let f=EditingFeatures(brightness:0.4,contrast:0.16,dark:0.1,bright:0.01,saturation:0.22,edge:0.1,aspect:1.5)
+        let base=LearnedEditParameter.exposure.value(f.baseline())
+        let examples=(0..<6).map{_ in (f,base+0.45)}
+        let model=try XCTUnwrap(EditSkillRegressor.validated(examples,parameter:.exposure))
+        XCTAssertLessThan(model.heldOutError,model.baselineError)
+        XCTAssertGreaterThan(model.predict(f,.exposure),base)
+        XCTAssertNil(EditSkillRegressor.validated(Array(examples.prefix(2)),parameter:.exposure))
+        var recipe=CreativeRecipe();recipe.crop="4:5"
+        var light=LightMockupRecipe();light.textureID="window";light.x=0.7;recipe.lighting=light
+        let sample=TasteSample(photo:UUID(),context:TasteContext(scene:.portrait,brightness:0.4,features:f),recipe:recipe,source:"test")
+        XCTAssertEqual(sample.compositionCrop,"4:5")
+        XCTAssertEqual(sample.lightStyle?.x,0)
+        XCTAssertNil(sample.global.lighting)
+        XCTAssertTrue(PhotoMaskKind.eyes.canLearn)
+        XCTAssertTrue(PhotoMaskKind.person.canLearn)
+        XCTAssertFalse(PhotoMaskKind.brush.canLearn)
+        XCTAssertEqual(try JSONDecoder().decode(TasteSample.self,from:JSONEncoder().encode(sample)),sample)
+    }
 }

@@ -24,6 +24,7 @@ enum TasteScene:String,CaseIterable,Codable,Identifiable{
 struct TasteContext:Codable,Equatable{
     let scene:TasteScene
     let brightness:Double
+    var features:EditingFeatures?=nil
     static func analyze(_ url:URL,override:TasteScene)->Self?{
         guard let bytes=try? Data(contentsOf:url,options:.mappedIfSafe),let image=PhotoEngine.thumb(bytes,limit:640) else{return nil}
         var scene=override
@@ -38,7 +39,7 @@ struct TasteContext:Codable,Equatable{
             ctx.draw(image,in:CGRect(x:0,y:0,width:48,height:48));return true
         }
         guard ok else{return nil}
-        return Self(scene:scene,brightness:pixels.reduce(0.0){$0+Double($1)}/Double(pixels.count)/255)
+        return Self(scene:scene,brightness:pixels.reduce(0.0){$0+Double($1)}/Double(pixels.count)/255,features:EditingFeatures.analyze(image))
     }
 }
 struct TasteRegion:Codable,Equatable{
@@ -54,19 +55,23 @@ struct TasteSample:Codable,Equatable,Identifiable{
     let context:TasteContext
     let global:CreativeRecipe
     let regions:[TasteRegion]
+    var compositionCrop:String?=nil
+    var lightStyle:LightMockupRecipe?=nil
     init(photo:UUID,date:Date=Date(),context:TasteContext,recipe:CreativeRecipe,source:String){
         self.photo=photo;self.date=date;self.context=context
         var clean=recipe
         clean.masking=nil;clean.lighting=nil;clean.crop="Gốc";clean.rotation=nil;clean.mirror=nil
         global=clean
+        compositionCrop=recipe.crop
+        if var light=recipe.lighting,light.textureID != nil,light.sceneID==nil,light.customTexture==nil{light.x=0;light.y=0;light.angle=0;light.mirror=false;light.customName=nil;lightStyle=light}
         // Never retain replacement images, brush paths, object coordinates or source paths.
         let layers=recipe.masking?.first(where:{$0.source==source})?.layers ?? []
-        regions=[PhotoMaskKind.sky,.subject,.background].compactMap{kind in
+        regions=PhotoMaskKind.learnable.compactMap{kind in
             guard let layer=layers.last(where:{$0.kind==kind && $0.enabled && !$0.inverted && $0.replacement==nil && $0.strength>0}) else{return nil}
             return TasteRegion(kind:kind,grade:layer.grade,strength:layer.strength,feather:layer.feather)
         }
     }
-    func sameEdit(as other:Self)->Bool{photo==other.photo && context==other.context && global==other.global && regions==other.regions}
+    func sameEdit(as other:Self)->Bool{photo==other.photo && context==other.context && global==other.global && regions==other.regions && compositionCrop==other.compositionCrop && lightStyle==other.lightStyle}
 }
 struct TasteSuggestion{
     let context:TasteContext
@@ -127,7 +132,7 @@ struct TasteProfile:Codable,Equatable{
         r.vibrance=mean{$0.global.vibrance ?? 0};r.sharpness=mean{$0.global.sharpness ?? 0};r.noise=mean{$0.global.noise ?? 0};r.vignette=mean{$0.global.vignette ?? 0}
         r.premiumStrength=mean{$0.global.premiumStrength ?? 0.8}
         // A region must have at least two examples; use the closest example's local grade.
-        let regions:[TasteRegion]=[PhotoMaskKind.sky,.subject,.background].compactMap{kind in
+        let regions:[TasteRegion]=PhotoMaskKind.learnable.compactMap{kind in
             let values=group.compactMap{$0.regions.first(where:{$0.kind==kind})}
             guard values.count>=2 else{return nil}
             return values.first
@@ -183,7 +188,7 @@ struct PhotoTastePanel:View{
                 Text(candidate.context.scene.rawValue+" · \(candidate.count) ảnh tương đồng").font(.caption.weight(.semibold)).foregroundStyle(gold)
                 Text(candidate.global.premiumID.flatMap{PremiumPresets.find($0)?.name} ?? "Thông số màu cá nhân").font(.headline)
                 if !verified.isEmpty{Toggle("Tạo lại vùng AI tương ứng",isOn:$local);Text(verified.map{$0.kind.rawValue}.joined(separator:", ")).font(.caption)}
-                Button("Áp dụng đề xuất"){recipe=candidate.applying(to:recipe,source:SemanticMaskEngine.sourceKey(url),verified:local ? verified:[]);notice="Đã áp dụng. Bạn vẫn có thể chỉnh sửa trước khi lưu.";self.candidate=nil}.buttonStyle(.borderedProminent).disabled(!store.enabled)
+                Button("Áp dụng đề xuất"){var next=candidate.applying(to:recipe,source:SemanticMaskEngine.sourceKey(url),verified:local ? verified:[]);let key=SemanticMaskEngine.sourceKey(url);if let i=next.masking?.firstIndex(where:{$0.source==key}){for j in next.masking![i].layers.indices where next.masking![i].layers[j].name.hasPrefix("Gu AI · ") && next.masking![i].layers[j].learnedCorrection==nil{next.masking![i].layers[j].learnedCorrection=MaskSkillStore.shared.model(next.masking![i].layers[j].kind)}};recipe=next;notice="Đã áp dụng. Bạn vẫn có thể chỉnh sửa trước khi lưu.";self.candidate=nil}.buttonStyle(.borderedProminent).disabled(!store.enabled)
             }
             if !notice.isEmpty{Text(notice).font(.caption)}
             if !store.issue.isEmpty{Text(store.issue).font(.caption).foregroundStyle(.orange)}

@@ -119,6 +119,7 @@ struct CreativeStudio:View {
     @State private var originalPreview=false
     @State private var showPremium=true
     @State private var showTaste=true
+    @State private var showWorkflow=true
     @State private var tasteScene=TasteScene.auto
     @ObservedObject private var taste=PhotoTasteStore.shared
     @State private var showLighting=false
@@ -138,6 +139,9 @@ struct CreativeStudio:View {
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
                 if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng.").font(.caption).foregroundStyle(.orange)}
                 if let current{
+                    DisclosureGroup("Adaptive AI · Quy trình hậu kỳ",isExpanded:$showWorkflow){AdaptiveWorkflowPanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:tasteScene,taste:taste).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                }
+                if let current{
                     DisclosureGroup("Personal Style AI · Gu màu của tôi",isExpanded:$showTaste){
                         PhotoTastePanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:$tasteScene,store:taste).padding(.top,8)
                     }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
@@ -149,7 +153,7 @@ struct CreativeStudio:View {
                     Button{showMaskStudio=true}label:{
                         HStack(spacing:12){
                             Image(systemName:"circle.dotted.circle.fill").font(.title2).foregroundStyle(gold)
-                            VStack(alignment:.leading,spacing:4){Text("Masking Studio").font(.headline);Text(layers==0 ? "Bầu trời, chủ thể, nền · chỉnh riêng từng vùng":"\(layers) mặt nạ trên ảnh này").font(.caption).foregroundStyle(.secondary)}
+                            VStack(alignment:.leading,spacing:4){Text("Masking Studio").font(.headline);Text(layers==0 ? "Bầu trời, người, mắt, môi, nền · chỉnh riêng vùng":"\(layers) mặt nạ trên ảnh này").font(.caption).foregroundStyle(.secondary)}
                             Spacer();Image(systemName:"chevron.right").font(.caption)
                         }.padding(12).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12))
                     }.buttonStyle(.plain)
