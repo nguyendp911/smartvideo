@@ -28,7 +28,7 @@ struct MaskCorrectionModel:Codable,Equatable{
     static func logit(_ p:Double)->Double{let q=clamp(p,0.025,0.975);return log(q/(1-q))}
     static func sigmoid(_ x:Double)->Double{1/(1+exp(-clamp(x,-20,20)))}
     func probability(_ point:MaskTrainingPoint)->Double{
-        guard weights.count==Self.dimension,point.features.count==Self.dimension-1 else{return point.prior}
+        guard weights.count==Self.dimension,weights.allSatisfy(\.isFinite),point.features.count==Self.dimension-1 else{return point.prior}
         let delta=zip(weights,Self.vector(point.features)).reduce(0.0){$0+$1.0*$1.1}
         // Leave confident pixels mostly intact; avoid unconstrained recoloring of the whole mask.
         let gate=0.25+0.75*(1-abs(2*point.prior-1))
@@ -36,7 +36,7 @@ struct MaskCorrectionModel:Codable,Equatable{
         return Self.clamp(point.prior+Self.sigmoid(prior+Self.clamp(delta,-2.5,2.5)*gate)-Self.sigmoid(prior),0,1)
     }
     static func fit(_ examples:[MaskTrainingExample])->Self?{
-        let points=examples.flatMap(\.points)
+        let points=examples.flatMap(\.points).filter{$0.features.count==dimension-1 && $0.features.allSatisfy(\.isFinite)}
         guard points.count>=12,points.contains(where:{$0.positive}),points.contains(where:{!$0.positive}) else{return nil}
         var w=Array(repeating:0.0,count:dimension)
         let positives=Double(points.filter(\.positive).count),negatives=Double(points.count)-positives

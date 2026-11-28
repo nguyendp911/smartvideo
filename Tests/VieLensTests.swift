@@ -464,4 +464,24 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(labels[79*100+60],1)
         XCTAssertEqual(labels[10],-1)
     }
+    func testLearnedCorrectionChangesActualMaskPixels(){
+        let rect=CGRect(x:0,y:0,width:32,height:32)
+        let source=CIImage(color:CIColor(red:0.3,green:0.5,blue:0.7)).cropped(to:rect)
+        let data=Array(repeating:Float(0.5),count:32*32*4).enumerated().map{$0.offset%4==3 ? Float(1):$0.element}
+        let bytes=data.withUnsafeBytes{Data($0)}
+        let base=CIImage(bitmapData:bytes,bytesPerRow:32*16,size:rect.size,format:.RGBAf,colorSpace:nil)
+        func average(_ image:CIImage)->Float{
+            var value=[Float](repeating:0,count:4)
+            let pixel=CGRect(x:16,y:16,width:1,height:1)
+            value.withUnsafeMutableBytes{p in SemanticMaskEngine.context.render(image,toBitmap:p.baseAddress!,rowBytes:16,bounds:pixel,format:.RGBAf,colorSpace:nil)}
+            return value[0]
+        }
+        let up=MaskCorrectionModel(weights:[2]+Array(repeating:0,count:11),imageCount:3,baselineLoss:1,validationLoss:0.8)
+        let down=MaskCorrectionModel(weights:[-2]+Array(repeating:0,count:11),imageCount:3,baselineLoss:1,validationLoss:0.8)
+        let raised=MaskCorrectionPixels.refine(image:source,base:base,model:up)
+        let lowered=MaskCorrectionPixels.refine(image:source,base:base,model:down)
+        XCTAssertEqual(raised.extent,rect)
+        XCTAssertGreaterThan(average(raised),average(base)+0.1)
+        XCTAssertLessThan(average(lowered),average(base)-0.1)
+    }
 }

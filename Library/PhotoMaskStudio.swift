@@ -106,13 +106,13 @@ struct PhotoMaskStudio:View{
     private func applyAndLearn(){
         let final=document
         var docs=recipe.masking ?? [];docs.removeAll{$0.source==final.source};if !final.layers.isEmpty{docs.append(final)};recipe.masking=docs.isEmpty ? nil:docs
-        let changed=final.layers.contains{layer in
+        let changed=final.layers.filter{layer in
             guard [.sky,.subject,.background].contains(layer.kind),layer.enabled,!layer.inverted,!layer.strokes.isEmpty else{return false}
             return originalDocument.layers.first(where:{$0.id==layer.id})?.strokes != layer.strokes
         }
-        guard skill.enabled,teach,changed else{dismiss();return}
+        guard skill.enabled,teach,!changed.isEmpty else{dismiss();return}
         training=true
-        Task{await skill.learn(url:url,document:final);training=false;dismiss()}
+        Task{await skill.learn(url:url,document:PhotoMaskDocument(source:final.source,layers:changed));training=false;dismiss()}
     }
     private struct PreviewKey:Equatable{let document:PhotoMaskDocument;let selected:UUID?;let overlay:Bool}
     private var previewPanel:some View{
