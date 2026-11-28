@@ -592,4 +592,24 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(point.prior,0.5)
         XCTAssertEqual(MaskCorrectionModel.loss([point],model:nil),0)
     }
+    func testMasterChromaAndDirectionalLightPixels(){
+        let rect=CGRect(x:0,y:0,width:8,height:8)
+        func constant(_ r:Double,_ g:Double,_ b:Double)->CIImage{CIImage(color:CIColor(red:r,green:g,blue:b)).cropped(to:rect)}
+        func pixel(_ im:CIImage)->[Float]{
+            var bytes=[Float](repeating:0,count:4)
+            bytes.withUnsafeMutableBytes{p in SemanticMaskEngine.context.render(im,toBitmap:p.baseAddress!,rowBytes:16,bounds:CGRect(x:3,y:3,width:1,height:1),format:.RGBAf,colorSpace:nil)}
+            return bytes
+        }
+        let original=constant(0.65,0.35,0.20),edited=constant(0.75,0.24,0.09)
+        let old=pixel(original),before=pixel(edited)
+        let protected=pixel(MasterImageQuality.preserveChroma(original:original,graded:edited,amount:0.6))
+        XCTAssertLessThan(abs((protected[0]-protected[2])-(old[0]-old[2])),abs((before[0]-before[2])-(old[0]-old[2])))
+        XCTAssertEqual(protected[3],1,accuracy:0.001)
+        let mid=constant(0.35,0.35,0.35),high=constant(0.92,0.92,0.92),white=constant(1,1,1)
+        let m=pixel(mid)[0],h=pixel(high)[0]
+        let m2=pixel(LightMockupEngine.restrainedLight(mid,white,amount:1))[0],h2=pixel(LightMockupEngine.restrainedLight(high,white,amount:1))[0]
+        XCTAssertGreaterThan(m2,m)
+        XCTAssertLessThan(h2-h,m2-m)
+        XCTAssertLessThanOrEqual(h2,1.001)
+    }
 }

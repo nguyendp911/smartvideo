@@ -22,7 +22,11 @@ enum MasterImageQuality{
                          (1.0-smoothstep(0.48,0.80,chroma));
             float neutral = (1.0-smoothstep(0.015,0.09,chroma)) *
                             smoothstep(0.30,0.85,ya);
-            vec3 restored = vec3(y)+(a-vec3(ya));
+            vec3 chromaSource = a-vec3(ya);
+            float peak = max(chromaSource.r,max(chromaSource.g,chromaSource.b));
+            float trough = min(chromaSource.r,min(chromaSource.g,chromaSource.b));
+            float room = min(1.0,min(max(0.0,1.0-y)/max(0.0001,peak),max(0.0,y)/max(0.0001,-trough)));
+            vec3 restored = vec3(y)+chromaSource*room;
             float amount = max(skin*protection,neutral*protection*0.65);
             return vec4(mix(b,restored,amount),graded.a);
         }

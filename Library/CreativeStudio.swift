@@ -40,6 +40,8 @@ enum CreativeEngine {
     static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool,thumbnailOnly:Bool=false)->Data?{
         guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
               let full=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]),maxSize>0 else{return nil}
+        let bounds=full.extent
+        guard bounds.width.isFinite,bounds.height.isFinite,bounds.width>0,bounds.height>0,bounds.width*bounds.height<=70_000_000 else{return nil}
         let image:CIImage
         if thumbnailOnly,recipe.masking==nil,recipe.lighting==nil,recipe.crop=="Gốc",let cg=CGImageSourceCreateThumbnailAtIndex(source,0,[kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:max(1,maxSize*2)] as CFDictionary){image=CIImage(cgImage:cg)}else{image=full}
         let initial=PremiumColorEngine.apply(image,id:recipe.premiumID,strength:recipe.premiumStrength ?? 0.8)
@@ -75,7 +77,10 @@ enum CreativeEngine {
         guard rect.width>0,rect.height>0,rect.width*rect.height<=70_000_000 else{return nil}
         if recipe.crop != "Gốc" {
             let ratio:CGFloat=recipe.crop=="1:1" ? 1 : recipe.crop=="4:5" ? 0.8:recipe.crop=="9:16" ? 9/16:recipe.crop=="3:2" ? 3/2:16/9
-            result=result.cropped(to:(recipe.compositionAnchor ?? CompositionAnchor()).rect(in:rect,ratio:ratio))
+            let crop=(recipe.compositionAnchor ?? CompositionAnchor()).rect(in:rect,ratio:ratio)
+            let inside=CGRect(x:ceil(crop.minX),y:ceil(crop.minY),width:floor(crop.maxX)-ceil(crop.minX),height:floor(crop.maxY)-ceil(crop.minY))
+            guard inside.width>0,inside.height>0 else{return nil}
+            result=result.cropped(to:inside)
         }
         result=MasterImageQuality.downsample(result,maxSize:maxSize)
         guard let cg=context.createCGImage(result,from:result.extent.integral,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!) else{return nil}

@@ -154,6 +154,22 @@ enum LightAssets{
 }
 enum LightMockupEngine{
     private static let context=CIContext(options:[.cacheIntermediates:false])
+    private static let lightKernel=CIColorKernel(source:"""
+        kernel vec4 directionalLight(__sample base, __sample illumination, float amount) {
+            vec3 c=base.rgb;
+            vec3 light=clamp(illumination.rgb,0.0,1.0);
+            float y=dot(c,vec3(0.2126,0.7152,0.0722));
+            float shoulder=1.0-smoothstep(0.55,1.0,y);
+            vec3 gain=c*light*(amount*0.85*shoulder);
+            return vec4(c+gain,base.a);
+        }
+        """)
+    static func restrainedLight(_ base:CIImage,_ illumination:CIImage,amount:Double)->CIImage{
+        guard amount>0 else{return base}
+        if let kernel=lightKernel,let result=kernel.apply(extent:base.extent,arguments:[base,illumination,Float(unit(amount))]){return result}
+        let lit=illumination.applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base])
+        return mixed(lit,base,amount:amount*0.35,rect:base.extent)
+    }
     private static func unit(_ x:Double)->Double{max(0,min(1,x))}
     private static func cover(_ source:CIImage,rect:CGRect,zoom:Double,x:Double,y:Double,angle:Double=0,mirror:Bool=false)->CIImage{
         let box=source.extent
@@ -291,7 +307,7 @@ enum LightMockupEngine{
             if r.blend == .screen,r.preserveLightColor==true{return mixed(backed(0).applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base]),base,amount:amount,rect:rect)}
             let layer=backed(0).applyingFilter("CIColorMatrix",parameters:[
                 "inputRVector":CIVector(x:red,y:0,z:0,w:0),"inputGVector":CIVector(x:0,y:0.62,z:0,w:0),"inputBVector":CIVector(x:0,y:0,z:blue,w:0)])
-            return mixed(layer.applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base]),base,amount:amount,rect:rect)
+            return restrainedLight(base,layer,amount:amount)
         }
         let lit:CIImage
         switch r.blend{
