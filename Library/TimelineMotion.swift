@@ -199,7 +199,9 @@ struct TimelineStoryTree:View{
         Button{play(group.items)}label:{Label("Phát chương · \(group.items.count) ảnh",systemImage:"play.circle").font(.caption2.weight(.medium)).foregroundStyle(vine.bloom).padding(.vertical,4)}
             .buttonStyle(.plain).disabled(group.items.isEmpty)
     }
-    private func rail(_ level:Int,key:String)->some View{VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true,branchKey:key,continuous:true,trunkTheme:vine)}
+    private func rail(_ level:Int,key:String)->some View{
+        let richness:Double=level==2 ? min(1.0,Double(MemoryDNA.day(key,shots:shots,archive:archive,life:life).creatures.count)/8):0
+        return VineRail(level:level,theme:seasonal ? GardenBackground.season(key,fallback:vine):vine,density:density,curvature:curvature,node:VineNode(rawValue:nodeValue) ?? .natural,useCustom:!seasonal,growth:VineGrowth(days:life.gardenDays),specialBloom:!life.milestones(key).isEmpty || archive.entry("period:"+key)?.hasContent == true,branchKey:key,continuous:true,trunkTheme:vine,memoryRichness:richness)}
     private func storyButton(_ target:StoryTarget)->some View{
         let entry=archive.entry(target.id)
         return Button{

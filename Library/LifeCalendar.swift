@@ -4,6 +4,7 @@ enum LifeCalendarMode:String,CaseIterable{case photo="Ảnh",mood="Cảm xúc",h
 struct LifeCalendar:View{
     let shots:[Shot]
     let vault:Vault
+    var gardenID:UUID?=nil
     let select:(String)->Void
     @ObservedObject private var stories=StoryArchive.shared
     @ObservedObject private var life=LifeArchive.shared
@@ -21,7 +22,13 @@ struct LifeCalendar:View{
     @State private var jump=false
     private var grouped:[String:[Shot]]{Dictionary(grouping:shots.filter{$0.deleted==nil},by:\.day)}
     private var items:[Shot]{grouped[day] ?? []}
-    private var selectedTarget:StoryTarget{MemorySync.target(day:day,shots:shots)}
+    private func storyID(_ key:String)->String{gardenID.map{"garden:"+$0.uuidString+":"+key} ?? "period:"+key}
+    private var selectedTarget:StoryTarget{StoryTarget(id:storyID(day),label:TimelineIndex.label(day),shots:items)}
+    private var activeDays:Set<String>{
+        guard let gardenID else{return MemorySync.activeDays(shots:shots,stories:stories,life:life)}
+        let prefix="garden:"+gardenID.uuidString+":"
+        return Set(grouped.keys).union(stories.entries.keys.filter{$0.hasPrefix(prefix) && $0.count==prefix.count+10}.map{String($0.dropFirst(prefix.count))}).union(life.data.milestones.filter{$0.gardenID==gardenID}.map(\.date))
+    }
     private var current:StoryEntry?{stories.entry(selectedTarget.id)}
     var body:some View{
         NavigationStack{
@@ -32,12 +39,13 @@ struct LifeCalendar:View{
                     calendarGrid
                     HStack{
                         let prefix=String(LifeDate.key(month).prefix(7))
-                        let days=MemorySync.activeDays(shots:shots,stories:stories,life:life).filter{$0.hasPrefix(prefix)}
+                        let days=activeDays.filter{$0.hasPrefix(prefix)}
                         Text("\(days.count) ngày có ký ức").font(.caption).foregroundStyle(.secondary)
                         Spacer()
                         Button("Hôm nay"){month=Date();day=LifeDate.key(Date())}.font(.caption)
                     }
                     dayPanel
+                    if gardenID==nil{
                     CalendarExtras(day:day,shots:shots,vault:vault)
                     GroupBox("Nhìn lại"){
                         VStack(alignment:.leading,spacing:12){
@@ -46,11 +54,12 @@ struct LifeCalendar:View{
                             Button("Thư tương lai",systemImage:"envelope"){showLetters=true}
                         }.frame(maxWidth:.infinity,alignment:.leading)
                     }
+                    }
                 }.padding(14)
-            }.navigationTitle("Lịch ký ức").navigationBarTitleDisplayMode(.inline).toolbar{Button("Xong"){dismiss()}}
+            }.navigationTitle(gardenID==nil ? "Lịch ký ức":"Lịch riêng khu vườn").navigationBarTitleDisplayMode(.inline).toolbar{Button("Xong"){dismiss()}}
         }.sheet(item:$target){LifeStorySheet(target:$0,vault:vault,archive:stories)}
-        .sheet(isPresented:$milestone){LifeMilestoneEditor(day:day,life:life)}
-        .sheet(item:$editMilestone){LifeMilestoneEditor(day:day,life:life,existing:$0)}
+        .sheet(isPresented:$milestone){LifeMilestoneEditor(day:day,life:life,gardenID:gardenID)}
+        .sheet(item:$editMilestone){LifeMilestoneEditor(day:day,life:life,existing:$0,gardenID:gardenID)}
         .sheet(isPresented:$showLetters){FutureLetterStudio(life:life)}
         .sheet(item:$reflection){LifeReflection(range:$0,shots:shots,vault:vault)}
         .fullScreenCover(isPresented:$showSlide){ArchiveSlideshow(shots:items,vault:vault)}
@@ -80,7 +89,7 @@ struct LifeCalendar:View{
             ForEach(["T2","T3","T4","T5","T6","T7","CN"],id:\.self){Text($0).font(.caption2).foregroundStyle(.secondary)}
             ForEach(cells.indices,id:\.self){index in
                 if let date=cells[index]{
-                    let key=LifeDate.key(date),items=groups[key] ?? [],entry=stories.entry("period:"+key)
+                    let key=LifeDate.key(date),items=groups[key] ?? [],entry=stories.entry(storyID(key))
                     Button{withAnimation(.easeInOut(duration:0.18)){day=key}}label:{
                         calendarCell(date:date,key:key,items:items,entry:entry,peak:count)
                     }.buttonStyle(.plain).accessibilityLabel("\(TimelineIndex.label(key)), \(items.count) ảnh, \(entry?.mood?.rawValue ?? "")")
@@ -89,7 +98,7 @@ struct LifeCalendar:View{
         }
     }
     private func calendarCell(date:Date,key:String,items:[Shot],entry:StoryEntry?,peak:Int)->some View{
-        let milestones=life.milestones(key)
+        let milestones=life.milestones(key,gardenID:gardenID)
         return ZStack{
             RoundedRectangle(cornerRadius:8).fill(.white.opacity(0.045))
             if mode == .photo,let cover=MemorySync.cover(items,entry:entry){
@@ -113,7 +122,7 @@ struct LifeCalendar:View{
             HStack{
                 VStack(alignment:.leading,spacing:4){
                     Text(TimelineIndex.label(day)).font(.system(.title2,design:.serif))
-                    Text("\(items.count) ảnh · \(life.milestones(day).count) cột mốc").font(.caption).foregroundStyle(.secondary)
+                    Text("\(items.count) ảnh · \(life.milestones(day,gardenID:gardenID).count) cột mốc").font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button{milestone=true}label:{Image(systemName:"star.circle").font(.title2)}.accessibilityLabel("Thêm cột mốc")
@@ -124,12 +133,12 @@ struct LifeCalendar:View{
             }
             if !items.isEmpty{
                 ScrollView(.horizontal,showsIndicators:false){LazyHStack(spacing:6){ForEach(items){shot in
-                    Button{target = .photo(shot)}label:{DiskImage(url:vault.thumbnail(shot.id),limit:240).scaledToFill().frame(width:72,height:72).clipped().clipShape(RoundedRectangle(cornerRadius:8))}.buttonStyle(.plain)
+                    Button{if let gardenID{target=StoryTarget(id:"garden:"+gardenID.uuidString+":photo:"+shot.id.uuidString,label:TimelineIndex.label(shot.day),shots:[shot])}else{target = .photo(shot)}}label:{DiskImage(url:vault.thumbnail(shot.id),limit:240).scaledToFill().frame(width:72,height:72).clipped().clipShape(RoundedRectangle(cornerRadius:8))}.buttonStyle(.plain)
                         .contextMenu{Button("Đặt ảnh nổi bật"){do{try MemorySync.setCover(shot,target:selectedTarget,archive:stories)}catch{notice=error.localizedDescription}}}
                 }}}
                 Button("Phát slide",systemImage:"play.circle"){showSlide=true}.font(.caption)
             }
-            if !items.isEmpty || current != nil || !life.milestones(day).isEmpty{Button("Mở Timeline ngày này",systemImage:"leaf"){select(day)}.font(.caption)}
+            if !items.isEmpty || current != nil || !life.milestones(day,gardenID:gardenID).isEmpty{Button("Mở Timeline ngày này",systemImage:"leaf"){select(day)}.font(.caption)}
             Button{target=selectedTarget}label:{
                 VStack(alignment:.leading,spacing:6){
                     Label(current?.title.isEmpty == false ? current?.title ?? "Nhật ký":"Nhật ký trong ngày",systemImage:"book.closed").font(.headline)
@@ -138,11 +147,11 @@ struct LifeCalendar:View{
             }.buttonStyle(.plain)
             Text("Cảm xúc hôm nay").font(.caption.weight(.semibold))
             ScrollView(.horizontal,showsIndicators:false){HStack{ForEach(StoryMood.allCases,id:\.self){mood in
-                Button{do{try MemorySync.setMood(mood,day:day,shots:shots,archive:stories)}catch{notice=error.localizedDescription}}label:{
+                Button{do{try MemorySync.setMood(mood,target:selectedTarget,archive:stories)}catch{notice=error.localizedDescription}}label:{
                     Text(mood.rawValue).font(.caption).padding(8).background(current?.mood==mood ? mood.calendarColor.opacity(0.4):.white.opacity(0.07),in:Capsule())
                 }.buttonStyle(.plain)
             }}}
-            ForEach(life.milestones(day)){item in
+            ForEach(life.milestones(day,gardenID:gardenID)){item in
                 Button{editMilestone=item}label:{HStack{Image(systemName:item.icon).foregroundStyle(gold);VStack(alignment:.leading){Text(item.title);Text(item.note).font(.caption).foregroundStyle(.secondary)};Spacer();Image(systemName:"chevron.right").font(.caption)}}.buttonStyle(.plain)
             }
             if !notice.isEmpty{Text(notice).font(.caption).foregroundStyle(.secondary)}

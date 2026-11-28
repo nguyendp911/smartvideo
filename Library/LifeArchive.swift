@@ -29,6 +29,7 @@ struct LifeMilestone:Codable,Identifiable,Equatable{
     var date:String
     var note:String=""
     var icon:String="star.fill"
+    var gardenID:UUID?=nil
 }
 struct FutureMemoryLetter:Codable,Identifiable,Equatable{
     var id=UUID()
@@ -83,7 +84,7 @@ struct LifePackage:Codable{
         guard !(data.gardenUsageDays ?? []).contains(key) else{return}
         try update{$0.gardenUsageDays=($0.gardenUsageDays ?? []).union([key])}
     }
-    func milestones(_ day:String)->[LifeMilestone]{data.milestones.filter{$0.date==day}}
+    func milestones(_ day:String,gardenID:UUID?=nil)->[LifeMilestone]{data.milestones.filter{$0.date==day && $0.gardenID==gardenID}}
     func exportData()throws->Data{guard issue==nil else{throw CameraError.unreadable};return try JSONEncoder().encode(data)}
     func merge(_ bytes:Data)throws{
         let incoming=try JSONDecoder().decode(LifePackage.self,from:bytes)
@@ -119,14 +120,16 @@ struct LifePackage:Codable{
         Set(archive.entries.keys.filter{$0.hasPrefix("period:") && $0.count==17}.map{String($0.dropFirst(7))})
     }
     static func activeDays(shots:[Shot],stories:StoryArchive,life:LifeArchive)->Set<String>{
-        Set(shots.filter{$0.deleted==nil}.map(\.day)).union(storyDays(stories)).union(life.data.milestones.map(\.date))
+        Set(shots.filter{$0.deleted==nil}.map(\.day)).union(storyDays(stories)).union(life.data.milestones.filter{$0.gardenID==nil}.map(\.date))
     }
     static func cover(_ shots:[Shot],entry:StoryEntry?)->Shot?{
         if let id=entry?.cover,let shot=shots.first(where:{$0.id==id}){return shot}
         return shots.max{a,b in a.rating==b.rating ? a.date<b.date:a.rating<b.rating}
     }
     static func setMood(_ mood:StoryMood,day:String,shots:[Shot],archive:StoryArchive)throws{
-        let target=target(day:day,shots:shots)
+        try setMood(mood,target:target(day:day,shots:shots),archive:archive)
+    }
+    static func setMood(_ mood:StoryMood,target:StoryTarget,archive:StoryArchive)throws{
         var value=archive.entry(target.id) ?? StoryEntry(id:target.id)
         value.mood=mood
         var known=Set(value.photoIDs)
@@ -172,6 +175,7 @@ struct LifeMilestoneEditor:View{
     let day:String
     @ObservedObject var life:LifeArchive
     var existing:LifeMilestone?=nil
+    var gardenID:UUID?=nil
     @Environment(\.dismiss) private var dismiss
     @State private var title=""
     @State private var note=""
@@ -191,7 +195,7 @@ struct LifeMilestoneEditor:View{
                 ToolbarItem(placement:.cancellationAction){Button("Đóng"){dismiss()}}
                 ToolbarItem(placement:.confirmationAction){Button("Lưu"){
                     var item=existing ?? LifeMilestone(title:title,date:day)
-                    item.title=title;item.date=LifeDate.key(date);item.note=note;item.icon=icon
+                    item.title=title;item.date=LifeDate.key(date);item.note=note;item.icon=icon;item.gardenID=existing?.gardenID ?? gardenID
                     do{try life.update{p in p.milestones.removeAll{$0.id==item.id};p.milestones.append(item)};dismiss()}catch{notice=error.localizedDescription}
                 }.disabled(title.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty)}
             }

@@ -172,17 +172,18 @@ struct GardenRoom:View{
     @State private var notice=""
     private var garden:PersonalGarden?{life.data.ecosystem?.gardens.first{$0.id==id}}
     private var items:[Shot]{shots.filter{garden?.photos.contains($0.id)==true}}
+    private var dayGroups:[TimelineGroup]{let prefix="garden:"+id.uuidString+":";let groups=Dictionary(grouping:items,by:\.day);let days=Set(groups.keys).union(archive.entries.keys.filter{$0.hasPrefix(prefix) && $0.count==prefix.count+10}.map{String($0.dropFirst(prefix.count))}).union(life.data.milestones.filter{$0.gardenID==id}.map(\.date));return days.sorted(by:>).map{TimelineGroup(key:$0,items:groups[$0] ?? [])}}
     var body:some View{
         NavigationStack{ScrollView{
             if let g=garden{
                 VStack(alignment:.leading,spacing:14){
                     HStack{VineRail(level:2,theme:VineTheme(rawValue:g.theme) ?? .emerald,growth:VineGrowth(days:g.usage.count)).frame(width:70,height:125);VStack(alignment:.leading){Text(g.title).font(.system(.largeTitle,design:.serif));Text(g.kind.rawValue).foregroundStyle(gold);Text("\(g.usage.count) ngày · \(items.count) ảnh").font(.caption)}}
                     Button("Story khu vườn",systemImage:"book.closed"){target=StoryTarget(id:"garden:"+g.id.uuidString,label:g.title,shots:items)}
-                    Button("Lịch ảnh chung",systemImage:"calendar"){calendar=true}
-                    Text("Nhật ký riêng của vườn nằm ở từng ngày bên dưới. Lịch ảnh đọc nhật ký ngày chung.").font(.caption2).foregroundStyle(.secondary)
+                    Button("Lịch & nhật ký riêng",systemImage:"calendar"){calendar=true}
+                    Text("Story, cảm xúc và cột mốc riêng của khu vườn. Ảnh dùng tham chiếu từ thư viện.").font(.caption2).foregroundStyle(.secondary)
                     Button("Trình chiếu",systemImage:"play"){play=true}.disabled(items.isEmpty)
-                    ForEach(TimelineIndex.group(items,period:.day,newest:true)){group in
-                        Button{target=StoryTarget(id:"garden:"+g.id.uuidString+":"+group.key,label:TimelineIndex.label(group.key),shots:group.items)}label:{HStack{DiskImage(url:vault.thumbnail(group.cover.id),limit:220).scaledToFill().frame(width:86,height:76).clipped().clipShape(RoundedRectangle(cornerRadius:10));VStack(alignment:.leading){Text(TimelineIndex.label(group.key));Text("\(group.items.count) ảnh").font(.caption)}}}.buttonStyle(.plain)
+                    ForEach(dayGroups){group in
+                        Button{target=StoryTarget(id:"garden:"+g.id.uuidString+":"+group.key,label:TimelineIndex.label(group.key),shots:group.items)}label:{HStack{if let cover=group.items.first{DiskImage(url:vault.thumbnail(cover.id),limit:220).scaledToFill().frame(width:86,height:76).clipped().clipShape(RoundedRectangle(cornerRadius:10))}else{Image(systemName:"book.closed").frame(width:86,height:76).foregroundStyle(gold)};VStack(alignment:.leading){Text(TimelineIndex.label(group.key));Text("\(group.items.count) ảnh").font(.caption)}}}.buttonStyle(.plain)
                     }
                     Text(notice).font(.caption)
                 }.padding()
@@ -191,7 +192,7 @@ struct GardenRoom:View{
         .task{do{let day=LifeDate.key(Date());if garden?.usage.contains(day)==false{try life.update{p in if let i=p.ecosystem?.gardens.firstIndex(where:{$0.id==id}){p.ecosystem?.gardens[i].usage.insert(day)}}}}catch{notice=error.localizedDescription}}
         .sheet(isPresented:$edit){GardenEditor(shots:shots,vault:vault,existing:garden)}
         .sheet(item:$target){LifeStorySheet(target:$0,vault:vault,archive:archive)}
-        .sheet(isPresented:$calendar){LifeCalendar(shots:items,vault:vault){key in calendar=false;target=MemorySync.target(day:key,shots:items)}}
+        .sheet(isPresented:$calendar){LifeCalendar(shots:items,vault:vault,gardenID:id){key in calendar=false;target=StoryTarget(id:"garden:"+id.uuidString+":"+key,label:TimelineIndex.label(key),shots:items.filter{$0.day==key})}}
         .fullScreenCover(isPresented:$play){ArchiveSlideshow(shots:items,vault:vault)}
     }
 }

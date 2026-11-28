@@ -94,6 +94,7 @@ struct VineRail:View {
     var branchKey="preview"
     var continuous=false
     var trunkTheme:VineTheme?=nil
+    var memoryRichness:Double=0
     @AppStorage("garden.quality") private var quality=GardenRenderQuality.automatic.rawValue
     @Environment(\.gardenLowPower) private var lowPower
     @AppStorage("garden.live") private var live=true
@@ -119,7 +120,7 @@ struct VineRail:View {
         let active=live && !reduced && scene == .active
         let rate=(GardenRenderQuality(rawValue:quality) ?? .automatic).rate(lowPower:lowPower)
         return TimelineView(.animation(minimumInterval:1/min(15,rate),paused:!active)){clock in
-            BotanicalAssetVine(level:level,theme:theme,age:growth ?? VineGrowth(days:365),density:density,curvature:curvature,node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:active ? clock.date.timeIntervalSinceReferenceDate:0,animate:active,speed:speed,glow:glow,customLeaf:useCustom && custom ? leafColor:nil,customStem:useCustom && custom ? stemColor:nil,customBloom:useCustom && custom ? bloomColor:nil,railOffset:offset,trunkTheme:trunkTheme)
+            BotanicalAssetVine(level:level,theme:theme,age:growth ?? VineGrowth(days:365),density:density,curvature:curvature,node:node,special:specialBloom,seed:NaturalSample.seed(branchKey),time:active ? clock.date.timeIntervalSinceReferenceDate:0,animate:active,speed:speed,glow:glow,customLeaf:useCustom && custom ? leafColor:nil,customStem:useCustom && custom ? stemColor:nil,customBloom:useCustom && custom ? bloomColor:nil,railOffset:offset,trunkTheme:trunkTheme,memoryRichness:memoryRichness)
         }
     }
 }

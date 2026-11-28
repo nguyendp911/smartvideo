@@ -20,7 +20,7 @@ private enum LetterCrypt{
         guard SecItemAdd(add as CFDictionary,nil)==errSecSuccess else{throw CameraError.writeFailed}
         return key
     }
-    struct Letter:Codable{let title:String;let text:String;let date:Date}
+    struct Letter:Codable{let title:String;let text:String;let date:Date;var story:StoryEntry?=nil}
     static func save(_ letter:Letter,key:SymmetricKey)throws{
         try FileManager.default.createDirectory(at:folder,withIntermediateDirectories:true,attributes:[.protectionKey:FileProtectionType.complete])
         guard let encrypted=try AES.GCM.seal(JSONEncoder().encode(letter),using:key).combined else{throw CameraError.writeFailed}
@@ -29,6 +29,8 @@ private enum LetterCrypt{
     static func read(_ url:URL,key:SymmetricKey)throws->Letter{try JSONDecoder().decode(Letter.self,from:AES.GCM.open(AES.GCM.SealedBox(combined:Data(contentsOf:url)),using:key))}
 }
 struct SecretLetterView:View{
+    var sourceStory:StoryEntry?=nil
+    @StateObject private var voice=StoryVoice()
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var phase
     @State private var key:SymmetricKey?
@@ -44,6 +46,7 @@ struct SecretLetterView:View{
         NavigationStack{List{
             if let key{
                 Section("Lá thư mới"){
+                    if let sourceStory{Button("Lưu bản sao story mã hóa",systemImage:"lock.doc"){do{try LetterCrypt.save(.init(title:sourceStory.title,text:sourceStory.body,date:Date(),story:sourceStory),key:key);files=LetterCrypt.files();notice="Đã lưu bản sao story gồm nội dung và lời kể. Bản gốc vẫn ở Timeline."}catch{notice=error.localizedDescription}}}
                     TextField("Tiêu đề",text:$title)
                     TextEditor(text:$bodyText).frame(minHeight:130)
                     Button("Niêm phong mã hóa",systemImage:"envelope.fill"){do{try LetterCrypt.save(.init(title:title,text:bodyText,date:Date()),key:key);title="";bodyText="";files=LetterCrypt.files();notice="Đã mã hóa."}catch{notice=error.localizedDescription}}.disabled(title.isEmpty || bodyText.isEmpty)
@@ -52,17 +55,17 @@ struct SecretLetterView:View{
                     ForEach(files,id:\.self){url in
                         Button{do{opened=try LetterCrypt.read(url,key:key)}catch{notice=error.localizedDescription}}label:{Label("Thư "+String(url.deletingPathExtension().lastPathComponent.prefix(8)),systemImage:"lock.doc")}.swipeActions{Button("Xóa",role:.destructive){deleteURL=url}}
                     }
-                    if let opened{VStack(alignment:.leading,spacing:14){Image(systemName:"envelope.open.fill").font(.largeTitle).foregroundStyle(gold);Text(opened.title).font(.system(.title,design:.serif));Text(opened.text).font(.system(.body,design:.serif)).lineSpacing(8);Button("Gấp thư"){self.opened=nil}}.padding()}
+                    if let opened{VStack(alignment:.leading,spacing:14){Image(systemName:"envelope.open.fill").font(.largeTitle).foregroundStyle(gold);Text(opened.title).font(.system(.title,design:.serif));Text(opened.text).font(.system(.body,design:.serif)).lineSpacing(8);if let story=opened.story{if !story.quote.isEmpty{Text(story.quote).italic()};ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){_,chapter in Text(chapter)};if let audio=story.audio{Button(voice.playing ? "Dừng lời kể":"Nghe lời kể"){if voice.playing{voice.stopPlayback()}else{voice.play(audio)}}}};Button("Gấp thư"){voice.stopPlayback();self.opened=nil}}.padding()}
                 }
                 Button("Khóa lại"){lock()}
             }else{Button("Mở bằng Face ID / mật mã",systemImage:"lock.shield"){unlock()}.disabled(busy)}
-            Text("Thư AES-GCM độc lập với story công khai. Khóa gắn với mật mã thiết bị, không nằm trong backup. Không chuyển story công khai vào kho này tự động.").font(.caption).foregroundStyle(.secondary)
+            Text("Thư và bản sao story AES-GCM độc lập. Bản gốc story và ảnh vẫn tồn tại trong Timeline; không tự xóa. Khóa gắn với thiết bị, không nằm trong backup.").font(.caption).foregroundStyle(.secondary)
             Text(notice).font(.caption)
         }.navigationTitle("Secret Letter").toolbar{Button("Đóng"){dismiss()}}}
         .confirmationDialog("Xóa vĩnh viễn thư mã hóa?",isPresented:Binding(get:{deleteURL != nil},set:{if !$0{deleteURL=nil}})){Button("Xóa",role:.destructive){if let url=deleteURL{do{try FileManager.default.removeItem(at:url);files=LetterCrypt.files();opened=nil}catch{notice=error.localizedDescription}};deleteURL=nil}}
         .onChange(of:phase){_,p in if p == .background{lock()}}.onDisappear{lock()}
     }
-    private func lock(){generation=UUID();deleteURL=nil;key=nil;files=[];opened=nil;title="";bodyText="";notice="";busy=false}
+    private func lock(){voice.cancel();generation=UUID();deleteURL=nil;key=nil;files=[];opened=nil;title="";bodyText="";notice="";busy=false}
     private func unlock(){
         let token=generation,context=LAContext();busy=true
         Task{do{
@@ -80,12 +83,17 @@ struct TimelineFocusView:View{
     @State private var target:StoryTarget?
     @State private var zoom=1.0
     @State private var showControls=false
+    @ObservedObject private var life=LifeArchive.shared
+    @AppStorage("timeline.vine.theme") private var theme=VineTheme.emerald.rawValue
+    @AppStorage("garden.weather") private var weather=GardenAtmosphere.none.rawValue
+    @AppStorage("garden.intensity") private var intensity=0.35
+    private var groups:[TimelineGroup]{let byDay=Dictionary(grouping:shots,by:\.day);let days=MemorySync.activeDays(shots:shots,stories:archive,life:life);return days.sorted(by:>).map{TimelineGroup(key:$0,items:byDay[$0] ?? [])}}
     var body:some View{
         ScrollView{
             LazyVStack(spacing:24){
-                ForEach(TimelineIndex.group(shots,period:.day,newest:true)){g in
+                ForEach(groups){g in
                     HStack(alignment:.top,spacing:5){
-                        VineRail(level:0,theme:.emerald,growth:VineGrowth(days:LifeArchive.shared.gardenDays)).frame(width:32)
+                        VineRail(level:0,theme:VineTheme(rawValue:theme) ?? .emerald,growth:VineGrowth(days:life.gardenDays)).frame(width:32)
                         VStack(alignment:.leading,spacing:12){
                             Text(TimelineIndex.label(g.key)).font(.system(.title3,design:.serif)).foregroundStyle(gold)
                             ForEach(g.items){s in Button{target = .photo(s)}label:{
@@ -96,7 +104,7 @@ struct TimelineFocusView:View{
                     }
                 }
             }.padding(12).padding(.top,30).scaleEffect(zoom,anchor:.top)
-        }.background(night).overlay(alignment:.topTrailing){Button{dismiss()}label:{Image(systemName:"xmark.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.65)).padding(16)}}
+        }.background{GardenWeather(effect:GardenAtmosphere(rawValue:weather) ?? .none,intensity:intensity)}.background(night).overlay(alignment:.topTrailing){Button{dismiss()}label:{Image(systemName:"xmark.circle.fill").font(.title2).foregroundStyle(.white.opacity(0.65)).padding(16)}}
         .simultaneousGesture(MagnifyGesture().onChanged{v in zoom=max(0.85,min(1.15,v.magnification))}.onEnded{_ in withAnimation{zoom=1}})
         .sheet(item:$target){LifeStorySheet(target:$0,vault:vault,archive:archive)}
     }

@@ -28,7 +28,7 @@ struct LifeReflection:View{
     @State private var play=false
     private var items:[Shot]{shots.filter{range.contains($0.day) && $0.deleted==nil}}
     private var days:[StoryEntry]{stories.entries.values.filter{$0.id.hasPrefix("period:") && $0.id.count==17 && range.contains(String($0.id.dropFirst(7)))}.sorted{$0.id<$1.id}}
-    private var milestones:[LifeMilestone]{life.data.milestones.filter{range.contains($0.date)}.sorted{$0.date<$1.date}}
+    private var milestones:[LifeMilestone]{life.data.milestones.filter{$0.gardenID==nil && range.contains($0.date)}.sorted{$0.date<$1.date}}
     private var group:StoryTarget{StoryTarget(id:range.storyID,label:range.title,shots:items)}
     private var recap:StoryEntry{
         if let e=stories.entry(range.storyID){return e}

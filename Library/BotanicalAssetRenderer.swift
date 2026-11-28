@@ -50,6 +50,7 @@ struct BotanicalAssetVine:View{
     var customBloom:Color?=nil
     var railOffset:CGFloat=0
     var trunkTheme:VineTheme?=nil
+    var memoryRichness:Double=0
     var body:some View{
         Canvas{ctx,size in
             guard size.width>10,size.height>2 else{return}
@@ -118,7 +119,7 @@ struct BotanicalAssetVine:View{
             stem(root,w,source,railOffset)
             if level==2 && age.hasBranches{stem(44,w*0.66,young,railOffset+24)}
             // More foliage and buds are separate textures, never baked into the young stem.
-            let foliage=BotanicalTilePlan.extraLeaves(age:age,density:density)
+            let foliage=BotanicalTilePlan.extraLeaves(age:age,density:density*(1+0.5*max(0,min(1,memoryRichness))))
             if foliage>0 && theme != .minimal{
                 let spacing=max(37,CGFloat(220)/CGFloat(foliage))
                 let first=Int(floor(railOffset/spacing)),last=Int(floor((railOffset+h)/spacing))

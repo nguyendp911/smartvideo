@@ -290,6 +290,7 @@ struct StoryReader:View{
     @State private var showDesk=false
     @State private var showHighlight=false
     @State private var showDepth=false
+    @State private var showProtectedCopy=false
     @State private var textReplay=0
     @AppStorage("timeline.vine.theme") private var vineValue=VineTheme.emerald.rawValue
     @StateObject private var voice=StoryVoice()
@@ -311,6 +312,7 @@ struct StoryReader:View{
                         AnimatedStoryText(text:story.body,effect:story.textEffect ?? .normal,font:story.textFont ?? .serif,color:GardenColor.decode(story.textColor ?? "FFFFFF"),duration:story.audio.flatMap{try? AVAudioPlayer(data:$0).duration} ?? 3,trigger:textReplay)
                         ForEach(Array((story.chapters ?? []).enumerated()),id:\.offset){i,chapter in VStack(alignment:.leading,spacing:7){Text("CHƯƠNG \(i+1)").font(.caption2.monospaced()).foregroundStyle(gold);Text(chapter).font(.body).lineSpacing(5)}}
                         Button("Trình bày Story",systemImage:"book.pages"){voice.stopPlayback();showPresentation=true}.buttonStyle(.borderedProminent)
+                        Button("Lưu bản sao riêng tư",systemImage:"lock.shield"){voice.stopPlayback();showProtectedCopy=true}
                         Button("Memory Desk",systemImage:"photo.on.rectangle"){voice.stopPlayback();showDesk=true}.buttonStyle(.bordered)
                         if story.audio != nil{Button("Voice Highlight",systemImage:"waveform"){voice.stopPlayback();showHighlight=true}}
                         if !target.shots.isEmpty{Button("Photo Parallax",systemImage:"square.3.layers.3d"){voice.stopPlayback();showDepth=true}}
@@ -339,6 +341,7 @@ struct StoryReader:View{
             }
         }.sheet(isPresented:$editing){StoryComposer(target:target,vault:vault,archive:archive)}
         .sheet(isPresented:$canvasEditor){StoryCanvasStudio(target:target,vault:vault,archive:archive)}
+        .sheet(isPresented:$showProtectedCopy){if let story=archive.entry(target.id){SecretLetterView(sourceStory:story)}}
         .sheet(isPresented:$showHighlight){if let audio=archive.entry(target.id)?.audio{VoiceHighlightView(audio:audio)}}
         .sheet(isPresented:$showDepth){if let shot=target.shots.first(where:{$0.id==archive.entry(target.id)?.cover}) ?? target.shots.first{PhotoParallaxView(shot:shot,vault:vault)}}
         .sheet(isPresented:$showDesk){MemoryDeskView(target:target,vault:vault,archive:archive)}
