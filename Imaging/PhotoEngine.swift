@@ -61,10 +61,10 @@ enum PhotoEngine {
         else { light = .natural }
 
         // The camera has already tone-mapped a processed capture. Keep this second pass restrained.
-        let lift = light == .night ? 0.025 : min(0.058, max(0, (0.44 - stats.mid) * 0.19))
-        let shoulder = stats.high > 0.86 ? 0.016 : 0.0
+        let lift = light == .night ? 0.012 : min(0.042, max(0, (0.44 - stats.mid) * 0.15))
+        let shoulder = min(0.025,max(0,(stats.high-0.80)*0.10))
         var image = curve(original, low: 0.25 + lift, mid: 0.5 + lift * 0.72, high: 0.75 - shoulder)
-        let saturation: Double = light == .warm ? 0.97 : (light == .night ? 0.98 : 1.025)
+        let saturation: Double = light == .warm ? 0.985 : (light == .night ? 0.99 : 1.012)
         image = image.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey:saturation])
         if look == .amber {
             image = image.applyingFilter("CITemperatureAndTint", parameters: ["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6050,y:0)])
@@ -83,7 +83,7 @@ enum PhotoEngine {
         }
         // Feather local exposure across the face. No geometric or skin-texture edits.
         if !faces.isEmpty {
-            let brighten = min(0.42, max(0, (0.46 - stats.face) * 1.15))
+            let brighten = min(0.30, max(0, (0.46 - stats.face) * 0.95))
             var subject = image.applyingFilter("CIExposureAdjust", parameters: [kCIInputEVKey:brighten])
             if light == .warm && look != .mono {
                 subject = subject.applyingFilter("CIColorControls", parameters: [kCIInputSaturationKey:0.93])

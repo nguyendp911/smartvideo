@@ -116,12 +116,15 @@ struct TasteProfile:Codable,Equatable{
         samples=Array(samples.sorted{$0.date>$1.date}.prefix(300))
     }
     func suggest(_ context:TasteContext)->TasteSuggestion?{
-        let candidates=samples.filter{$0.context.scene==context.scene}.sorted{
-            abs($0.context.brightness-context.brightness)<abs($1.context.brightness-context.brightness)
+        func distance(_ s:TasteSample)->Double{
+            let brightness=abs(s.context.brightness-context.brightness)
+            guard let a=s.context.features,let b=context.features else{return brightness}
+            return brightness+0.55*abs(a.contrast-b.contrast)+0.35*abs(a.dark-b.dark)+0.35*abs(a.bright-b.bright)+0.25*abs(a.saturation-b.saturation)
         }
+        let candidates=samples.filter{$0.context.scene==context.scene}.sorted{distance($0)<distance($1)}
         let nearest=Array(candidates.prefix(12))
         guard !nearest.isEmpty else{return nil}
-        func weight(_ s:TasteSample)->Double{1/(0.12+abs(s.context.brightness-context.brightness))}
+        func weight(_ s:TasteSample)->Double{1/(0.12+distance(s))}
         // Vote for a coherent preset + film combination; don't average incompatible LUTs.
         func style(_ s:TasteSample)->String{(s.global.premiumID ?? "")+"|"+(s.global.film ?? "Gốc")}
         let groups=Dictionary(grouping:nearest,by:style)

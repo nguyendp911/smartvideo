@@ -126,14 +126,14 @@ enum SemanticMaskEngine{
     }
     private static func semantic(_ image:CIImage,kind:PhotoMaskKind,key:String)throws->CIImage{
         let canonical=kind == .background ? PhotoMaskKind.subject:kind
-        let cacheKey=(key+"#"+canonical.rawValue) as NSString
+        let cacheKey=(key+"#"+canonical.rawValue+"#\(Int(image.extent.width))x\(Int(image.extent.height))") as NSString
         if let saved=cache.object(forKey:cacheKey){return saved}
         let mask:CIImage
         if canonical == .sky{mask=try sky(image)}else if canonical == .subject{mask=try subject(image)}else{mask=try PortraitSemanticMasks.mask(image,kind:canonical)}
         // Store a concrete bitmap, not a graph that retains original images.
         guard let cg=context.createCGImage(mask,from:mask.extent) else{throw PhotoMaskError.invalidOutput}
         let result=CIImage(cgImage:cg)
-        cache.countLimit=12;cache.setObject(result,forKey:cacheKey)
+        cache.countLimit=12;cache.totalCostLimit=48*1024*1024;cache.setObject(result,forKey:cacheKey,cost:cg.bytesPerRow*cg.height)
         return result
     }
     static func rawSemantic(_ image:CIImage,kind:PhotoMaskKind,key:String)throws->CIImage{
@@ -194,9 +194,9 @@ enum SemanticMaskEngine{
         if g.highlights != 0 || g.shadows != 0{image=image.applyingFilter("CIHighlightShadowAdjust",parameters:["inputHighlightAmount":1+g.highlights,"inputShadowAmount":g.shadows])}
         if g.clarity != 0{image=image.applyingFilter("CIUnsharpMask",parameters:[kCIInputRadiusKey:8,kCIInputIntensityKey:g.clarity])}
         if g.dehaze != 0{image=image.applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:1+g.dehaze*0.25,kCIInputSaturationKey:1+g.dehaze*0.15])}
-        if let n=g.noiseReduction,n>0{image=image.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":n*0.10,"inputSharpness":0.4])}
+        if let n=g.noiseReduction,n>0{image=MasterImageQuality.noise(image,amount:n)}
         if let n=g.smoothing,n>0{let soft=image.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":n*0.08,"inputSharpness":0.1]);let matte=CIImage(color:CIColor(red:n,green:n,blue:n,alpha:1)).cropped(to:input.extent);image=soft.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:image,kCIInputMaskImageKey:matte]).cropped(to:input.extent)}
-        if g.sharpness>0{image=image.applyingFilter("CISharpenLuminance",parameters:[kCIInputSharpnessKey:g.sharpness])}
+        if g.sharpness>0{image=MasterImageQuality.sharpen(image,amount:g.sharpness)}
         return image
     }
     static func apply(_ input:CIImage,original:CIImage,document:PhotoMaskDocument?,key:String)throws->CIImage{
@@ -217,14 +217,16 @@ enum SemanticMaskEngine{
     }
     static func preview(_ url:URL,document:PhotoMaskDocument,selected:UUID?,overlay:Bool)throws->UIImage{
         guard let raw=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]) else{throw PhotoMaskError.unreadable}
-        let original=resized(raw,limit:1400)
+        let original=raw
+        guard original.extent.width>0,original.extent.height>0,original.extent.width*original.extent.height<=70_000_000 else{throw PhotoMaskError.unreadable}
         var result=try apply(original,original:original,document:document,key:sourceKey(url))
         if overlay,let layer=document.layers.first(where:{$0.id==selected}){
             let mask=try mask(original,layer:layer,key:sourceKey(url))
             let red=CIImage(color:CIColor(red:1,green:0.08,blue:0.12,alpha:0.48)).cropped(to:original.extent).composited(over:result)
             result=red.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:result,kCIInputMaskImageKey:mask]).cropped(to:original.extent)
         }
-        guard let cg=context.createCGImage(result,from:result.extent) else{throw PhotoMaskError.unreadable}
+        let display=MasterImageQuality.downsample(result,maxSize:1400)
+        guard let cg=context.createCGImage(display,from:display.extent) else{throw PhotoMaskError.unreadable}
         return UIImage(cgImage:cg)
     }
 }

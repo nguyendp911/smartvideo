@@ -201,7 +201,7 @@ enum LightMockupEngine{
     static func foregroundMask(_ image:CIImage,key:String,document:PhotoMaskDocument?,feather:Double,inset:Double,correction:MaskCorrectionModel?=nil)->CIImage?{
         let r=image.extent
         // Reuse the exact user-corrected mask including the learned model, brush strokes and threshold.
-        let layer=document?.layers.last(where:{$0.enabled && !$0.inverted && ($0.kind == .subject || $0.kind == .person)})
+        let layer=(document?.source==key ? document:nil)?.layers.last(where:{$0.enabled && !$0.inverted && ($0.kind == .subject || $0.kind == .person)})
         var matte:CIImage
         if let layer{
             guard let corrected=try? SemanticMaskEngine.mask(image,layer:layer,key:key) else{return nil}
@@ -223,6 +223,12 @@ enum LightMockupEngine{
         let softness=max(0,min(0.025,feather))*short
         if softness>0.1{matte=matte.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:softness]).cropped(to:work)}
         return SemanticMaskEngine.fit(matte,to:r)
+    }
+    static func maskCoverage(_ mask:CIImage)->Double{
+        let avg=mask.applyingFilter("CIAreaAverage",parameters:[kCIInputExtentKey:CIVector(cgRect:mask.extent)])
+        var bytes=[Float](repeating:0,count:4)
+        bytes.withUnsafeMutableBytes{p in context.render(avg,toBitmap:p.baseAddress!,rowBytes:16,bounds:CGRect(x:0,y:0,width:1,height:1),format:.RGBAf,colorSpace:nil)}
+        return Double(bytes[0])
     }
     private static func tone(_ image:CIImage,exposure:Double,warmth:Double)->CIImage{
         var r=image
@@ -249,6 +255,8 @@ enum LightMockupEngine{
             else if let id=r.sceneID,let cg=LightAssets.image(id,scene:true)?.cgImage{scene=CIImage(cgImage:cg)}
             else{scene=nil}
             guard let scene,let matte else{return nil}
+            let coverage=maskCoverage(matte)
+            guard coverage.isFinite,coverage>0.002,coverage<0.998 else{return nil}
             var background=sceneCover(scene,target:rect,zoom:r.sceneZoom,x:r.sceneX,y:r.sceneY)
             if let blur=r.sceneBlur,blur>0{
                 background=background.clampedToExtent().applyingFilter("CIGaussianBlur",parameters:[kCIInputRadiusKey:min(0.035,max(0,blur))*min(rect.width,rect.height)]).cropped(to:rect)

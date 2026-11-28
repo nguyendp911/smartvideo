@@ -563,4 +563,33 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(try Data(contentsOf:url),source)
         XCTAssertNil(CreativeEngine.render(url,recipe:r,maxSize:0,format:"JPEG",quality:0.9,metadata:false))
     }
+    func testMasterPresetCubeRangeAndNeutralRamp()throws{
+        for preset in PremiumPresets.all{
+            let data=PremiumColorEngine.cube(preset,strength:1,dimension:16)
+            let floats=data.withUnsafeBytes{Array($0.bindMemory(to:Float.self))}
+            XCTAssertEqual(floats.count,16*16*16*4)
+            XCTAssertTrue(floats.allSatisfy{$0.isFinite && $0>=0 && $0<=1},preset.id)
+            var previous:Float = -1
+            for i in 0..<16{
+                let k=(i*16*16+i*16+i)*4
+                XCTAssertEqual(floats[k],floats[k+1],accuracy:0.0001,preset.id)
+                XCTAssertEqual(floats[k],floats[k+2],accuracy:0.0001,preset.id)
+                XCTAssertGreaterThanOrEqual(floats[k],previous,preset.id);previous=floats[k]
+            }
+        }
+    }
+    func testMasterDownsampleBoundsAndMaskCoverage(){
+        let rect=CGRect(x:-25,y:17,width:421,height:301)
+        let source=CIImage(color:CIColor(red:0.3,green:0.5,blue:0.7)).cropped(to:rect)
+        let out=MasterImageQuality.downsample(source,maxSize:120)
+        XCTAssertEqual(out.extent.minX,0);XCTAssertEqual(out.extent.minY,0)
+        XCTAssertEqual(out.extent.width,120);XCTAssertEqual(out.extent.height,85)
+        XCTAssertEqual(LightMockupEngine.maskCoverage(CIImage(color:CIColor.black).cropped(to:rect)),0,accuracy:0.001)
+        XCTAssertEqual(LightMockupEngine.maskCoverage(CIImage(color:CIColor.white).cropped(to:rect)),1,accuracy:0.001)
+    }
+    func testMaskValidationHandlesInvalidFeatureRows(){
+        let point=MaskTrainingPoint(features:[],positive:true)
+        XCTAssertEqual(point.prior,0.5)
+        XCTAssertEqual(MaskCorrectionModel.loss([point],model:nil),0)
+    }
 }

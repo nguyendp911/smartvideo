@@ -7,7 +7,7 @@ import CryptoKit
 struct MaskTrainingPoint:Codable,Equatable{
     let features:[Double]
     let positive:Bool
-    var prior:Double{features[0]}
+    var prior:Double{features.first.map{$0.isFinite ? max(0,min(1,$0)):0.5} ?? 0.5}
 }
 struct MaskTrainingExample:Codable,Equatable{
     let key:String
@@ -52,22 +52,28 @@ struct MaskCorrectionModel:Codable,Equatable{
         return Self(weights:w,imageCount:examples.count,baselineLoss:0,validationLoss:0)
     }
     static func loss(_ points:[MaskTrainingPoint],model:Self?)->Double{
-        guard !points.isEmpty else{return 0}
-        return points.reduce(0.0){sum,p in
-            let q=clamp(model?.probability(p) ?? p.prior,0.025,0.975)
-            return sum-(p.positive ? log(q):log(1-q))
-        }/Double(points.count)
+        let valid=points.filter{$0.features.count==dimension-1 && $0.features.allSatisfy(\.isFinite)}
+        let groups=[valid.filter(\.positive),valid.filter{!$0.positive}].filter{!$0.isEmpty}
+        guard !groups.isEmpty else{return 0}
+        return groups.reduce(0.0){total,group in
+            total+group.reduce(0.0){sum,p in
+                let q=clamp(model?.probability(p) ?? p.prior,0.025,0.975)
+                return sum-(p.positive ? log(q):log(1-q))
+            }/Double(group.count)
+        }/Double(groups.count)
     }
     static func validated(_ examples:[MaskTrainingExample])->Self?{
         // Hold out complete images, not random pixels from the same image.
         guard examples.count>=3,let final=fit(examples) else{return nil}
         let folds=Array(examples.prefix(6))
-        var base=0.0,learned=0.0,count=0
+        var base=0.0,learned=0.0,count=0,regressions=0
         for held in folds{
             guard let model=fit(examples.filter{$0.key != held.key}) else{continue}
-            base+=loss(held.points,model:nil);learned+=loss(held.points,model:model);count+=1
+            let b=loss(held.points,model:nil),l=loss(held.points,model:model)
+            base+=b;learned+=l;count+=1
+            if l>b*1.10{regressions+=1}
         }
-        guard count>=3,learned<base*0.97 else{return nil}
+        guard count>=3,regressions==0,learned<base*0.97 else{return nil}
         return Self(weights:final.weights,imageCount:examples.count,baselineLoss:base/Double(count),validationLoss:learned/Double(count))
     }
 }

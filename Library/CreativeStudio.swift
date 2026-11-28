@@ -50,8 +50,8 @@ enum CreativeEngine {
         if highlight != 0 || shadow != 0{result=result.applyingFilter("CIHighlightShadowAdjust",parameters:["inputHighlightAmount":1+highlight,"inputShadowAmount":shadow])}
         if let tint=recipe.tint,tint != 0{result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500,y:tint*100)])}
         if let vibrance=recipe.vibrance,vibrance != 0{result=result.applyingFilter("CIVibrance",parameters:["inputAmount":vibrance])}
-        if let noise=recipe.noise,noise>0{result=result.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":noise*0.1,"inputSharpness":0.4])}
-        if let sharpness=recipe.sharpness,sharpness>0{result=result.applyingFilter("CISharpenLuminance",parameters:["inputSharpness":sharpness])}
+        if let noise=recipe.noise,noise>0{result=MasterImageQuality.noise(result,amount:noise)}
+        if let sharpness=recipe.sharpness,sharpness>0{result=MasterImageQuality.sharpen(result,amount:sharpness)}
         if let vignette=recipe.vignette,vignette>0{result=result.applyingFilter("CIVignette",parameters:["inputIntensity":vignette,"inputRadius":1.5])}
         switch recipe.film{
         case "Film 35mm":result=result.applyingFilter("CIPhotoEffectInstant")
@@ -77,8 +77,7 @@ enum CreativeEngine {
             let ratio:CGFloat=recipe.crop=="1:1" ? 1 : recipe.crop=="4:5" ? 0.8:recipe.crop=="9:16" ? 9/16:recipe.crop=="3:2" ? 3/2:16/9
             result=result.cropped(to:(recipe.compositionAnchor ?? CompositionAnchor()).rect(in:rect,ratio:ratio))
         }
-        let scale=min(1,CGFloat(maxSize)/max(result.extent.width,result.extent.height))
-        result=result.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
+        result=MasterImageQuality.downsample(result,maxSize:maxSize)
         guard let cg=context.createCGImage(result,from:result.extent.integral,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!) else{return nil}
         let data=NSMutableData(),type=format=="PNG" ? UTType.png:format=="HEIC" ? UTType.heic:UTType.jpeg
         guard let dest=CGImageDestinationCreateWithData(data,type.identifier as CFString,1,nil) else{return nil}

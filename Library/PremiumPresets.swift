@@ -61,8 +61,8 @@ enum PremiumColorEngine{
         let x=clamp(1-distance(h,center)/radius);return x*x*(3-2*x)
     }
     static func cube(_ p:PremiumPreset,strength:Double,dimension:Int=32)->Data{
-        let q=min(100,max(0,Int((strength*100).rounded())))
-        let key="\(p.id):\(q):\(dimension)" as NSString
+        let q=min(100,max(0,Int(((strength.isFinite ? strength:0)*100).rounded())))
+        let key="master2:\(p.id):\(q):\(dimension)" as NSString
         if let found=cache.object(forKey:key){return found as Data}
         let t=Double(q)/100,g=p.grade,n=Double(dimension-1)
         var data=[Float]();data.reserveCapacity(dimension*dimension*dimension*4)
@@ -78,16 +78,21 @@ enum PremiumColorEngine{
             }
             let sat=maxv>0 ? d/maxv:0
             // Feathered selective hue ranges; orange/red skin hues are not targeted by blue/green corrections.
-            let bw=weight(hue,0.57,0.18)*min(1,sat*3),gw=weight(hue,0.30,0.15)*min(1,sat*3)
+            let chromaGate=min(1,d*5)*min(1,sat*3)
+            let highlightGate=1-0.45*clamp((maxv-0.82)/0.18)
+            let bw=weight(hue,0.57,0.18)*chromaGate*highlightGate,gw=weight(hue,0.30,0.15)*chromaGate*highlightGate
             let shifted=hue+(g.blueHue*bw+g.greenHue*gw)*t
-            let h=shifted-floor(shifted),s=clamp(sat*(1+(g.blueSat*bw+g.greenSat*gw)*t))
+            let h=shifted-floor(shifted)
+            let satDelta=(g.blueSat*bw+g.greenSat*gw)*t
+            let s=clamp(sat+sat*satDelta*(satDelta>0 ? 1-0.70*sat:1))
             let z=h*6,i=Int(floor(z)),f=z-Double(i),v=maxv
             let a=v*(1-s),m=v*(1-s*f),k=v*(1-s*(1-f))
             let rgb:(Double,Double,Double)
             switch i%6{case 0:rgb=(v,k,a);case 1:rgb=(m,v,a);case 2:rgb=(a,v,k);case 3:rgb=(a,m,v);case 4:rgb=(k,a,v);default:rgb=(v,a,m)}
-            data.append(Float(clamp(rgb.0+(1-rgb.0)*g.fade*t)))
-            data.append(Float(clamp(rgb.1+(1-rgb.1)*g.fade*t)))
-            data.append(Float(clamp(rgb.2+(1-rgb.2)*g.fade*t)))
+            let fade=g.fade*t*pow(1-v,1.6)
+            data.append(Float(clamp(rgb.0+fade)))
+            data.append(Float(clamp(rgb.1+fade)))
+            data.append(Float(clamp(rgb.2+fade)))
             data.append(1)
         }}}
         let bytes=data.withUnsafeBytes{Data($0)}
@@ -96,13 +101,15 @@ enum PremiumColorEngine{
         return bytes
     }
     static func apply(_ image:CIImage,id:String?,strength:Double)->CIImage{
-        guard let p=PremiumPresets.find(id),strength>0 else{return image}
+        guard let p=PremiumPresets.find(id),strength.isFinite,strength>0 else{return image}
         let t=min(1,max(0,strength)),g=p.grade
+        let colorProtection:Double=p.collection == .portrait ? 0.48:p.collection == .sunset ? 0.20:0.34
         var result=image.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:g.ev*t])
         result=result.applyingFilter("CIHighlightShadowAdjust",parameters:["inputHighlightAmount":1-g.high*t,"inputShadowAmount":g.shadow*t])
         result=result.applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:1+(g.contrast-1)*t,kCIInputSaturationKey:1+(g.sat-1)*t])
         if g.warm != 0{result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+g.warm*t*2200,y:0)])}
-        return result.applyingFilter("CIColorCubeWithColorSpace",parameters:["inputCubeDimension":32,"inputCubeData":cube(p,strength:t),"inputColorSpace":CGColorSpace(name:CGColorSpace.sRGB)!])
+        let graded=result.applyingFilter("CIColorCubeWithColorSpace",parameters:["inputCubeDimension":32,"inputCubeData":cube(p,strength:t),"inputColorSpace":CGColorSpace(name:CGColorSpace.sRGB)!])
+        return g.sat==0 ? graded:MasterImageQuality.preserveChroma(original:image,graded:graded,amount:colorProtection*t)
     }
 }
 struct PremiumPresetPanel:View{
