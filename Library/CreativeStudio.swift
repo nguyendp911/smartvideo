@@ -211,7 +211,7 @@ struct CreativeStudio:View {
                         Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("HEIC").tag("HEIC");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
                         Picker("Cạnh dài tối đa",selection:$maxSize){Text("1080 px").tag(1080);Text("2048 px").tag(2048);Text("4096 px").tag(4096);Text("Gốc").tag(100000)}
                         if format != "PNG"{control("Chất lượng nén",value:$quality,range:0.5...1);Toggle("Giữ thông số EXIF (không GPS)",isOn:$metadata)}
-                        Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty)
+                        Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty || !previewReady)
                         if working{ProgressView()}
                         if !outputs.isEmpty{ShareLink(items:outputs){Label("Chia sẻ / Lưu tệp",systemImage:"square.and.arrow.up")}}
                         Text(notice).font(.caption).foregroundStyle(.secondary)
@@ -471,7 +471,7 @@ struct MemoryCinema:View {
                 }
                 catch{notice=error.localizedDescription}
                 working=false
-            }}.disabled(working || shots.isEmpty || !previewReady)
+            }}.disabled(working || shots.isEmpty)
             if working{ProgressView("Đang mã hóa video…")}
             if let output{ShareLink(item:output){Label("Lưu / Chia sẻ MP4",systemImage:"square.and.arrow.up")}}
             Text(notice).font(.caption)

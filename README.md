@@ -86,3 +86,5 @@ Build 86: normal alpha compositing mode for colored PNG foreground props, option
 
 ## Maintenance 17.1.1
 Feature freeze. Serialize interactive renders, skip cancelled queued work, bounded preset thumbnails, keep same full-resolution export pipeline, prevent wrong-image previews and unvalidated saves/exports. Save preset only after confirmation, avoid teaching a different selected image when batch export fails for that image. Guard stale workflow proposals and undo, merge concurrent mask skill updates rather than dropping them. Regression test checks thumbnail dimensions, original export and immutable source. No new tools or assets; device performance and compositing on real photos still require validation.
+
+Build 88 hotfix: preview readiness applies only to CreativeStudio photo save/export; restore Memory Cinema video button's original working/empty-shot guard. No feature changes.
