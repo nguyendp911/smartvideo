@@ -349,8 +349,8 @@ final class VieLensTests:XCTestCase {
         let data=try XCTUnwrap(CreativeEngine.render(url,recipe:recipe,maxSize:100000,format:"PNG",quality:1,metadata:false))
         let source=try XCTUnwrap(CGImageSourceCreateWithData(data as CFData,nil))
         let image=try XCTUnwrap(CGImageSourceCreateImageAtIndex(source,0,nil))
-        XCTAssertEqual(image.width,300,accuracy:1)
-        XCTAssertEqual(image.height,420,accuracy:1)
+        XCTAssertEqual(image.width,300)
+        XCTAssertEqual(image.height,420)
         XCTAssertEqual(CreativeEngine.fileExtension("HEIC"),"heic")
     }
 }

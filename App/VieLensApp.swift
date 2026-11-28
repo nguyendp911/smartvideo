@@ -41,7 +41,7 @@ struct DiskImage:View {
             else {Rectangle().fill(.white.opacity(0.08)).overlay(Image(systemName:"photo").foregroundStyle(.secondary))}
         }
         .task(id:"\(url.path)#\(limit)") {
-            picture=nil
+            if loadedPath != url{picture=nil;loadedPath=url}
             let path=url, size=limit
             let img=await Task.detached(priority:.utility) { ()->UIImage? in
                 let stamp=(try? path.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
@@ -53,7 +53,7 @@ struct DiskImage:View {
                 cache.setObject(image,forKey:key,cost:cg.bytesPerRow*cg.height)
                 return image
             }.value
-            if !Task.isCancelled {picture=img}
+            if !Task.isCancelled,loadedPath==path,let img{picture=img}
         }
     }
 }

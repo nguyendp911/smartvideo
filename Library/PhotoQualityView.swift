@@ -17,7 +17,7 @@ struct PhotoQualityReport{
         for p in pixels{bins[Int(p)/4]+=1}
         for y in 1..<h{for x in 1..<w{let i=y*w+x;detail+=abs(Double(pixels[i])-Double(pixels[i-1]))+abs(Double(pixels[i])-Double(pixels[i-w]))}}
         let total=Double(pixels.count)
-        return Self(width:props[kCGImagePropertyPixelWidth as String] as? Int ?? cg.width,height:props[kCGImagePropertyPixelHeight as String] as? Int ?? cg.height,bytes:data.count,format:CGImageSourceGetType(source).map{String($0)} ?? "Không rõ",histogram:bins,dark:Double(bins.prefix(2).reduce(0,+))/total,bright:Double(bins.suffix(2).reduce(0,+))/total,edge:detail/total)
+        return Self(width:props[kCGImagePropertyPixelWidth as String] as? Int ?? cg.width,height:props[kCGImagePropertyPixelHeight as String] as? Int ?? cg.height,bytes:data.count,format:CGImageSourceGetType(source).map{$0 as String} ?? "Không rõ",histogram:bins,dark:Double(bins.prefix(2).reduce(0,+))/total,bright:Double(bins.suffix(2).reduce(0,+))/total,edge:detail/total)
     }
 }
 struct PhotoQualityView:View{

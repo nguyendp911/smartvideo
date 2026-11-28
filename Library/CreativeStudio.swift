@@ -52,7 +52,7 @@ enum CreativeEngine {
         case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
         default:break
         }
-        if let rotation=recipe.rotation,rotation != 0{result=result.transformed(by:CGAffineTransform(rotationAngle:CGFloat(rotation)*CGFloat.pi/180))}
+        switch recipe.rotation ?? 0{case 90:result=result.oriented(.left);case 180:result=result.oriented(.down);case 270:result=result.oriented(.right);default:break}
         if recipe.mirror == true{result=result.transformed(by:CGAffineTransform(scaleX:-1,y:1))}
         let rect=result.extent.integral
         guard rect.width>0,rect.height>0,rect.width*rect.height<=70_000_000 else{return nil}

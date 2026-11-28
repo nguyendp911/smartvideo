@@ -655,7 +655,7 @@ private struct ShotDetail:View {
                 if !immersive && current.enhanced {Picker("Phiên bản",selection:$original){Text("Ảnh hoàn thiện").tag(false);Text("Bản gốc").tag(true)}.pickerStyle(.segmented).padding(.horizontal)}
                 TabView(selection:$selectedID) {
                     ForEach(shots) { item in
-                        ZoomPhoto(url:model.vault.picture(model.shots.first{$0.id==item.id} ?? item,original:original)).tag(item.id)
+                        ZoomPhoto(url:model.vault.picture(model.shots.first{$0.id==item.id} ?? item,original:original),active:item.id==selectedID).tag(item.id)
                     }
                 }.tabViewStyle(.page(indexDisplayMode:.never))
                 .frame(maxHeight:.infinity)
@@ -718,13 +718,14 @@ private struct ShotDetail:View {
 
 private struct ZoomPhoto: View {
     let url:URL
+    var active=true
     @State private var scale:CGFloat=1
     @State private var base:CGFloat=1
     @State private var offset:CGSize = .zero
     @State private var origin:CGSize = .zero
     var body:some View {
         GeometryReader { g in
-            DiskImage(url:url,limit:base>1 ? 8000:2500).scaledToFit().frame(width:g.size.width,height:g.size.height)
+            DiskImage(url:url,limit:active ? (base>1 ? 6000:2500):1200).scaledToFit().frame(width:g.size.width,height:g.size.height)
                 .scaleEffect(scale).offset(offset)
                 .gesture(MagnifyGesture().onChanged { v in scale=min(6,max(1,base*v.magnification)) }
                     .onEnded { _ in base=scale;if scale==1 {offset = .zero;origin = .zero} })
@@ -737,6 +738,7 @@ private struct ZoomPhoto: View {
                 .onTapGesture(count:2){ withAnimation(.easeInOut(duration:0.2)){scale=scale>1 ? 1:2;base=scale;offset = .zero;origin = .zero} }
                 .clipped()
         }.onChange(of:url){_,_ in scale=1;base=1;offset = .zero;origin = .zero}
+        .onChange(of:active){_,value in if !value{scale=1;base=1;offset = .zero;origin = .zero}}
     }
 }
 private struct PhotoMetadataView:View {
