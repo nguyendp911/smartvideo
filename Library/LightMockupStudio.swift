@@ -7,7 +7,7 @@ import CryptoKit
 import ImageIO
 
 enum LightBlendMode:String,Codable,CaseIterable,Identifiable{
-    case natural="Ánh sáng & bóng",screen="Ánh sáng",multiply="Bóng đổ",soft="Soft Light"
+    case natural="Ánh sáng & bóng",screen="Ánh sáng",multiply="Bóng đổ",soft="Soft Light",overlay="Lớp phủ PNG"
     var id:String{rawValue}
 }
 enum LightingScope:String,Codable,CaseIterable,Identifiable{
@@ -41,6 +41,8 @@ struct LightMockupRecipe:Codable,Equatable{
     var matteInset:Double?=nil
     var foregroundExposure:Double?=nil
     var foregroundWarmth:Double?=nil
+    var matteCorrection:MaskCorrectionModel?=nil
+    var preserveLightColor:Bool?=nil
 }
 struct LightAsset:Identifiable{
     let id:String
@@ -196,7 +198,7 @@ enum LightMockupEngine{
         let clear=CIImage(color:CIColor(red:0,green:0,blue:0,alpha:0)).cropped(to:rect)
         return image.applyingFilter("CIBlendWithMask",parameters:[kCIInputBackgroundImageKey:clear,kCIInputMaskImageKey:mask]).cropped(to:rect)
     }
-    static func foregroundMask(_ image:CIImage,key:String,document:PhotoMaskDocument?,feather:Double,inset:Double)->CIImage?{
+    static func foregroundMask(_ image:CIImage,key:String,document:PhotoMaskDocument?,feather:Double,inset:Double,correction:MaskCorrectionModel?=nil)->CIImage?{
         let r=image.extent
         // Reuse the exact user-corrected mask including the learned model, brush strokes and threshold.
         let layer=document?.layers.last(where:{$0.enabled && !$0.inverted && ($0.kind == .subject || $0.kind == .person)})
@@ -205,8 +207,9 @@ enum LightMockupEngine{
             guard let corrected=try? SemanticMaskEngine.mask(image,layer:layer,key:key) else{return nil}
             matte=corrected
         }else{
-            guard let raw=try? SemanticMaskEngine.rawSemantic(image,kind:.subject,key:key) else{return nil}
-            matte=SemanticMaskEngine.fit(raw,to:r)
+            var auto=PhotoMaskLayer(name:"Chủ thể ghép nền",kind:.subject);auto.feather=0;auto.learnedCorrection=correction
+            guard let raw=try? SemanticMaskEngine.mask(image,layer:auto,key:key) else{return nil}
+            matte=raw
         }
         // Process morphology at bounded resolution to avoid multi-megapixel radius costs.
         let s=min(1,1536/max(r.width,r.height))
@@ -237,7 +240,7 @@ enum LightMockupEngine{
         var matte:CIImage?
         if hasScene || (scope != .all && hasTexture && r.opacity>0){
             let stableKey=sourceKey ?? key ?? UUID().uuidString
-            guard let mask=foregroundMask(original,key:stableKey,document:document,feather:r.matteFeather ?? 0.0015,inset:r.matteInset ?? 0) else{return nil}
+            guard let mask=foregroundMask(original,key:stableKey,document:document,feather:r.matteFeather ?? 0.0015,inset:r.matteInset ?? 0,correction:r.matteCorrection) else{return nil}
             matte=mask
         }
         if hasScene{
@@ -261,7 +264,8 @@ enum LightMockupEngine{
         else{texture=nil}
         guard let texture else{return nil}
         let gray=texture.applyingFilter("CIColorControls",parameters:[kCIInputSaturationKey:0])
-        let placed=cover(softTexture(gray,fade:r.edgeFade ?? 0.12),rect:rect,zoom:r.zoom,x:r.x,y:r.y,angle:r.angle,mirror:r.mirror)
+        let inputTexture=(r.blend == .overlay || (r.blend == .screen && r.preserveLightColor==true)) ? texture:gray
+        let placed=cover(softTexture(inputTexture,fade:r.edgeFade ?? (r.blend == .overlay ? 0:0.12)),rect:rect,zoom:r.zoom,x:r.x,y:r.y,angle:r.angle,mirror:r.mirror)
         // Back transparent pixels with the correct neutral value for each blend mode.
         func backed(_ level:Double)->CIImage{
             let neutral=CIImage(color:CIColor(red:level,green:level,blue:level,alpha:1)).cropped(to:rect)
@@ -276,6 +280,7 @@ enum LightMockupEngine{
         func sunlight(_ base:CIImage,amount:Double)->CIImage{
             let warm=max(-1,min(1,r.warmth))
             let red=0.66+0.22*max(0,warm),blue=0.66+0.22*max(0,-warm)-0.28*max(0,warm)
+            if r.blend == .screen,r.preserveLightColor==true{return mixed(backed(0).applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base]),base,amount:amount,rect:rect)}
             let layer=backed(0).applyingFilter("CIColorMatrix",parameters:[
                 "inputRVector":CIVector(x:red,y:0,z:0,w:0),"inputGVector":CIVector(x:0,y:0.62,z:0,w:0),"inputBVector":CIVector(x:0,y:0,z:blue,w:0)])
             return mixed(layer.applyingFilter("CIScreenBlendMode",parameters:[kCIInputBackgroundImageKey:base]),base,amount:amount,rect:rect)
@@ -286,6 +291,7 @@ enum LightMockupEngine{
         case .screen:lit=sunlight(result,amount:r.opacity)
         case .multiply:lit=shadow(result,amount:r.opacity)
         case .soft:lit=mixed(backed(0.5).applyingFilter("CISoftLightBlendMode",parameters:[kCIInputBackgroundImageKey:result]),result,amount:r.opacity,rect:rect)
+        case .overlay:lit=mixed(placed.composited(over:result).cropped(to:rect),result,amount:r.opacity,rect:rect)
         }
         if scope != .all,let matte{
             let selected=scope == .background ? matte.applyingFilter("CIColorInvert"):matte
@@ -300,6 +306,7 @@ struct LightMockupPanel:View{
     var onRefine:(()->Void)?=nil
     private enum ImportKind:Equatable{case pack,texture,scene}
     @State private var importKind=ImportKind.texture
+    @ObservedObject private var maskSkill=MaskSkillStore.shared
     @State private var importing=false
     @State private var notice=""
     @State private var packs=[String]()
@@ -313,6 +320,7 @@ struct LightMockupPanel:View{
         var r=light
         if scene{r.sceneID=id;r.customScene=nil;r.customSceneName=nil;r.sceneZoom=1;r.sceneX=0;r.sceneY=0}
         else{r.textureID=id;r.customTexture=nil;r.customName=nil;r.x=0;r.y=0;r.zoom=1;r.angle=0;if let id{let base=id.split(separator:":").last.map(String.init) ?? id;r.blend=["lantern_glow","curtain_glow","blue_window"].contains(base) ? .screen:.natural}}
+        r.matteCorrection=maskSkill.model(.subject)
         recipe.lighting=r
     }
     var body:some View{
@@ -332,13 +340,15 @@ struct LightMockupPanel:View{
             if light.textureID != nil || light.customTexture != nil{
                 Picker("Hòa trộn",selection:binding(\.blend)){ForEach(LightBlendMode.allCases){Text($0.rawValue).tag($0)}}
                 control("Cường độ",binding(\.opacity),0...1)
-                control("Nhiệt độ sáng",binding(\.warmth),-1...1)
+                if light.blend == .screen{Toggle("Giữ màu đèn gốc",isOn:Binding(get:{light.preserveLightColor ?? false},set:{var r=light;r.preserveLightColor=$0;recipe.lighting=r}))}
+                if light.blend != .overlay && !(light.blend == .screen && light.preserveLightColor==true){control("Nhiệt độ sáng",binding(\.warmth),-1...1)}
+                if light.blend == .overlay{Text("Dùng PNG có vùng trong suốt để đặt khung cửa, rèm hoặc vật thể tiền cảnh.").font(.caption2).foregroundStyle(.secondary)}
                 control("Phóng",binding(\.zoom),0.5...2.5)
                 control("Vị trí ngang",binding(\.x),-1...1)
                 control("Vị trí dọc",binding(\.y),-1...1)
                 control("Góc xoay",binding(\.angle),-180...180)
                 Picker("Vùng chiếu sáng",selection:Binding(get:{light.scope ?? .all},set:{var r=light;r.scope=$0;recipe.lighting=r})){ForEach(LightingScope.allCases){Text($0.rawValue).tag($0)}}
-                control("Tan mềm mép texture",optional(\.edgeFade,0.12),0...0.35)
+                control("Tan mềm mép texture",optional(\.edgeFade,light.blend == .overlay ? 0:0.12),0...0.35)
                 Toggle("Lật ngang ánh sáng",isOn:binding(\.mirror))
             }
             Divider()
@@ -387,7 +397,9 @@ struct LightMockupPanel:View{
                     let data=alpha ? UIImage(cgImage:cg).pngData():UIImage(cgImage:cg).jpegData(compressionQuality:0.94)
                     guard let data,data.count<=24_000_000 else{throw CameraError.unreadable}
                     r.textureID=nil;r.customTexture=data;r.customName=url.lastPathComponent;r.x=0;r.y=0;r.zoom=1;r.angle=0
+                    if alpha{r.blend = .overlay;r.edgeFade=0;r.opacity=1}
                 }
+                r.matteCorrection=maskSkill.model(.subject)
                 recipe.lighting=r;notice="Đã nhập \(cg.width) × \(cg.height) px."
             }catch{notice=error.localizedDescription}
         }

@@ -534,4 +534,21 @@ final class VieLensTests:XCTestCase {
         var recipe=LightMockupRecipe();recipe.scope = .subject;recipe.edgeFade=0.2
         XCTAssertEqual(try! JSONDecoder().decode(LightMockupRecipe.self,from:JSONEncoder().encode(recipe)),recipe)
     }
+    func testMockupPNGOverlayKeepsTransparentPixelsAndColor()throws{
+        let format=UIGraphicsImageRendererFormat();format.scale=1;format.opaque=false
+        let png=try XCTUnwrap(UIGraphicsImageRenderer(size:CGSize(width:100,height:100),format:format).image{c in
+            UIColor.red.setFill();c.fill(CGRect(x:0,y:0,width:50,height:100))
+        }.pngData())
+        var recipe=LightMockupRecipe();recipe.customTexture=png;recipe.blend = .overlay;recipe.opacity=1;recipe.edgeFade=0
+        let rect=CGRect(x:0,y:0,width:100,height:100)
+        let base=CIImage(color:CIColor(red:0,green:0,blue:1)).cropped(to:rect)
+        let image=try XCTUnwrap(LightMockupEngine.apply(base,original:base,recipe:recipe))
+        func pixel(_ x:Int)->[UInt8]{
+            var p=[UInt8](repeating:0,count:4)
+            p.withUnsafeMutableBytes{b in SemanticMaskEngine.context.render(image,toBitmap:b.baseAddress!,rowBytes:4,bounds:CGRect(x:x,y:50,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+            return p
+        }
+        XCTAssertGreaterThan(pixel(25)[0],245);XCTAssertLessThan(pixel(25)[2],10)
+        XCTAssertGreaterThan(pixel(75)[2],245);XCTAssertLessThan(pixel(75)[0],10)
+    }
 }
