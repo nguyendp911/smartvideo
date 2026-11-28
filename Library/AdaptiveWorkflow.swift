@@ -109,7 +109,7 @@ struct WorkflowPlan{
         // Use the same preset family for training; don't confuse a LUT change with exposure correction.
         let similar=samples.filter{$0.global.premiumID==taste?.global.premiumID && $0.global.film==taste?.global.film}
         var r=taste?.applying(to:existing,source:source,verified:[]) ?? f.baseline()
-        r.crop=existing.crop;r.rotation=existing.rotation;r.mirror=existing.mirror;r.lighting=existing.lighting;r.masking=existing.masking
+        r.crop=existing.crop;r.compositionAnchor=existing.compositionAnchor;r.rotation=existing.rotation;r.mirror=existing.mirror;r.lighting=existing.lighting;r.masking=existing.masking
         var learned:[LearnedEditParameter]=[]
         for parameter in LearnedEditParameter.allCases{
             let examples=similar.compactMap{s in s.context.features.map{($0,parameter.value(s.global))}}
@@ -135,6 +135,7 @@ struct AdaptiveWorkflowPanel:View{
     @State private var useMasks=false
     @State private var regions:[TasteRegion]=[]
     @State private var candidateCrop:String?
+    @State private var candidateAnchor:CompositionAnchor?
     @State private var candidateLight:LightMockupRecipe?
     @State private var token=UUID()
     var body:some View{
@@ -156,13 +157,13 @@ struct AdaptiveWorkflowPanel:View{
             Text("Mô hình hồi quy từng thông số chỉ dùng khi sai số tuyệt đối trên ảnh giữ lại giảm ít nhất 5%. Đây là mức độ khớp với chỉnh sửa của bạn, không phải điểm chất lượng nghệ thuật.").font(.caption2).foregroundStyle(.secondary)
         }.onChange(of:url){_,_ in clear()}.onChange(of:scene){_,_ in clear()}.onChange(of:taste.generation){_,_ in clear()}
     }
-    private func clear(){token=UUID();plan=nil;previous=nil;busy=false;regions=[];candidateCrop=nil;candidateLight=nil;useCrop=false;useLighting=false;useMasks=false;issue=""}
+    private func clear(){token=UUID();plan=nil;previous=nil;busy=false;regions=[];candidateCrop=nil;candidateAnchor=nil;candidateLight=nil;useCrop=false;useLighting=false;useMasks=false;issue=""}
     private func analyze(){
         clear();busy=true
         let id=token,u=url,s=scene,p=taste.enabled ? taste.profile:TasteProfile(),r=recipe
         Task{
-            let result=await Task.detached(priority:.userInitiated){()->(WorkflowPlan?,[TasteRegion],String?,LightMockupRecipe?) in
-                guard let c=TasteContext.analyze(u,override:s),let plan=WorkflowPlan.make(context:c,profile:p,source:SemanticMaskEngine.sourceKey(u),existing:r) else{return (nil,[],nil,nil)}
+            let result=await Task.detached(priority:.userInitiated){()->(WorkflowPlan?,[TasteRegion],String?,LightMockupRecipe?,CompositionAnchor?) in
+                guard let c=TasteContext.analyze(u,override:s),let plan=WorkflowPlan.make(context:c,profile:p,source:SemanticMaskEngine.sourceKey(u),existing:r) else{return (nil,[],nil,nil,nil)}
                 let near=Array(p.samples.filter{$0.context.scene==c.scene}.sorted{abs($0.context.brightness-c.brightness)<abs($1.context.brightness-c.brightness)}.prefix(12))
                 let crop=near.compactMap(\.compositionCrop)
                 let counts=Dictionary(grouping:crop,by:{$0})
@@ -173,16 +174,17 @@ struct AdaptiveWorkflowPanel:View{
                 let best=lightGroups.values.max{$0.count<$1.count}
                 let light=best.flatMap{$0.count>=3 && $0.count*2>near.count ? $0.first:nil}
                 let verified=p.suggest(c)?.verifiedRegions(url:u) ?? []
-                return (plan,verified,suggestion,light)
+                let anchor=suggestion.flatMap{crop in (r.rotation ?? 0)==0 && r.mirror != true ? CompositionEngine.suggest(url:u,crop:crop,samples:near):nil}
+                return (plan,verified,suggestion,light,anchor)
             }.value
             guard id==token else{return}
-            busy=false;plan=result.0;regions=result.1;candidateCrop=result.2;candidateLight=result.3
+            busy=false;plan=result.0;regions=result.1;candidateCrop=result.2;candidateLight=result.3;candidateAnchor=result.4
             if plan==nil{issue="Không đọc được đặc trưng ảnh."}
         }
     }
     private func apply(_ plan:WorkflowPlan){
         previous=recipe;var next=plan.recipe
-        if useCrop,let candidateCrop{next.crop=candidateCrop}
+        if useCrop,let candidateCrop{next.crop=candidateCrop;next.compositionAnchor=candidateAnchor}
         if useLighting,let candidateLight{next.lighting=candidateLight}
         if useMasks{
             let key=SemanticMaskEngine.sourceKey(url)

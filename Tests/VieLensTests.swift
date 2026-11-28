@@ -503,4 +503,13 @@ final class VieLensTests:XCTestCase {
         XCTAssertFalse(PhotoMaskKind.brush.canLearn)
         XCTAssertEqual(try JSONDecoder().decode(TasteSample.self,from:JSONEncoder().encode(sample)),sample)
     }
+    func testCompositionAnchorBounds(){
+        let rect=CGRect(x:10,y:20,width:400,height:200)
+        let left=CompositionAnchor(x:0,y:0.5).rect(in:rect,ratio:1)
+        let right=CompositionAnchor(x:1,y:0.5).rect(in:rect,ratio:1)
+        XCTAssertEqual(left.minX,10);XCTAssertEqual(right.maxX,410)
+        XCTAssertEqual(left.width,200);XCTAssertEqual(right.height,200)
+        let a=CompositionAnchor.fromFocus(x:0.85,y:0.5,width:400,height:200,crop:"1:1")
+        XCTAssertEqual(a.x,1)
+    }
 }

@@ -18,6 +18,7 @@ struct CreativeRecipe:Codable,Equatable {
     var saturation=1.0
     var warmth=0.0
     var crop="Gốc"
+    var compositionAnchor:CompositionAnchor?=nil
     var highlights:Double?=nil
     var shadows:Double?=nil
     var vibrance:Double?=nil
@@ -72,8 +73,7 @@ enum CreativeEngine {
         guard rect.width>0,rect.height>0,rect.width*rect.height<=70_000_000 else{return nil}
         if recipe.crop != "Gốc" {
             let ratio:CGFloat=recipe.crop=="1:1" ? 1 : recipe.crop=="4:5" ? 0.8:recipe.crop=="9:16" ? 9/16:recipe.crop=="3:2" ? 3/2:16/9
-            let width=min(rect.width,rect.height*ratio),height=width/ratio
-            result=result.cropped(to:CGRect(x:rect.midX-width/2,y:rect.midY-height/2,width:width,height:height))
+            result=result.cropped(to:(recipe.compositionAnchor ?? CompositionAnchor()).rect(in:rect,ratio:ratio))
         }
         let scale=min(1,CGFloat(maxSize)/max(result.extent.width,result.extent.height))
         result=result.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
@@ -173,7 +173,15 @@ struct CreativeStudio:View {
                         control("Khử nhiễu",value:optional(\.noise),range:0...1)
                         control("Tối viền",value:optional(\.vignette),range:0...2)
                         Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
-                        Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
+                        Picker("Tỷ lệ cắt ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
+                        if recipe.crop != "Gốc"{
+                            if let current{
+                                Button("AI căn bố cục",systemImage:"viewfinder"){let u=vault.picture(current,original:useOriginal),crop=recipe.crop;Task{let result=await Task.detached(priority:.userInitiated){CompositionEngine.proposal(url:u,crop:crop)}.value;if let result,recipe.crop==crop,self.current?.id==current.id{recipe.compositionAnchor=result}}}.disabled((recipe.rotation ?? 0) != 0 || recipe.mirror == true)
+                            }
+                            control("Căn ngang",value:Binding(get:{recipe.compositionAnchor?.x ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.x=$0;recipe.compositionAnchor=a}),range:0...1)
+                            control("Căn dọc",value:Binding(get:{recipe.compositionAnchor?.y ?? 0.5},set:{var a=recipe.compositionAnchor ?? CompositionAnchor();a.y=$0;recipe.compositionAnchor=a}),range:0...1)
+                            Button("Căn giữa"){recipe.compositionAnchor=nil}.font(.caption)
+                        }
                         HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
                         HStack{
                             Button("Lưu preset"){var reusable=recipe;reusable.masking=nil;if let data=try? JSONEncoder().encode(reusable){savedPreset=data};versionName="";showVersionName=true}
@@ -227,7 +235,9 @@ struct CreativeStudio:View {
         guard taste.enabled,token==taste.generation else{return}
         let key=SemanticMaskEngine.sourceKey(url)
         guard let context=await Task.detached(priority:.utility,operation:{TasteContext.analyze(url,override:scene)}).value else{return}
-        taste.record(TasteSample(photo:photo,context:context,recipe:recipe,source:key),token:token)
+        let feedback=await Task.detached(priority:.utility){CompositionEngine.feedback(url:url,recipe:recipe)}.value
+        var sample=TasteSample(photo:photo,context:context,recipe:recipe,source:key);sample.compositionFeedback=feedback
+        taste.record(sample,token:token)
     }
     @MainActor private func export()async{
         working=true;outputs=[];notice=""

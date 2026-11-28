@@ -56,11 +56,12 @@ struct TasteSample:Codable,Equatable,Identifiable{
     let global:CreativeRecipe
     let regions:[TasteRegion]
     var compositionCrop:String?=nil
+    var compositionFeedback:CompositionFeedback?=nil
     var lightStyle:LightMockupRecipe?=nil
     init(photo:UUID,date:Date=Date(),context:TasteContext,recipe:CreativeRecipe,source:String){
         self.photo=photo;self.date=date;self.context=context
         var clean=recipe
-        clean.masking=nil;clean.lighting=nil;clean.crop="Gốc";clean.rotation=nil;clean.mirror=nil
+        clean.masking=nil;clean.lighting=nil;clean.crop="Gốc";clean.compositionAnchor=nil;clean.rotation=nil;clean.mirror=nil
         global=clean
         compositionCrop=recipe.crop
         if var light=recipe.lighting,light.textureID != nil,light.sceneID==nil,light.customTexture==nil{light.x=0;light.y=0;light.angle=0;light.mirror=false;light.customName=nil;lightStyle=light}
@@ -71,7 +72,7 @@ struct TasteSample:Codable,Equatable,Identifiable{
             return TasteRegion(kind:kind,grade:layer.grade,strength:layer.strength,feather:layer.feather)
         }
     }
-    func sameEdit(as other:Self)->Bool{photo==other.photo && context==other.context && global==other.global && regions==other.regions && compositionCrop==other.compositionCrop && lightStyle==other.lightStyle}
+    func sameEdit(as other:Self)->Bool{photo==other.photo && context==other.context && global==other.global && regions==other.regions && compositionCrop==other.compositionCrop && compositionFeedback==other.compositionFeedback && lightStyle==other.lightStyle}
 }
 struct TasteSuggestion{
     let context:TasteContext
@@ -80,7 +81,7 @@ struct TasteSuggestion{
     let regions:[TasteRegion]
     func applying(to original:CreativeRecipe,source:String,verified:[TasteRegion])->CreativeRecipe{
         var result=global
-        result.crop=original.crop;result.rotation=original.rotation;result.mirror=original.mirror;result.lighting=original.lighting
+        result.crop=original.crop;result.compositionAnchor=original.compositionAnchor;result.rotation=original.rotation;result.mirror=original.mirror;result.lighting=original.lighting
         result.masking=original.masking
         var docs=result.masking ?? []
         var doc=docs.first(where:{$0.source==source}) ?? PhotoMaskDocument(source:source)
@@ -188,7 +189,7 @@ struct PhotoTastePanel:View{
                 Text(candidate.context.scene.rawValue+" · \(candidate.count) ảnh tương đồng").font(.caption.weight(.semibold)).foregroundStyle(gold)
                 Text(candidate.global.premiumID.flatMap{PremiumPresets.find($0)?.name} ?? "Thông số màu cá nhân").font(.headline)
                 if !verified.isEmpty{Toggle("Tạo lại vùng AI tương ứng",isOn:$local);Text(verified.map{$0.kind.rawValue}.joined(separator:", ")).font(.caption)}
-                Button("Áp dụng đề xuất"){var next=candidate.applying(to:recipe,source:SemanticMaskEngine.sourceKey(url),verified:local ? verified:[]);let key=SemanticMaskEngine.sourceKey(url);if let i=next.masking?.firstIndex(where:{$0.source==key}){for j in next.masking![i].layers.indices where next.masking![i].layers[j].name.hasPrefix("Gu AI · ") && next.masking![i].layers[j].learnedCorrection==nil{next.masking![i].layers[j].learnedCorrection=MaskSkillStore.shared.model(next.masking![i].layers[j].kind)}};recipe=next;notice="Đã áp dụng. Bạn vẫn có thể chỉnh sửa trước khi lưu.";self.candidate=nil}.buttonStyle(.borderedProminent).disabled(!store.enabled)
+                Button("Áp dụng đề xuất"){var next=candidate.applying(to:recipe,source:SemanticMaskEngine.sourceKey(url),verified:local ? verified:[]);let key=SemanticMaskEngine.sourceKey(url);if var docs=next.masking,let i=docs.firstIndex(where:{$0.source==key}){for j in docs[i].layers.indices where docs[i].layers[j].name.hasPrefix("Gu AI · ") && docs[i].layers[j].learnedCorrection==nil{let kind=docs[i].layers[j].kind;docs[i].layers[j].learnedCorrection=MaskSkillStore.shared.model(kind)};next.masking=docs};recipe=next;notice="Đã áp dụng. Bạn vẫn có thể chỉnh sửa trước khi lưu.";self.candidate=nil}.buttonStyle(.borderedProminent).disabled(!store.enabled)
             }
             if !notice.isEmpty{Text(notice).font(.caption)}
             if !store.issue.isEmpty{Text(store.issue).font(.caption).foregroundStyle(.orange)}
