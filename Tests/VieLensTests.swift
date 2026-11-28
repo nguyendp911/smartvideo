@@ -670,4 +670,44 @@ final class VieLensTests:XCTestCase {
         r.sceneID="lace_window"
         XCTAssertNotEqual(first,BackgroundReviewKey(source:"test",lighting:r,mask:nil))
     }
+    func testProColorSelectiveBandAndCurves()throws{
+        let red=ProRGB(r:0.8,g:0.2,b:0.2),blue=ProRGB(r:0.2,g:0.2,b:0.8)
+        var p=ProColorRecipe();p.bands=[ProColorBand(hue:0,width:0.09,shift:0.1,saturation:0,luminance:0)]
+        let changed=ProColorEngine.grade(red,recipe:p)
+        XCTAssertGreaterThan(changed.g,red.g)
+        let untouched=ProColorEngine.grade(blue,recipe:p)
+        XCTAssertEqual(untouched.b,blue.b,accuracy:0.00001)
+        XCTAssertEqual(untouched.r,blue.r,accuracy:0.00001)
+        p=ProColorRecipe();p.red.mid=0.65
+        let neutral=ProColorEngine.grade(ProRGB(r:0.5,g:0.5,b:0.5),recipe:p)
+        XCTAssertEqual(neutral.r,0.65,accuracy:0.00001)
+        XCTAssertEqual(neutral.g,0.5,accuracy:0.00001)
+        XCTAssertEqual(try JSONDecoder().decode(ProColorRecipe.self,from:JSONEncoder().encode(p)),p)
+    }
+    func testProReferenceAndRenderedPixels()throws{
+        let source=ProColorStatistics(mean:ProRGB(r:0.4,g:0.4,b:0.4),deviation:ProRGB(r:0.1,g:0.1,b:0.1),black:0,white:0,edge:0)
+        var target=source;target.mean.r=0.5
+        var p=ProColorRecipe();p.reference=ProReference(source:source,target:target,strength:1)
+        let input=ProRGB(r:0.4,g:0.4,b:0.4)
+        XCTAssertEqual(ProColorEngine.grade(input,recipe:p).r,0.5,accuracy:0.00001)
+        let rect=CGRect(x:0,y:0,width:32,height:32)
+        let image=CIImage(color:CIColor(red:0.4,green:0.4,blue:0.4)).cropped(to:rect)
+        let output=ProColorEngine.apply(image,recipe:p)
+        var rgba=[UInt8](repeating:0,count:4)
+        rgba.withUnsafeMutableBytes{ptr in SemanticMaskEngine.context.render(output,toBitmap:ptr.baseAddress!,rowBytes:4,bounds:CGRect(x:8,y:8,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+        XCTAssertGreaterThan(rgba[0],rgba[1])
+        XCTAssertEqual(rgba[3],255)
+    }
+    func testFrequencyRetouchPreservesUnselectedPixels()throws{
+        let rect=CGRect(x:0,y:0,width:64,height:64)
+        let input=CIImage(color:CIColor(red:0.4,green:0.3,blue:0.2)).cropped(to:rect)
+        let mask=CIImage(color:CIColor.black).cropped(to:rect)
+        let result=try XCTUnwrap(ProColorEngine.retouch(input,mask:mask,amount:1,radius:0.008))
+        func pixel(_ image:CIImage)->[UInt8]{
+            var bytes=[UInt8](repeating:0,count:4)
+            bytes.withUnsafeMutableBytes{p in SemanticMaskEngine.context.render(image,toBitmap:p.baseAddress!,rowBytes:4,bounds:CGRect(x:20,y:20,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+            return bytes
+        }
+        XCTAssertEqual(pixel(input),pixel(result))
+    }
 }

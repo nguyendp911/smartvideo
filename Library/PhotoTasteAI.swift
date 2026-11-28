@@ -61,7 +61,7 @@ struct TasteSample:Codable,Equatable,Identifiable{
     init(photo:UUID,date:Date=Date(),context:TasteContext,recipe:CreativeRecipe,source:String){
         self.photo=photo;self.date=date;self.context=context
         var clean=recipe
-        clean.masking=nil;clean.lighting=nil;clean.crop="Gốc";clean.compositionAnchor=nil;clean.rotation=nil;clean.mirror=nil
+        clean.masking=nil;clean.lighting=nil;if var p=clean.proColor{p.reference=nil;p.skinSmooth=0;p.skinRadius=0.004;clean.proColor=p};clean.crop="Gốc";clean.compositionAnchor=nil;clean.rotation=nil;clean.mirror=nil
         global=clean
         compositionCrop=recipe.crop
         if var light=recipe.lighting,light.textureID != nil,light.sceneID==nil,light.customScene==nil,light.customTexture==nil{light.x=0;light.y=0;light.angle=0;light.mirror=false;light.customName=nil;light.matteCorrection=nil;lightStyle=light}
@@ -83,6 +83,7 @@ struct TasteSuggestion{
         var result=global
         result.crop=original.crop;result.compositionAnchor=original.compositionAnchor;result.rotation=original.rotation;result.mirror=original.mirror;result.lighting=original.lighting
         result.masking=original.masking
+        result.proColor=original.proColor
         var docs=result.masking ?? []
         var doc=docs.first(where:{$0.source==source}) ?? PhotoMaskDocument(source:source)
         for region in verified where !doc.layers.contains(where:{$0.kind==region.kind}){

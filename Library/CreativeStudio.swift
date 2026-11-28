@@ -33,6 +33,7 @@ struct CreativeRecipe:Codable,Equatable {
     var premiumStrength:Double?=nil
     var lighting:LightMockupRecipe?=nil
     var masking:[PhotoMaskDocument]?=nil
+    var proColor:ProColorRecipe?=nil
 }
 enum CreativeEngine {
     private static let context=CIContext(options:[.cacheIntermediates:false])
@@ -62,7 +63,16 @@ enum CreativeEngine {
         case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
         default:break
         }
+        result=ProColorEngine.apply(result,recipe:recipe.proColor)
         let maskKey=SemanticMaskEngine.sourceKey(url)
+        if let pro=recipe.proColor,pro.skinSmooth>0{
+            // Require an explicitly chosen mask, never smooth the entire photograph.
+            if let layer=recipe.masking?.first(where:{$0.source==maskKey})?.layers.last(where:{$0.enabled && !$0.inverted && ($0.kind == .face || $0.kind == .brush)}){
+                guard let mask=try? SemanticMaskEngine.mask(image,layer:layer,key:maskKey),
+                      let retouched=ProColorEngine.retouch(result,mask:mask,amount:pro.skinSmooth*layer.strength,radius:pro.skinRadius) else{return nil}
+                result=retouched
+            }
+        }
         if let document=recipe.masking?.first(where:{$0.source==maskKey}){
             do{result=try SemanticMaskEngine.apply(result,original:image,document:document,key:maskKey)}catch{return nil}
         }
@@ -125,6 +135,7 @@ struct CreativeStudio:View {
     @State private var originalPreview=false
     @State private var panel=PhotoLabPanel.light
     @State private var expandedPreview=false
+    @State private var pickingPointColor=false
     @State private var showTaste=true
     @State private var showWorkflow=true
     @State private var tasteScene=TasteScene.auto
@@ -133,6 +144,7 @@ struct CreativeStudio:View {
     @State private var previewError=false
     @State private var backgroundReviews:[String:BackgroundReviewKey]=[:]
     @State private var renderedKey:PreviewKey?
+    @State private var qualityRevision=UUID()
     @State private var previewSource:URL?
     private var activeKey:PreviewKey{PreviewKey(recipe:recipe,index:selected,original:useOriginal)}
     private var previewReady:Bool{renderedKey==activeKey && preview != nil && !previewError}
@@ -174,7 +186,7 @@ struct CreativeStudio:View {
             }
         }
         .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
-        .onChange(of:selected){_,_ in tasteScene = .auto}
+        .onChange(of:selected){_,_ in tasteScene = .auto;pickingPointColor=false}
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
         .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){guard previewReady,!working else{notice="Ảnh chưa kết xuất xong.";return};var reusable=recipe;reusable.masking=nil;guard let data=try? JSONEncoder().encode(reusable) else{notice="Không lưu được công thức.";return};let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();savedPreset=data;if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
         .task(id:activeKey){
@@ -183,7 +195,7 @@ struct CreativeStudio:View {
             if previewSource != url{preview=nil;previewSource=url};previewError=false;renderedKey=nil
             do{try await Task.sleep(for:.milliseconds(180))}catch{return}
             let data=await PhotoPreviewWorker.shared.photo(url,recipe:r,maxSize:1600,thumbnail:false)
-            if !Task.isCancelled,activeKey==key{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil;renderedKey=key}
+            if !Task.isCancelled,activeKey==key{preview=data.flatMap{UIImage(data:$0)};previewError=preview==nil;renderedKey=key;qualityRevision=UUID()}
         }
     }
     private func previewArea(height:CGFloat)->some View{
@@ -198,6 +210,24 @@ struct CreativeStudio:View {
                     DiskImage(url:vault.picture(current,original:useOriginal),limit:1000).scaledToFit()
                 }else{Image(systemName:"photo").font(.largeTitle).foregroundStyle(.secondary)}
             }.frame(maxWidth:.infinity).frame(height:height).clipped()
+                .overlay{
+                    if pickingPointColor,let preview,let cg=preview.cgImage,!originalPreview{
+                        GeometryReader{g in
+                            let fit=PhotoLabLayout.fittedSize(image:preview.size,inside:g.size)
+                            Color.clear.contentShape(Rectangle())
+                                .frame(width:fit.width,height:fit.height)
+                                .gesture(SpatialTapGesture().onEnded{v in
+                                    guard fit.width>0,fit.height>0,previewReady,let color=ProColorEngine.sample(cg,x:v.location.x/fit.width,y:v.location.y/fit.height) else{return}
+                                    var p=recipe.proColor ?? ProColorRecipe()
+                                    let hues:[Double]=[0,0.075,0.16,0.33,0.50,0.62,0.75,0.90]
+                                    while p.bands.count<8{p.bands.append(ProColorBand(hue:hues[p.bands.count]))}
+                                    let band=ProColorBand(hue:color.hue,width:0.07)
+                                    if p.bands.count==8{p.bands.append(band)}else{p.bands[8]=band}
+                                    recipe.proColor=p;pickingPointColor=false
+                                }).position(x:g.size.width/2,y:g.size.height/2)
+                        }.overlay(alignment:.top){Text("Chạm vào màu cần chỉnh").font(.caption).padding(7).background(.black.opacity(0.8),in:Capsule()).padding(5).allowsHitTesting(false)}
+                    }
+                }
                 .overlay(alignment:.topTrailing){
                     Button{expandedPreview.toggle()}label:{Image(systemName:expandedPreview ? "arrow.down.right.and.arrow.up.left":"arrow.up.left.and.arrow.down.right").frame(width:44,height:44).background(.black.opacity(0.65),in:Circle())}
                         .accessibilityLabel(expandedPreview ? "Thu ảnh":"Xem ảnh lớn").padding(6)
@@ -223,7 +253,7 @@ struct CreativeStudio:View {
         ScrollView(.horizontal,showsIndicators:false){
             HStack(spacing:5){
                 ForEach(PhotoLabPanel.allCases){item in
-                    Button{panel=item;originalPreview=false}label:{
+                    Button{panel=item;originalPreview=false;pickingPointColor=false}label:{
                         VStack(spacing:4){
                             Image(systemName:item.icon).font(.system(size:17,weight:.medium))
                             Text(item.rawValue).font(.caption2.weight(.medium)).lineLimit(1)
@@ -248,10 +278,14 @@ struct CreativeStudio:View {
                         control("Sắc thái xanh / hồng",value:optional(\.tint),range:-1...1)
                         control("Màu thông minh",value:optional(\.vibrance),range:-1...1)
                         Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
+                        ProColorPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe,pickColor:{originalPreview=false;pickingPointColor.toggle()})
         case .detail:
                         control("Độ nét",value:optional(\.sharpness),range:0...1)
                         control("Khử nhiễu",value:optional(\.noise),range:0...1)
                         control("Tối viền",value:optional(\.vignette),range:0...2)
+                        ProRetouchPanel(recipe:$recipe,openMask:{showMaskStudio=true})
+                        if (recipe.proColor?.skinSmooth ?? 0)>0,let current,recipe.masking?.first(where:{$0.source==SemanticMaskEngine.sourceKey(vault.picture(current,original:useOriginal))})?.layers.contains(where:{$0.enabled && !$0.inverted && ($0.kind == .face || $0.kind == .brush)}) != true{Text("Chưa có vùng khuôn mặt hoặc cọ. Làm đều chưa tác động lên ảnh.").font(.caption).foregroundStyle(.orange)}
+                        ProQualityPanel(result:preview,url:current.map{vault.picture($0,original:useOriginal)},ready:previewReady).id(qualityRevision)
         case .crop:
                         Picker("Tỷ lệ cắt ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
                         if recipe.crop != "Gốc"{
