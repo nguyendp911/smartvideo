@@ -408,4 +408,34 @@ final class VieLensTests:XCTestCase {
         let mask=try SemanticMaskEngine.mask(image,layer:PhotoMaskLayer(name:"Sky",kind:.sky),key:SemanticMaskEngine.sourceKey(url))
         XCTAssertEqual(mask.extent,image.extent)
     }
+    func testTasteLearnsConfirmedStylesWithoutCopyingMasks()throws{
+        let scene=TasteContext(scene:.beach,brightness:0.6)
+        var profile=TasteProfile()
+        var recipe=CreativeRecipe();recipe.premiumID="sea.01";recipe.exposure=0.4;recipe.crop="1:1";recipe.rotation=90
+        var layer=PhotoMaskLayer(name:"Sky",kind:.sky);layer.grade.saturation=1.4
+        layer.strokes=[MaskStroke(size:0.2,points:[MaskPoint(x:0.1,y:0.2)])]
+        recipe.masking=[PhotoMaskDocument(source:"old",layers:[layer])]
+        let id=UUID(),sample=TasteSample(photo:id,context:scene,recipe:recipe,source:"old")
+        profile.record(sample);profile.record(sample)
+        XCTAssertEqual(profile.samples.count,1)
+        XCTAssertNil(sample.global.masking);XCTAssertNil(sample.global.rotation);XCTAssertEqual(sample.global.crop,"Gốc")
+        XCTAssertEqual(sample.regions.first?.grade.saturation,1.4)
+        XCTAssertTrue(profile.suggest(scene)?.regions.isEmpty ?? false)
+        recipe.exposure=0.6
+        profile.record(TasteSample(photo:UUID(),context:scene,recipe:recipe,source:"old"))
+        let suggestion=try XCTUnwrap(profile.suggest(scene))
+        XCTAssertEqual(suggestion.global.exposure,0.5,accuracy:0.0001)
+        XCTAssertEqual(suggestion.regions.count,1)
+        XCTAssertNil(profile.suggest(TasteContext(scene:.night,brightness:0.6)))
+        var target=CreativeRecipe();target.crop="4:5"
+        let applied=suggestion.applying(to:target,source:"new",verified:suggestion.regions)
+        XCTAssertEqual(applied.crop,"4:5")
+        XCTAssertEqual(applied.masking?.first?.source,"new")
+        XCTAssertTrue(applied.masking?.first?.layers.first?.strokes.isEmpty ?? false)
+        XCTAssertNil(applied.masking?.first?.layers.first?.replacement)
+        XCTAssertEqual(try JSONDecoder().decode(TasteProfile.self,from:JSONEncoder().encode(profile)),profile)
+        recipe.exposure=0.9;profile.record(TasteSample(photo:id,context:scene,recipe:recipe,source:"old"))
+        XCTAssertEqual(profile.samples.count,2)
+        XCTAssertEqual(TasteScene.classify(["beach","person"]),.beach)
+    }
 }

@@ -118,6 +118,9 @@ struct CreativeStudio:View {
     @State private var useOriginal=false
     @State private var originalPreview=false
     @State private var showPremium=true
+    @State private var showTaste=true
+    @State private var tasteScene=TasteScene.auto
+    @ObservedObject private var taste=PhotoTasteStore.shared
     @State private var showLighting=false
     @State private var showMaskStudio=false
     @State private var showManual=false
@@ -134,6 +137,11 @@ struct CreativeStudio:View {
                 Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
                 if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng.").font(.caption).foregroundStyle(.orange)}
+                if let current{
+                    DisclosureGroup("Personal Style AI · Gu màu của tôi",isExpanded:$showTaste){
+                        PhotoTastePanel(url:vault.picture(current,original:useOriginal),recipe:$recipe,scene:$tasteScene,store:taste).padding(.top,8)
+                    }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                }
                 DisclosureGroup("Bộ preset Premium · 32 màu",isExpanded:$showPremium){PremiumPresetPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
                 if let current{
                     let source=vault.picture(current,original:useOriginal),key=SemanticMaskEngine.sourceKey(source)
@@ -194,8 +202,9 @@ struct CreativeStudio:View {
             }.padding()
         }.navigationTitle("Premium Photo Lab")
         .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
+        .onChange(of:selected){_,_ in tasteScene = .auto}
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
-        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions()};Button("Hủy",role:.cancel){}}
+        .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions();if let shot=current{let r=recipe,u=vault.picture(shot,original:useOriginal),s=tasteScene,token=taste.generation;Task{await learnTaste(photo:shot.id,url:u,recipe:r,scene:s,token:token)}}};Button("Hủy",role:.cancel){}}
         .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
             guard let current else{return}
             let r=recipe,url=vault.picture(current,original:useOriginal)
@@ -210,17 +219,26 @@ struct CreativeStudio:View {
     private func control(_ title:String,value:Binding<Double>,range:ClosedRange<Double>)->some View{
         VStack(alignment:.leading){Text("\(title) · \(String(format:"%.2f",value.wrappedValue))").font(.caption);Slider(value:value,in:range)}
     }
+    @MainActor private func learnTaste(photo:UUID,url:URL,recipe:CreativeRecipe,scene:TasteScene,token:UUID)async{
+        guard taste.enabled,token==taste.generation else{return}
+        let key=SemanticMaskEngine.sourceKey(url)
+        guard let context=await Task.detached(priority:.utility,operation:{TasteContext.analyze(url,override:scene)}).value else{return}
+        taste.record(TasteSample(photo:photo,context:context,recipe:recipe,source:key),token:token)
+    }
     @MainActor private func export()async{
         working=true;outputs=[];notice=""
         defer{working=false}
         let r=recipe,size=maxSize,f=format,q=quality,m=metadata,v=vault,original=useOriginal
+        let chosen=current?.id,scene=tasteScene,token=taste.generation
+        var learned:Shot?
         for shot in shots{
             if let url=await Task.detached(priority:.utility,operation:{()->URL? in
                 guard let d=CreativeEngine.render(v.picture(shot,original:original),recipe:r,maxSize:size,format:f,quality:q,metadata:m) else{return nil}
                 return try? CreativeEngine.exportURL(d,extension:CreativeEngine.fileExtension(f))
-            }).value{outputs.append(url)}
+            }).value{outputs.append(url);if learned==nil || shot.id==chosen{learned=shot}}
         }
         notice="Đã xuất \(outputs.count)/\(shots.count) ảnh."
+        if let shot=learned{await learnTaste(photo:shot.id,url:v.picture(shot,original:original),recipe:r,scene:scene,token:token)}
     }
 }
 struct CollageStudio:View {
