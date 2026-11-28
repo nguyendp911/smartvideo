@@ -15,8 +15,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nguyendp911.smartvideo
-        MARKETING_VERSION: "16.0.0"
-        CURRENT_PROJECT_VERSION: "73"
+        MARKETING_VERSION: "16.1.0"
+        CURRENT_PROJECT_VERSION: "74"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_STYLE: Automatic
     info:

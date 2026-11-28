@@ -18,24 +18,53 @@ struct CreativeRecipe:Codable,Equatable {
     var saturation=1.0
     var warmth=0.0
     var crop="Gốc"
+    var highlights:Double?=nil
+    var shadows:Double?=nil
+    var vibrance:Double?=nil
+    var sharpness:Double?=nil
+    var noise:Double?=nil
+    var vignette:Double?=nil
+    var tint:Double?=nil
+    var rotation:Int?=nil
+    var mirror:Bool?=nil
+    var film:String?=nil
 }
 enum CreativeEngine {
+    private static let context=CIContext(options:[.cacheIntermediates:false])
+    static func fileExtension(_ format:String)->String{format=="PNG" ? "png":format=="HEIC" ? "heic":"jpg"}
     static func render(_ url:URL,recipe:CreativeRecipe,maxSize:Int,format:String,quality:Double,metadata:Bool)->Data?{
         guard let source=CGImageSourceCreateWithURL(url as CFURL,nil),
               let image=CIImage(contentsOf:url,options:[.applyOrientationProperty:true]) else{return nil}
         var result=image.applyingFilter("CIExposureAdjust",parameters:[kCIInputEVKey:recipe.exposure])
             .applyingFilter("CIColorControls",parameters:[kCIInputContrastKey:recipe.contrast,kCIInputSaturationKey:recipe.saturation])
         if recipe.warmth != 0 {result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500+recipe.warmth*2000,y:0)])}
-        let rect=result.extent
+        let highlight=recipe.highlights ?? 0,shadow=recipe.shadows ?? 0
+        if highlight != 0 || shadow != 0{result=result.applyingFilter("CIHighlightShadowAdjust",parameters:["inputHighlightAmount":1+highlight,"inputShadowAmount":shadow])}
+        if let tint=recipe.tint,tint != 0{result=result.applyingFilter("CITemperatureAndTint",parameters:["inputNeutral":CIVector(x:6500,y:0),"inputTargetNeutral":CIVector(x:6500,y:tint*100)])}
+        if let vibrance=recipe.vibrance,vibrance != 0{result=result.applyingFilter("CIVibrance",parameters:["inputAmount":vibrance])}
+        if let noise=recipe.noise,noise>0{result=result.applyingFilter("CINoiseReduction",parameters:["inputNoiseLevel":noise*0.1,"inputSharpness":0.4])}
+        if let sharpness=recipe.sharpness,sharpness>0{result=result.applyingFilter("CISharpenLuminance",parameters:["inputSharpness":sharpness])}
+        if let vignette=recipe.vignette,vignette>0{result=result.applyingFilter("CIVignette",parameters:["inputIntensity":vignette,"inputRadius":1.5])}
+        switch recipe.film{
+        case "Film 35mm":result=result.applyingFilter("CIPhotoEffectInstant")
+        case "Noir":result=result.applyingFilter("CIPhotoEffectNoir")
+        case "Chrome":result=result.applyingFilter("CIPhotoEffectChrome")
+        case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
+        default:break
+        }
+        if let rotation=recipe.rotation,rotation != 0{result=result.transformed(by:CGAffineTransform(rotationAngle:CGFloat(rotation)*CGFloat.pi/180))}
+        if recipe.mirror == true{result=result.transformed(by:CGAffineTransform(scaleX:-1,y:1))}
+        let rect=result.extent.integral
+        guard rect.width>0,rect.height>0,rect.width*rect.height<=70_000_000 else{return nil}
         if recipe.crop != "Gốc" {
-            let ratio:CGFloat=recipe.crop=="1:1" ? 1 : (recipe.crop=="4:5" ? 0.8:16/9)
+            let ratio:CGFloat=recipe.crop=="1:1" ? 1 : recipe.crop=="4:5" ? 0.8:recipe.crop=="9:16" ? 9/16:recipe.crop=="3:2" ? 3/2:16/9
             let width=min(rect.width,rect.height*ratio),height=width/ratio
             result=result.cropped(to:CGRect(x:rect.midX-width/2,y:rect.midY-height/2,width:width,height:height))
         }
         let scale=min(1,CGFloat(maxSize)/max(result.extent.width,result.extent.height))
         result=result.transformed(by:CGAffineTransform(scaleX:scale,y:scale))
-        guard let cg=CIContext(options:[.cacheIntermediates:false]).createCGImage(result,from:result.extent) else{return nil}
-        let data=NSMutableData(),type=format=="PNG" ? UTType.png:UTType.jpeg
+        guard let cg=context.createCGImage(result,from:result.extent.integral,format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB)!) else{return nil}
+        let data=NSMutableData(),type=format=="PNG" ? UTType.png:format=="HEIC" ? UTType.heic:UTType.jpeg
         guard let dest=CGImageDestinationCreateWithData(data,type.identifier as CFString,1,nil) else{return nil}
         var tags:[String:Any]=[kCGImagePropertyOrientation as String:1,kCGImageDestinationLossyCompressionQuality as String:quality]
         if metadata,format != "PNG",let props=CGImageSourceCopyPropertiesAtIndex(source,0,nil) as? [String:Any]{
@@ -62,7 +91,7 @@ struct CreativeStudio:View {
     @State private var preview:UIImage?
     @State private var selected=0
     @State private var format="JPEG"
-    @State private var maxSize=2048
+    @State private var maxSize=100000
     @State private var quality=0.94
     @State private var metadata=false
     @State private var outputs=[URL]()
@@ -79,7 +108,7 @@ struct CreativeStudio:View {
     var body:some View{
         ScrollView{
             VStack(spacing:14){
-                if originalPreview,let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1400).scaledToFit().frame(maxHeight:330)}
+                if originalPreview,let current{DiskImage(url:vault.picture(current,original:useOriginal),limit:1400).scaledToFit().frame(maxHeight:410)}
                 else if let preview{Image(uiImage:preview).resizable().scaledToFit().frame(maxHeight:330)}
                 else if let current{DiskImage(url:vault.picture(current),limit:1000).scaledToFit().frame(height:250)}
                 Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
@@ -91,7 +120,16 @@ struct CreativeStudio:View {
                         control("Tương phản",value:$recipe.contrast,range:0.6...1.5)
                         control("Bão hòa",value:$recipe.saturation,range:0...2)
                         control("Nhiệt độ màu",value:$recipe.warmth,range:-1...1)
-                        Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","16:9"],id:\.self){Text($0).tag($0)}}
+                        control("Vùng sáng",value:optional(\.highlights),range:-1...0)
+                        control("Vùng tối",value:optional(\.shadows),range:-0.5...1)
+                        control("Sắc thái xanh / hồng",value:optional(\.tint),range:-1...1)
+                        control("Màu thông minh",value:optional(\.vibrance),range:-1...1)
+                        control("Độ nét",value:optional(\.sharpness),range:0...1)
+                        control("Khử nhiễu",value:optional(\.noise),range:0...1)
+                        control("Tối viền",value:optional(\.vignette),range:0...2)
+                        Picker("Chất phim",selection:Binding(get:{recipe.film ?? "Gốc"},set:{recipe.film=$0})){ForEach(["Gốc","Film 35mm","Noir","Chrome","Fade"],id:\.self){Text($0).tag($0)}}
+                        Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
+                        HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
                         HStack{
                             Button("Lưu preset"){if let data=try? JSONEncoder().encode(recipe){savedPreset=data};versionName="";showVersionName=true}
                             Spacer()
@@ -110,9 +148,9 @@ struct CreativeStudio:View {
                 }
                 GroupBox("Export Studio"){
                     VStack{
-                        Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
+                        Picker("Định dạng",selection:$format){Text("JPEG").tag("JPEG");Text("HEIC").tag("HEIC");Text("PNG").tag("PNG")}.pickerStyle(.segmented)
                         Picker("Cạnh dài tối đa",selection:$maxSize){Text("1080 px").tag(1080);Text("2048 px").tag(2048);Text("4096 px").tag(4096);Text("Gốc").tag(100000)}
-                        if format=="JPEG"{control("Chất lượng JPEG",value:$quality,range:0.5...1);Toggle("Giữ thông số EXIF (không GPS)",isOn:$metadata)}
+                        if format != "PNG"{control("Chất lượng nén",value:$quality,range:0.5...1);Toggle("Giữ thông số EXIF (không GPS)",isOn:$metadata)}
                         Button("Xuất \(shots.count) ảnh đã chọn"){Task{await export()}}.buttonStyle(.borderedProminent).disabled(working || shots.isEmpty)
                         if working{ProgressView()}
                         if !outputs.isEmpty{ShareLink(items:outputs){Label("Chia sẻ / Lưu tệp",systemImage:"square.and.arrow.up")}}
@@ -128,11 +166,12 @@ struct CreativeStudio:View {
             guard let current else{return}
             let r=recipe,url=vault.picture(current,original:useOriginal)
             do{try await Task.sleep(for:.milliseconds(180))}catch{return}
-            let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:900,format:"JPEG",quality:0.8,metadata:false)}.value
+            let data=await Task.detached(priority:.utility){CreativeEngine.render(url,recipe:r,maxSize:1600,format:"JPEG",quality:0.93,metadata:false)}.value
             if !Task.isCancelled{preview=data.flatMap{UIImage(data:$0)}}
         }
     }
     private struct PreviewKey:Equatable {let recipe:CreativeRecipe;let index:Int;let original:Bool}
+    private func optional(_ key:WritableKeyPath<CreativeRecipe,Double?>)->Binding<Double>{Binding(get:{recipe[keyPath:key] ?? 0},set:{recipe[keyPath:key]=$0})}
     private func persistVersions(){if let data=try? JSONEncoder().encode(history){versionData=data}}
     private func control(_ title:String,value:Binding<Double>,range:ClosedRange<Double>)->some View{
         VStack(alignment:.leading){Text("\(title) · \(String(format:"%.2f",value.wrappedValue))").font(.caption);Slider(value:value,in:range)}
@@ -144,7 +183,7 @@ struct CreativeStudio:View {
         for shot in shots{
             if let url=await Task.detached(priority:.utility,operation:{()->URL? in
                 guard let d=CreativeEngine.render(v.picture(shot,original:original),recipe:r,maxSize:size,format:f,quality:q,metadata:m) else{return nil}
-                return try? CreativeEngine.exportURL(d,extension:f=="PNG" ? "png":"jpg")
+                return try? CreativeEngine.exportURL(d,extension:CreativeEngine.fileExtension(f))
             }).value{outputs.append(url)}
         }
         notice="Đã xuất \(outputs.count)/\(shots.count) ảnh."

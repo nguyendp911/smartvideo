@@ -339,4 +339,18 @@ final class VieLensTests:XCTestCase {
         XCTAssertEqual(LifeDate.calendar.dateComponents([.day],from:range.interval.start,to:range.interval.end).day,365)
         XCTAssertTrue(MemorySearchView.tokens("Tìm ký ức Đà Lạt 2025").contains("da"))
     }
+    func testPhotoSignatureRecipeCompatibilityAndRotation()throws{
+        let legacy=Data(#"{"exposure":0,"contrast":1,"saturation":1,"warmth":0,"crop":"Gốc"}"#.utf8)
+        var recipe=try JSONDecoder().decode(CreativeRecipe.self,from:legacy)
+        XCTAssertNil(recipe.sharpness)
+        recipe.rotation=90;recipe.sharpness=0.2;recipe.shadows=0.15
+        let url=try CreativeEngine.exportURL(patch(),extension:"jpg")
+        defer{try? FileManager.default.removeItem(at:url)}
+        let data=try XCTUnwrap(CreativeEngine.render(url,recipe:recipe,maxSize:100000,format:"PNG",quality:1,metadata:false))
+        let source=try XCTUnwrap(CGImageSourceCreateWithData(data as CFData,nil))
+        let image=try XCTUnwrap(CGImageSourceCreateImageAtIndex(source,0,nil))
+        XCTAssertEqual(image.width,300,accuracy:1)
+        XCTAssertEqual(image.height,420,accuracy:1)
+        XCTAssertEqual(CreativeEngine.fileExtension("HEIC"),"heic")
+    }
 }

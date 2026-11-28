@@ -633,6 +633,7 @@ private struct ShotDetail:View {
     @State private var showMetadata=false
     @State private var immersive=false
     @State private var showEditor=false
+    @State private var showQuality=false
     init(model:LibraryModel,shot:Shot,shots:[Shot]) {
         self.model=model
         self.shots=shots.isEmpty ? [shot] : shots
@@ -686,7 +687,7 @@ private struct ShotDetail:View {
                 }
                 HStack(spacing:18) {
                     Button {showEditor=true} label:{Image(systemName:"slider.horizontal.3")}.accessibilityLabel("Chỉnh màu ảnh").disabled(current.deleted != nil)
-                    Button {showMetadata=true} label:{Image(systemName:"info.circle")}.accessibilityLabel("Thông tin EXIF")
+                    Menu{Button("Thông tin EXIF",systemImage:"info.circle"){showMetadata=true};Button("Phân tích chất lượng",systemImage:"waveform.path.ecg"){showQuality=true}}label:{Image(systemName:"info.circle")}.accessibilityLabel("Thông tin và chất lượng ảnh")
                     ShareLink(item:model.vault.picture(current,original:original)){Image(systemName:"square.and.arrow.up")}.accessibilityLabel("Chia sẻ ảnh")
                     Button {saveToPhotos()} label:{Image(systemName:"square.and.arrow.down")}.accessibilityLabel("Lưu vào Ảnh Apple")
                     Button {tags=current.tags;session=current.session;note=current.note ?? "";editing=true} label:{Image(systemName:"tag")}.accessibilityLabel("Đổi nhãn và phiên")
@@ -697,6 +698,7 @@ private struct ShotDetail:View {
         }.sheet(isPresented:$showPhotoStory){let target=StoryTarget.photo(current);if storyArchive.entry(target.id) != nil{StoryReader(target:target,vault:model.vault,archive:storyArchive)}else{StoryComposer(target:target,vault:model.vault,archive:storyArchive)}}
         .sheet(isPresented:$showEditor){NavigationStack{CreativeStudio(shots:[current],vault:model.vault).toolbar{Button("Xong"){showEditor=false}}}}
         .sheet(isPresented:$showMetadata){PhotoMetadataView(shot:current,url:model.vault.picture(current,original:true))}
+        .sheet(isPresented:$showQuality){PhotoQualityView(url:model.vault.picture(current,original:original))}
         .sheet(isPresented:$editing){NavigationStack{Form{TextField("Phiên chụp",text:$session);TextField("Nhãn ảnh",text:$tags);TextField("Nhật ký khoảnh khắc",text:$note,axis:.vertical)}.navigationTitle("Thông tin ảnh").toolbar{Button("Lưu"){Task{do{try await model.vault.edit(shot.id,tags:tags,session:session,note:note);await model.reload();editing=false}catch{notice=error.localizedDescription}}}}}.presentationDetents([.medium])}
         .confirmationDialog("Chuyển ảnh vào thùng rác trong 30 ngày?",isPresented:$confirm){Button("Chuyển vào thùng rác",role:.destructive){Task{await model.edit(shot.id,trash:true);dismiss()}}}
         .alert("VieLens",isPresented:Binding(get:{notice != nil || model.message != nil},set:{if !$0{notice=nil;model.message=nil}})){Button("Đóng"){notice=nil;model.message=nil}} message:{Text(notice ?? model.message ?? "")}
@@ -722,9 +724,9 @@ private struct ZoomPhoto: View {
     @State private var origin:CGSize = .zero
     var body:some View {
         GeometryReader { g in
-            DiskImage(url:url,limit:3000).scaledToFit().frame(width:g.size.width,height:g.size.height)
+            DiskImage(url:url,limit:base>1 ? 8000:2500).scaledToFit().frame(width:g.size.width,height:g.size.height)
                 .scaleEffect(scale).offset(offset)
-                .gesture(MagnifyGesture().onChanged { v in scale=min(4,max(1,base*v.magnification)) }
+                .gesture(MagnifyGesture().onChanged { v in scale=min(6,max(1,base*v.magnification)) }
                     .onEnded { _ in base=scale;if scale==1 {offset = .zero;origin = .zero} })
                 .simultaneousGesture(DragGesture().onChanged{ v in
                     if scale>1 { offset=CGSize(width:origin.width+v.translation.width,height:origin.height+v.translation.height) }
