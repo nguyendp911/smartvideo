@@ -12,6 +12,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch pinned sky segmentation model
+        run: bash scripts/fetch-sky-model.sh
       - name: Generate Xcode project
         run: |
           command -v xcodegen || brew install xcodegen
@@ -27,6 +29,7 @@ jobs:
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$APP/Info.plist")" = com.nguyendp911.smartvideo
           test "$(/usr/libexec/PlistBuddy -c 'Print DTPlatformName' "$APP/Info.plist")" = iphoneos
           lipo "$APP/VieLens" -verify_arch arm64
+          test -d "$APP/SkySegSmall.mlmodelc"
           test ! -e "$APP/embedded.mobileprovision"
           test ! -e "$APP/_CodeSignature"
           if codesign -d "$APP/VieLens" >/dev/null 2>&1; then codesign --remove-signature "$APP/VieLens"; fi
@@ -50,6 +53,8 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Fetch pinned sky segmentation model
+        run: bash scripts/fetch-sky-model.sh
       - name: Generate and test
         run: |
           set -euo pipefail

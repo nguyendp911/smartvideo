@@ -1,0 +1,149 @@
+import SwiftUI
+import UIKit
+
+struct PhotoMaskStudio:View{
+    let url:URL
+    @Binding var recipe:CreativeRecipe
+    @Environment(\.dismiss) private var dismiss
+    @State private var document=PhotoMaskDocument(source:"")
+    @State private var selected:UUID?
+    @State private var preview:UIImage?
+    @State private var overlay=true
+    @State private var painting=false
+    @State private var subtract=false
+    @State private var brushSize=0.08
+    @State private var drawing:[MaskPoint]=[]
+    @State private var undoStack:[PhotoMaskDocument]=[]
+    @State private var redoStack:[PhotoMaskDocument]=[]
+    @State private var busy=false
+    @State private var issue=""
+    private var index:Int?{document.layers.firstIndex{$0.id==selected}}
+    var body:some View{
+        NavigationStack{
+            ScrollView{
+                VStack(alignment:.leading,spacing:15){
+                    Text("S E L E C T I V E  /  M A S K I N G").font(.caption2.monospaced()).foregroundStyle(gold)
+                    previewPanel
+                    HStack{
+                        Toggle("Mặt nạ đỏ",isOn:$overlay).toggleStyle(.switch).font(.caption)
+                        Spacer()
+                        Button{undo()}label:{Image(systemName:"arrow.uturn.backward")}.disabled(undoStack.isEmpty)
+                        Button{redo()}label:{Image(systemName:"arrow.uturn.forward")}.disabled(redoStack.isEmpty)
+                    }
+                    Menu{ForEach(PhotoMaskKind.allCases){kind in Button(kind.rawValue,systemImage:kind.symbol){add(kind)}}}label:{Label("Tạo mặt nạ",systemImage:"plus.circle.fill").frame(maxWidth:.infinity)}.buttonStyle(.borderedProminent)
+                    ForEach(document.layers){layer in
+                        HStack{
+                            Button{selected=layer.id;painting=false}label:{HStack{Image(systemName:layer.kind.symbol);Text(layer.name);Spacer();if selected==layer.id{Image(systemName:"checkmark.circle.fill").foregroundStyle(gold)}}}.buttonStyle(.plain)
+                            Button{checkpoint();if let i=document.layers.firstIndex(where:{$0.id==layer.id}){document.layers[i].enabled.toggle()}}label:{Image(systemName:layer.enabled ? "eye":"eye.slash")}
+                            Button(role:.destructive){checkpoint();document.layers.removeAll{$0.id==layer.id};if selected==layer.id{selected=document.layers.last?.id}}label:{Image(systemName:"trash")}
+                        }.padding(10).background(selected==layer.id ? gold.opacity(0.13):.white.opacity(0.05),in:RoundedRectangle(cornerRadius:10))
+                    }
+                    if let i=index{layerControls(i)}
+                    if !issue.isEmpty{Text(issue).font(.caption).foregroundStyle(.orange)}
+                    Text("Mặt nạ áp dụng trước cắt/xoay ảnh và chỉ thuộc ảnh này. Các vùng AI có thể cần sửa cọ ở mép. Xem trước ở đây dùng ảnh gốc với chỉnh cục bộ; Photo Lab kết hợp thêm preset và ánh sáng toàn ảnh.").font(.caption2).foregroundStyle(.secondary)
+                }.padding(14)
+            }.navigationTitle("Masking Studio").navigationBarTitleDisplayMode(.inline).toolbar{
+                ToolbarItem(placement:.cancellationAction){Button("Hủy"){dismiss()}}
+                ToolbarItem(placement:.confirmationAction){Button("Áp dụng"){recipe.masking=document.layers.isEmpty ? nil:document;dismiss()}.disabled(busy || !issue.isEmpty)}
+            }
+        }.onAppear{
+            let key=SemanticMaskEngine.sourceKey(url)
+            document=recipe.masking?.source==key ? recipe.masking! : PhotoMaskDocument(source:key)
+            selected=document.layers.last?.id
+        }
+        .task(id:PreviewKey(document:document,selected:selected,overlay:overlay)){
+            let d=document,s=selected,o=overlay
+            busy=true;issue=""
+            do{
+                try await Task.sleep(for:.milliseconds(160))
+                let image=try await Task.detached(priority:.userInitiated){try SemanticMaskEngine.preview(url,document:d,selected:s,overlay:o)}.value
+                if !Task.isCancelled{preview=image;busy=false}
+            }catch{if !Task.isCancelled{issue=error.localizedDescription;busy=false}}
+        }
+    }
+    private struct PreviewKey:Equatable{let document:PhotoMaskDocument;let selected:UUID?;let overlay:Bool}
+    private var previewPanel:some View{
+        Group{
+            if let preview{
+                GeometryReader{g in
+                    ZStack{
+                        Image(uiImage:preview).resizable().scaledToFit()
+                        if painting{
+                            Canvas{ctx,size in
+                                var path=Path()
+                                if let first=drawing.first{
+                                    path.move(to:CGPoint(x:first.x*size.width,y:first.y*size.height))
+                                    for p in drawing.dropFirst(){path.addLine(to:CGPoint(x:p.x*size.width,y:p.y*size.height))}
+                                    ctx.stroke(path,with:.color(subtract ? .white.opacity(0.65):.red.opacity(0.5)),style:StrokeStyle(lineWidth:min(size.width,size.height)*brushSize,lineCap:.round,lineJoin:.round))
+                                }
+                            }.contentShape(Rectangle()).gesture(DragGesture(minimumDistance:0,coordinateSpace:.local).onChanged{v in
+                                guard g.size.width>0,g.size.height>0 else{return}
+                                let point=MaskPoint(x:Double(max(0,min(1,v.location.x/g.size.width))),y:Double(max(0,min(1,v.location.y/g.size.height))))
+                                if drawing.count<2000{drawing.append(point)}
+                            }.onEnded{_ in
+                                guard let i=index,!drawing.isEmpty else{drawing=[];return}
+                                checkpoint();document.layers[i].strokes.append(MaskStroke(subtract:subtract,size:brushSize,points:drawing));drawing=[]
+                            })
+                        }
+                    }
+                }.aspectRatio(preview.size.width/max(1,preview.size.height),contentMode:.fit)
+            }else{DiskImage(url:url,limit:1200).scaledToFit().frame(maxHeight:350)}
+        }.clipShape(RoundedRectangle(cornerRadius:10)).overlay(alignment:.topTrailing){if busy{ProgressView().padding(9).background(.black.opacity(0.55),in:Circle()).padding(6)}}
+    }
+    private func layerControls(_ i:Int)->some View{
+        VStack(alignment:.leading,spacing:10){
+            TextField("Tên mặt nạ",text:$document.layers[i].name).textFieldStyle(.roundedBorder)
+            Toggle("Đảo vùng chọn",isOn:$document.layers[i].inverted)
+            control("Cường độ vùng",value:$document.layers[i].strength,range:0...1)
+            control("Làm mềm viền",value:$document.layers[i].feather,range:0...0.05)
+            if [.sky,.subject,.background,.luminance].contains(document.layers[i].kind){
+                control("Ngưỡng chọn vùng",value:$document.layers[i].threshold,range:0.15...0.85)
+            }
+            if [.linear,.radial].contains(document.layers[i].kind){
+                control("Vị trí ngang",value:$document.layers[i].centerX,range:0...1)
+                control("Vị trí dọc",value:$document.layers[i].centerY,range:0...1)
+                control("Bán kính / độ chuyển",value:$document.layers[i].radius,range:0.02...1)
+                if document.layers[i].kind == .linear{control("Góc",value:$document.layers[i].angle,range:-180...180)}
+            }
+            Toggle("Vẽ tinh chỉnh vùng chọn",isOn:$painting)
+            if painting{
+                Picker("Cọ",selection:$subtract){Text("Thêm").tag(false);Text("Bớt").tag(true)}.pickerStyle(.segmented)
+                control("Kích thước cọ",value:$brushSize,range:0.015...0.3)
+                Button("Xóa nét cọ"){checkpoint();document.layers[i].strokes=[]}
+                Text("Vuốt trực tiếp trên ảnh. Màu đỏ là vùng chọn. Tắt chế độ vẽ để cuộn.").font(.caption2)
+            }
+            Divider()
+            Text("HẬU KỲ RIÊNG VÙNG").font(.caption2.monospaced()).foregroundStyle(gold)
+            Picker("Preset màu trong vùng",selection:Binding(get:{document.layers[i].grade.preset ?? ""},set:{document.layers[i].grade.preset=$0.isEmpty ? nil:$0})){
+                Text("Không").tag("")
+                ForEach(PremiumPresets.all){p in Text(p.name).tag(p.id)}
+            }
+            if document.layers[i].grade.preset != nil{control("Cường độ preset",value:$document.layers[i].grade.presetStrength,range:0...1)}
+            control("Phơi sáng",value:$document.layers[i].grade.exposure,range:-2...2)
+            control("Tương phản",value:$document.layers[i].grade.contrast,range:0.5...1.6)
+            control("Bão hòa",value:$document.layers[i].grade.saturation,range:0...2)
+            control("Nhiệt độ",value:$document.layers[i].grade.warmth,range:-1...1)
+            control("Tint",value:$document.layers[i].grade.tint,range:-1...1)
+            control("Highlights",value:$document.layers[i].grade.highlights,range:-1...0)
+            control("Shadows",value:$document.layers[i].grade.shadows,range:-0.5...1)
+            control("Clarity",value:$document.layers[i].grade.clarity,range:0...1)
+            control("Giảm mù (tương phản/màu)",value:$document.layers[i].grade.dehaze,range:-1...1)
+            control("Độ nét",value:$document.layers[i].grade.sharpness,range:0...1)
+            Button("Đặt lại thông số vùng"){checkpoint();document.layers[i].grade=LocalGrade()}
+        }.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+    }
+    private func control(_ name:String,value:Binding<Double>,range:ClosedRange<Double>)->some View{
+        VStack(alignment:.leading,spacing:2){
+            HStack{Text(name);Spacer();Text(value.wrappedValue.formatted(.number.precision(.fractionLength(2)))).monospacedDigit().foregroundStyle(gold)}.font(.caption)
+            Slider(value:value,in:range,onEditingChanged:{editing in if editing{checkpoint()}})
+        }
+    }
+    private func checkpoint(){undoStack.append(document);if undoStack.count>25{undoStack.removeFirst()};redoStack=[]}
+    private func undo(){if let previous=undoStack.popLast(){redoStack.append(document);document=previous;if !document.layers.contains(where:{$0.id==selected}){selected=document.layers.last?.id}}}
+    private func redo(){if let next=redoStack.popLast(){undoStack.append(document);document=next;if !document.layers.contains(where:{$0.id==selected}){selected=document.layers.last?.id}}}
+    private func add(_ kind:PhotoMaskKind){
+        checkpoint()
+        let layer=PhotoMaskLayer(name:kind.rawValue+" \(document.layers.count+1)",kind:kind)
+        document.layers.append(layer);selected=layer.id;overlay=true;painting=kind == .brush
+    }
+}

@@ -1,6 +1,7 @@
 import XCTest
 import UIKit
 import ImageIO
+import CoreImage
 import AVFoundation
 @testable import VieLens
 
@@ -377,5 +378,34 @@ final class VieLensTests:XCTestCase {
         let lit=try XCTUnwrap(CreativeEngine.render(url,recipe:recipe,maxSize:420,format:"PNG",quality:1,metadata:false))
         XCTAssertNotEqual(colored,lit)
         XCTAssertEqual(try JSONDecoder().decode(CreativeRecipe.self,from:JSONEncoder().encode(recipe)),recipe)
+    }
+    func testMaskingOnlyChangesSelectedArea()throws{
+        let url=try CreativeEngine.exportURL(patch(),extension:"jpg")
+        defer{try? FileManager.default.removeItem(at:url)}
+        let original=try XCTUnwrap(CIImage(contentsOf:url))
+        var layer=PhotoMaskLayer(name:"Cọ",kind:.brush)
+        layer.feather=0
+        layer.strokes=[MaskStroke(size:0.4,points:[MaskPoint(x:0.25,y:0.5)])]
+        layer.grade.exposure=1
+        let key=SemanticMaskEngine.sourceKey(url)
+        let doc=PhotoMaskDocument(source:key,layers:[layer])
+        let changed=try SemanticMaskEngine.apply(original,original:original,document:doc,key:key)
+        func pixel(_ image:CIImage,_ x:Int,_ y:Int)->[UInt8]{
+            var bytes=[UInt8](repeating:0,count:4)
+            bytes.withUnsafeMutableBytes{p in SemanticMaskEngine.context.render(image,toBitmap:p.baseAddress!,rowBytes:4,bounds:CGRect(x:x,y:y,width:1,height:1),format:.RGBA8,colorSpace:CGColorSpace(name:CGColorSpace.sRGB))}
+            return bytes
+        }
+        XCTAssertNotEqual(pixel(changed,105,150),pixel(original,105,150))
+        let a=pixel(changed,350,150),b=pixel(original,350,150)
+        for i in 0..<3{XCTAssertLessThanOrEqual(abs(Int(a[i])-Int(b[i])),1)}
+        XCTAssertEqual(try JSONDecoder().decode(PhotoMaskDocument.self,from:JSONEncoder().encode(doc)),doc)
+    }
+    func testSkyModelBundledAndRuns()throws{
+        XCTAssertTrue(SemanticMaskEngine.skyAvailable)
+        let url=try CreativeEngine.exportURL(patch(),extension:"jpg")
+        defer{try? FileManager.default.removeItem(at:url)}
+        let image=try XCTUnwrap(CIImage(contentsOf:url))
+        let mask=try SemanticMaskEngine.mask(image,layer:PhotoMaskLayer(name:"Sky",kind:.sky),key:SemanticMaskEngine.sourceKey(url))
+        XCTAssertEqual(mask.extent,image.extent)
     }
 }

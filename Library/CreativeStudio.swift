@@ -31,6 +31,7 @@ struct CreativeRecipe:Codable,Equatable {
     var premiumID:String?=nil
     var premiumStrength:Double?=nil
     var lighting:LightMockupRecipe?=nil
+    var masking:[PhotoMaskDocument]?=nil
 }
 enum CreativeEngine {
     private static let context=CIContext(options:[.cacheIntermediates:false])
@@ -55,6 +56,10 @@ enum CreativeEngine {
         case "Chrome":result=result.applyingFilter("CIPhotoEffectChrome")
         case "Fade":result=result.applyingFilter("CIPhotoEffectFade")
         default:break
+        }
+        let maskKey=SemanticMaskEngine.sourceKey(url)
+        if let document=recipe.masking?.first(where:{$0.source==maskKey}){
+            do{result=try SemanticMaskEngine.apply(result,original:image,document:document,key:maskKey)}catch{return nil}
         }
         if recipe.lighting != nil{
             let stamp=(try? url.resourceValues(forKeys:[.contentModificationDateKey]).contentModificationDate?.timeIntervalSince1970) ?? 0
@@ -114,6 +119,7 @@ struct CreativeStudio:View {
     @State private var originalPreview=false
     @State private var showPremium=true
     @State private var showLighting=false
+    @State private var showMaskStudio=false
     @State private var showManual=false
     @State private var previewError=false
     @AppStorage("signature.colorPreset") private var savedPreset=Data()
@@ -127,8 +133,19 @@ struct CreativeStudio:View {
                 Toggle("Chỉnh từ ảnh gốc",isOn:$useOriginal)
                 Toggle("Xem ảnh trước chỉnh sửa",isOn:$originalPreview)
                 if shots.count>1{Picker("Ảnh xem trước",selection:$selected){ForEach(shots.indices,id:\.self){i in Text("\(i+1) · \(shots[i].day)").tag(i)}}}
-                if previewError{Text("Không thể kết xuất ảnh hiện tại. Nếu đang ghép nền, hãy chọn ảnh có chủ thể rõ hoặc bỏ mockup.").font(.caption).foregroundStyle(.orange)}
+                if previewError{Text("Không thể kết xuất ảnh hiện tại. Kiểm tra mặt nạ hoặc mockup đang dùng.").font(.caption).foregroundStyle(.orange)}
                 DisclosureGroup("Bộ preset Premium · 32 màu",isExpanded:$showPremium){PremiumPresetPanel(url:current.map{vault.picture($0,original:useOriginal)},recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
+                if let current{
+                    let source=vault.picture(current,original:useOriginal),key=SemanticMaskEngine.sourceKey(source)
+                    let layers=recipe.masking?.first(where:{$0.source==key})?.layers.count ?? 0
+                    Button{showMaskStudio=true}label:{
+                        HStack(spacing:12){
+                            Image(systemName:"circle.dotted.circle.fill").font(.title2).foregroundStyle(gold)
+                            VStack(alignment:.leading,spacing:4){Text("Masking Studio").font(.headline);Text(layers==0 ? "Bầu trời, chủ thể, nền · chỉnh riêng từng vùng":"\(layers) mặt nạ trên ảnh này").font(.caption).foregroundStyle(.secondary)}
+                            Spacer();Image(systemName:"chevron.right").font(.caption)
+                        }.padding(12).background(.white.opacity(0.065),in:RoundedRectangle(cornerRadius:12))
+                    }.buttonStyle(.plain)
+                }
                 DisclosureGroup("Lighting & Mockup Studio · 24 asset",isExpanded:$showLighting){LightMockupPanel(recipe:$recipe).padding(.top,8)}.padding(12).background(.white.opacity(0.045),in:RoundedRectangle(cornerRadius:12))
                 DisclosureGroup("Hậu kỳ chuyên sâu · Color Studio",isExpanded:$showManual){
                     VStack(alignment:.leading){
@@ -147,9 +164,9 @@ struct CreativeStudio:View {
                         Picker("Cắt giữa ảnh",selection:$recipe.crop){ForEach(["Gốc","1:1","4:5","9:16","3:2","16:9"],id:\.self){Text($0).tag($0)}}
                         HStack{Button("Xoay 90°",systemImage:"rotate.right"){recipe.rotation=((recipe.rotation ?? 0)+90)%360};Spacer();Button("Lật ngang",systemImage:"arrow.left.and.right.righttriangle.left.righttriangle.right"){recipe.mirror = !(recipe.mirror ?? false)}}.font(.caption)
                         HStack{
-                            Button("Lưu preset"){if let data=try? JSONEncoder().encode(recipe){savedPreset=data};versionName="";showVersionName=true}
+                            Button("Lưu preset"){var reusable=recipe;reusable.masking=nil;if let data=try? JSONEncoder().encode(reusable){savedPreset=data};versionName="";showVersionName=true}
                             Spacer()
-                            Button("Dùng preset"){if let r=try? JSONDecoder().decode(CreativeRecipe.self,from:savedPreset){recipe=r}}
+                            Button("Dùng preset"){if let r=try? JSONDecoder().decode(CreativeRecipe.self,from:savedPreset){var next=r;next.masking=recipe.masking;recipe=next}}
                             Button("Đặt lại"){recipe=CreativeRecipe()}
                         }.font(.caption)
                         if !history.isEmpty{
@@ -176,6 +193,7 @@ struct CreativeStudio:View {
                 Text("Ảnh xuất là bản sao; không ghi đè ảnh gốc. Các phiên bản đã đặt tên lưu công thức chỉnh sửa và ID ảnh trên thiết bị.").font(.caption).foregroundStyle(.secondary)
             }.padding()
         }.navigationTitle("Premium Photo Lab")
+        .sheet(isPresented:$showMaskStudio){if let current{PhotoMaskStudio(url:vault.picture(current,original:useOriginal),recipe:$recipe)}}
         .onAppear{history=(try? JSONDecoder().decode([CreativeVersion].self,from:versionData)) ?? []}
         .alert("Lưu phiên bản",isPresented:$showVersionName){TextField("Tên phiên bản",text:$versionName);Button("Lưu"){let name=versionName.trimmingCharacters(in:.whitespacesAndNewlines);history.append(CreativeVersion(name:name.isEmpty ? "Phiên bản \(history.count+1)":name,date:Date(),recipe:recipe,photoIDs:shots.map(\.id),original:useOriginal));persistVersions()};Button("Hủy",role:.cancel){}}
         .task(id:PreviewKey(recipe:recipe,index:selected,original:useOriginal)){
